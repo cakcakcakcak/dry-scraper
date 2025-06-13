@@ -4,3 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+async-std = {version = "1.13.1", features = ["attributes"]}
+dotenvy = "0.15.7"
+futures = "0.3.31"
+reqwest = "0.12.20"
+sqlx = { version = "0.8.6", features = [ "runtime-async-std", "tls-native-tls", "postgres"] }
