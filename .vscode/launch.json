@@ -20,7 +20,11 @@
                 }
             },
             "args": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RUSTFLAGS": "-A unused-variables"
+            },
         },
         {
             "type": "lldb",
@@ -29,7 +33,6 @@
             "cargo": {
                 "args": [
                     "test",
-                    "--no-run",
                     "--bin=loserpoint",
                     "--package=loserpoint"
                 ],
@@ -39,7 +42,33 @@
                 }
             },
             "args": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RUSTFLAGS": "-A unused-variables"
+            },
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Run release build 'loserpoint'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--release",
+                    "--bin=loserpoint",
+                    "--package=loserpoint"
+                ],
+                "filter": {
+                    "name": "loserpoint",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1"
+            },
         }
     ]
 }

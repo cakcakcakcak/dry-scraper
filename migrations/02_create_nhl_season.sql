@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS nhl_season (
     divisions_in_use BOOLEAN NOT NULL,
     end_date TIMESTAMP NOT NULL,
     entry_draft_in_use BOOLEAN NOT NULL,
-    formatted_season_id VARCHAR(10) NOT NULL,
+    formatted_season_id CHAR(10) NOT NULL,
     minimum_playoff_minutes_for_goalie_stats_leaders INTEGER NOT NULL,
     minimum_regular_games_for_goalie_stats_leaders INTEGER NOT NULL,
     nhl_stanley_cup_owner BOOLEAN NOT NULL,
@@ -23,5 +23,6 @@ CREATE TABLE IF NOT EXISTS nhl_season (
     total_regular_season_games INTEGER NOT NULL,
     wildcard_in_use BOOLEAN NOT NULL,
     raw_json JSONB NOT NULL,
+    api_cache_endpoint TEXT NOT NULL REFERENCES api_cache(endpoint),
     last_updated TIMESTAMP DEFAULT now()
 )
