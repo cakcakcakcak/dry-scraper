@@ -1,3 +1,8 @@
+//! This module provides helper functions and utilities for working with Serde serialization and deserialization.
+//! 
+//! It imports the necessary traits and types from the `serde` crate, including `Deserialize` and `Deserializer`,
+//! to facilitate custom (de)serialization logic throughout the project.
+
 use serde::{Deserialize, Deserializer};
 
 pub(crate) fn int_to_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>

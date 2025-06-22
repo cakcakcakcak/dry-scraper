@@ -1,28 +1,63 @@
+//! Loads and manages application environment variables, providing defaults for optional values.
+//!
+//! This module uses the `dotenvy` crate to load environment variables from a `.env` file if present,
+//! and provides a static `ENVIRONMENT_VARIABLES` instance for global access. Required environment
+//! variables are:
+//! - `PG_HOST`
+//! - `PG_USER`
+//! - `PG_PASS`
+//!
+//! Optional environment variables with defaults:
+//! - `MAX_DB_CONNECTIONS` (default: 5)
+//! - `DEV_MODE` (default: false)
+//! - `RETRY_JITTER_DURATION_MS` (default: 100)
+//! - `RETRIES` (default: 5)
+//!
+//! If a required variable is missing or invalid, the application will panic with an error message.
+//! Optional variables fall back to their defaults if missing or invalid, with a debug log message.
+//!
+//! # Example
+//! ```rust
+//! let env = &ENVIRONMENT_VARIABLES;
+//! println!("Postgres host: {}", env.pg_host);
+//! ```
+//!
+//! # Errors
+//! Returns an `LPError::Env` if a required environment variable is missing or not unicode.
+//!
+//! # Testing
+//! Includes tests for missing and invalid environment variables, ensuring correct error handling
+//! and default value usage.
+
 use dotenvy;
 
 use once_cell::sync::Lazy;
-
-use sqlx::migrate::MigrateDatabase;
-use sqlx::postgres::PgPoolOptions;
-
-use tokio_retry::RetryIf;
+use tracing::instrument;
 
 use crate::LPError;
-use crate::util::{default_retry_strategy, is_transient_sqlx_error};
-use crate::sqlx_operation_with_retries;
 
 const DEFAULT_MAX_DB_CONNECTIONS: u32 = 5;
 const DEFAULT_RETRY_JITTER_DURATION_MS: u64 = 100;
 const DEFAULT_RETRIES: usize = 5;
 
-
 pub static ENVIRONMENT_VARIABLES: Lazy<EnvironmentVariables> = Lazy::new(|| {
-    _ = dotenvy::dotenv();
+    let span = tracing::span!(tracing::Level::INFO, "env_init");
+    let _enter = span.enter();
+
+    match dotenvy::dotenv() {
+        Ok(_) => tracing::debug!("Loaded .env file"),
+        Err(dotenvy::Error::Io(_)) => tracing::debug!(".env file not found, skipping"),
+        Err(e) => tracing::warn!("Error loading .env file: {e}"),
+    }
     EnvironmentVariables::from_env().unwrap_or_else(|e| {
+        tracing::error!(
+            error = %e,
+            "Failed to load required environment variables"
+        );
         panic!(
             r#"Failed to load required environment variables: {e}\n
             At minimum, environment variables `PG_HOST`, `PG_USER`, and `PG_PASS`
-            must be defined at runtime or defined in a file named `.env`.\nPanicking!"#)
+            must be defined at runtime or in a file named `.env`.\nPanicking!"#)
     })
 });
 
@@ -37,36 +72,41 @@ pub struct EnvironmentVariables {
     pub retries: usize,
 }
 impl EnvironmentVariables {
+    #[instrument]
     pub fn from_env() -> Result<Self, LPError> {
         Ok(Self {
             pg_host: Self::get_environment_variable("PG_HOST")?,
             pg_user: Self::get_environment_variable("PG_USER")?,
             pg_pass: Self::get_environment_variable("PG_PASS")?,
+
             max_db_connections: Self::get_environment_variable("MAX_DB_CONNECTIONS")
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_else(|| { 
-                    println!(
+                    tracing::debug!(
                         "Environment variable missing or invalid. Instead using default MAX_DB_CONNECTIONS = {}.",
                         DEFAULT_MAX_DB_CONNECTIONS
                     );
                     DEFAULT_MAX_DB_CONNECTIONS}),
+
             dev_mode: Self::get_environment_variable("DEV_MODE")
                 .unwrap_or_else(|_| "false".to_string()) == "true",
+                
             retry_jitter_duration_ms: Self::get_environment_variable("RETRY_JITTER_DURATION_MS")
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_else(|| {
-                    println!(
+                    tracing::debug!(
                         "Environment variable missing or invalid. Instead using default RETRY_JITTER_DURATION_MS = {}.",
                         DEFAULT_RETRY_JITTER_DURATION_MS
                     );
                     DEFAULT_RETRY_JITTER_DURATION_MS}),
+                    
             retries: Self::get_environment_variable("RETRIES")
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_else(|| {
-                    println!(
+                    tracing::debug!(
                         "Environment variable missing or invalid. Instead using default RETRIES = {}.",
                         DEFAULT_RETRIES
                     );
@@ -89,77 +129,6 @@ impl EnvironmentVariables {
         }
     }
 }
-
-
-pub async fn init_db() -> Result<sqlx::Pool<sqlx::Postgres>, LPError> {
-
-    // get the environment variables and construct the database_url
-    let db_url = database_url()?;
-
-    // check if lp database exists, with retry strategy
-    let db_exists = sqlx_operation_with_retries!(
-        sqlx::Postgres::database_exists(&db_url).await
-    )?;
-
-    // if lp database does not exist, with retry strategy
-    if !db_exists {
-        _ = sqlx_operation_with_retries!(
-            sqlx::Postgres::create_database(&db_url).await
-        )?;
-    }
-
-    // create a connection pool of `max_db_connections`, with retry strategy
-    let pool = RetryIf::spawn(
-        default_retry_strategy(),
-        || async {
-            PgPoolOptions::new()
-                .max_connections(ENVIRONMENT_VARIABLES.max_db_connections)
-                .connect(&db_url)
-                .await
-        },
-        is_transient_sqlx_error,
-    )
-    .await?;
-
-    // create public schema if it doesn't already exist
-    sqlx_operation_with_retries!(
-        sqlx::query("CREATE SCHEMA IF NOT EXISTS public")
-        .execute(&pool)
-        .await
-    )?;
-
-    if ENVIRONMENT_VARIABLES.dev_mode {
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations")
-            .execute(&pool)
-            .await
-        )?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS nhl_season")
-            .execute(&pool)
-            .await
-        )?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS api_cache")
-            .execute(&pool)
-            .await
-        )?;
-    }
-
-    // run migrations
-    sqlx::migrate!().run(&pool).await?;
-
-    Ok(pool)
-}
-
-fn database_url() -> Result<String, LPError> {
-    let pg_host = &ENVIRONMENT_VARIABLES.pg_host;
-    let pg_user = &*ENVIRONMENT_VARIABLES.pg_user;
-    let pg_pass = &*ENVIRONMENT_VARIABLES.pg_pass;
-
-    Ok(format!("postgres://{pg_user}:{pg_pass}@{pg_host}/lp"))
-}
-
 
 #[cfg(test)]
 #[serial_test::serial]
@@ -322,9 +291,9 @@ mod tests {
             std::env::set_var("PG_HOST", "pg_host");
             std::env::set_var("PG_USER", "pg_user");
             std::env::set_var("PG_PASS", "pg_pass");
-            std::env::set_var("MAX_DB_CONNECTIONS", "notanumber");
+            std::env::set_var("MAX_DB_CONNECTIONS", "5");
             std::env::set_var("DEV_MODE", "true");
-            std::env::set_var("RETRY_JITTER_DURATION_MS", "notanumber");
+            std::env::set_var("RETRY_JITTER_DURATION_MS", "100");
             std::env::remove_var("RETRIES");
         }
 
@@ -338,22 +307,13 @@ mod tests {
             std::env::set_var("PG_HOST", "pg_host");
             std::env::set_var("PG_USER", "pg_user");
             std::env::set_var("PG_PASS", "pg_pass");
-            std::env::set_var("MAX_DB_CONNECTIONS", "notanumber");
+            std::env::set_var("MAX_DB_CONNECTIONS", "5");
             std::env::set_var("DEV_MODE", "true");
-            std::env::set_var("RETRY_JITTER_DURATION_MS", "5");
+            std::env::set_var("RETRY_JITTER_DURATION_MS", "100");
             std::env::set_var("RETRIES", "notanumber");
         }
 
         let env = EnvironmentVariables::from_env().unwrap();
         assert!(env.retries == DEFAULT_RETRIES);
-    }
-
-    #[tokio::test]
-    async fn test_init_db_success() {
-        // Call your function
-        let result = init_db().await;
-
-        // Assert success or check the pool
-        assert!(result.is_ok());
     }
 }

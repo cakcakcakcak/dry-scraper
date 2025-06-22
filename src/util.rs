@@ -1,38 +1,68 @@
-use futures::future::join_all;
+//! Utility functions, macros, and helpers for retry logic, concurrent execution, and error classification.
+//!
+//! This module provides:
+//! - Macros for retrying SQLx and Reqwest operations with backoff
+//! - Functions for running futures concurrently and collecting results
+//! - Retry strategies and helpers for identifying transient errors
+//! - Unit tests for utility logic
+
 use tokio_retry::RetryIf;
 use tokio_retry::strategy::{ExponentialBackoff, jitter};
 
-use crate::config;
+use crate::config::env::ENVIRONMENT_VARIABLES;
 
 #[macro_export]
+/// A macro that executes a given asynchronous SQLx operation with automatic retries.
+///
+/// This macro wraps the provided expression in a closure and passes it to
+/// [`sqlx_operation_with_retries`], which handles retrying the operation on failure.
+/// The macro expands to an `.await` expression, so it must be used within an async context.
+///
+/// # Example
+/// ```ignore
+/// sqlx_operation_with_retries! {
+///     sqlx::query!("SELECT * FROM users").fetch_all(&pool)
+/// }
+/// ```
+///
+/// # Arguments
+/// * `$body` - An asynchronous expression representing the SQLx operation to be retried.
+///
+/// # Note
+/// This macro requires that `$crate::util::sqlx_operation_with_retries` is available and
+/// properly implemented to handle the retry logic.
 macro_rules! sqlx_operation_with_retries {
     ($body:expr) => {
-        $crate::util::sqlx_operation_with_retries(|| async { $body }).await
+        $crate::util::sqlx_operation_with_retries(|| async { $body })
     };
 }
 
 #[macro_export]
+
+/// A macro that executes the given asynchronous expression with automatic retries using the
+/// `reqwest_with_retries` utility function.
+///
+/// # Example
+/// ```ignore
+/// let response = reqwest_with_retries! {
+///     reqwest::get("https://example.com").await?
+/// };
+/// ```
+///
+/// The macro wraps the provided expression in a closure and passes it to
+/// `$crate::util::reqwest_with_retries`, awaiting the result. This is useful for retrying
+/// HTTP requests or other fallible async operations.
+///
 macro_rules! reqwest_with_retries {
     ($body:expr) => {
-        $crate::util::reqwest_with_retries(|| async { $body }).await
+        $crate::util::reqwest_with_retries(|| async { $body })
     };
-}
-
-pub async fn run_futures_concurrently<I, F, T, E>(futures: I) -> Result<Vec<T>, E>
-where
-    I: IntoIterator<Item = F>,
-    F: std::future::Future<Output = Result<T, E>>,
-{
-    let results = join_all(futures).await;
-
-    // collect errors
-    results.into_iter().collect()
 }
 
 pub fn default_retry_strategy() -> impl Iterator<Item = std::time::Duration> {
-    ExponentialBackoff::from_millis(config::ENVIRONMENT_VARIABLES.retry_jitter_duration_ms)
+    ExponentialBackoff::from_millis(ENVIRONMENT_VARIABLES.retry_jitter_duration_ms)
         .map(jitter)
-        .take(config::ENVIRONMENT_VARIABLES.retries)
+        .take(ENVIRONMENT_VARIABLES.retries)
 }
 
 pub fn is_transient_sqlx_error(e: &sqlx::Error) -> bool {
@@ -48,7 +78,18 @@ where
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = Result<T, sqlx::Error>>,
 {
-    RetryIf::spawn(default_retry_strategy(), operation, is_transient_sqlx_error).await
+    RetryIf::spawn(
+        default_retry_strategy(),
+        || async {
+            let res = operation().await;
+            if let Err(ref e) = res {
+                tracing::debug!("Retrying sqlx operation after transient error {:?}", e);
+            }
+            res
+        },
+        is_transient_sqlx_error,
+    )
+    .await
 }
 
 pub async fn reqwest_with_retries<F, Fut, T>(operation: F) -> Result<T, reqwest::Error>
@@ -58,7 +99,13 @@ where
 {
     RetryIf::spawn(
         default_retry_strategy(),
-        operation,
+        || async {
+            let res = operation().await;
+            if let Err(ref e) = res {
+                tracing::debug!("Retrying reqwest operation after transient error {:?}", e);
+            }
+            res
+        },
         is_transient_reqwest_error,
     )
     .await
@@ -67,30 +114,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::pin::Pin;
     use std::time::Duration;
-
-    #[tokio::test]
-    async fn test_run_futures_concurrently_all_ok() {
-        let futures: Vec<Pin<Box<dyn Future<Output = Result<i32, &'static str>> + Send>>> = vec![
-            Box::pin(async { Ok::<_, &'static str>(1) }),
-            Box::pin(async { Ok::<_, &'static str>(2) }),
-            Box::pin(async { Ok::<_, &'static str>(3) }),
-        ];
-        let res = run_futures_concurrently(futures).await;
-        assert_eq!(res, Ok(vec![1, 2, 3]));
-    }
-
-    #[tokio::test]
-    async fn test_run_futures_concurrently_with_error() {
-        let futures: Vec<Pin<Box<dyn Future<Output = Result<i32, &'static str>> + Send>>> = vec![
-            Box::pin(async { Ok::<_, &'static str>(1) }),
-            Box::pin(async { Err::<i32, _>("fail") }),
-            Box::pin(async { Ok::<_, &'static str>(3) }),
-        ];
-        let res = run_futures_concurrently(futures).await;
-        assert_eq!(res, Err("fail"));
-    }
 
     #[test]
     fn test_default_retry_strategy_count_and_range() {
