@@ -94,6 +94,18 @@ pub async fn init_db() -> Result<sqlx::Pool<sqlx::Postgres>, LPError> {
         )
         .await?;
         sqlx_operation_with_retries!(
+            sqlx::query("DROP TABLE IF EXISTS nhl_team")
+                .execute(&pool)
+                .await
+        )
+        .await?;
+        sqlx_operation_with_retries!(
+            sqlx::query("DROP TABLE IF EXISTS nhl_franchise")
+                .execute(&pool)
+                .await
+        )
+        .await?;
+        sqlx_operation_with_retries!(
             sqlx::query("DROP TABLE IF EXISTS nhl_season")
                 .execute(&pool)
                 .await
