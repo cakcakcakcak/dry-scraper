@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS nhl_season (
-    id CHAR(8) PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
     all_star_game_in_use BOOLEAN NOT NULL,
     conferences_in_use BOOLEAN NOT NULL,
     divisions_in_use BOOLEAN NOT NULL,

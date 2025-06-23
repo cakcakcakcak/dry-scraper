@@ -28,7 +28,8 @@ async fn main() -> Result<(), LPError> {
     // will be made
     let pool = init_db().await?;
 
-    // retrieve all nhl seasons from the seasons endpoint off the nhl stats api
     let _seasons = NhlStatsApi::new().get_nhl_seasons(&pool).await?;
+    let _franchises = NhlStatsApi::new().get_nhl_franchises(&pool).await?;
+    let _teams = NhlStatsApi::new().get_nhl_teams(&pool).await?;
     Ok(())
 }

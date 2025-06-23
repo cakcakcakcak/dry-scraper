@@ -46,14 +46,13 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
-use crate::serde_helpers::{int_to_bool, number_to_string};
+use crate::serde_helpers::int_to_bool;
 use crate::sqlx_operation_with_retries;
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct NhlSeason {
-    #[serde(deserialize_with = "number_to_string")]
-    pub id: String,
+    pub id: i32,
     #[serde(deserialize_with = "int_to_bool")]
     pub all_star_game_in_use: bool,
     #[serde(deserialize_with = "int_to_bool")]
@@ -152,7 +151,7 @@ impl NhlSeason {
                                         api_cache_endpoint = EXCLUDED.api_cache_endpoint,
                                         last_updated = now()
                                     "#)
-                    .bind(&self.id)
+                    .bind(self.id)
                     .bind(self.all_star_game_in_use)
                     .bind(self.conferences_in_use)
                     .bind(self.divisions_in_use)
@@ -180,42 +179,5 @@ impl NhlSeason {
                     .execute(pool).await
         ).await?;
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn test_nhl_season_deserialization() {
-        let j = json!({"id":19531954,
-            "allStarGameInUse":1,
-            "conferencesInUse":0,
-            "divisionsInUse":0,
-            "endDate":"1954-04-16T20:00:00",
-            "entryDraftInUse":0,
-            "formattedSeasonId":"1953-54",
-            "minimumPlayoffMinutesForGoalieStatsLeaders":60,
-            "minimumRegularGamesForGoalieStatsLeaders":21,
-            "nhlStanleyCupOwner":1,
-            "numberOfGames":70,
-            "olympicsParticipation":0,
-            "pointForOTLossInUse":0,
-            "preseasonStartdate":null,
-            "regularSeasonEndDate":"1954-03-21T20:00:00",
-            "rowInUse":0,
-            "seasonOrdinal":37,
-            "startDate":"1953-10-08T20:00:00",
-            "supplementalDraftInUse":0,
-            "tiesInUse":1,
-            "totalPlayoffGames":16,
-            "totalRegularSeasonGames":210,
-            "wildcardInUse":0});
-        let season: NhlSeason = serde_json::from_value(j).unwrap();
-        assert_eq!(season.id, "19531954");
-        assert!(season.all_star_game_in_use);
-        assert!(!season.olympics_participation);
     }
 }

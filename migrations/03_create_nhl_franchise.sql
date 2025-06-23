@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS nhl_franchise (
-    id CHAR(2) PRIMARY KEY,
+    id SMALLINT PRIMARY KEY,
     full_name TEXT NOT NULL,
     team_common_name TEXT NOT NULL,
     team_place_name TEXT NOT NULL,
