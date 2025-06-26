@@ -1,33 +1,3 @@
-//! Initializes the PostgreSQL database and returns a connection pool.
-//!
-//! This function performs the following steps:
-//! 1. Constructs the database URL from environment variables.
-//! 2. Checks if the database exists, and creates it if it does not (with retry logic).
-//! 3. Establishes a connection pool with a configurable maximum number of connections (with retry logic).
-//! 4. Ensures the `public` schema exists in the database.
-//! 5. If `DEV_MODE` is enabled, drops specific tables for a clean development state.
-//! 6. Runs database migrations to ensure the schema is up to date.
-//!
-//! # Returns
-//! * `Ok(sqlx::Pool<sqlx::Postgres>)` - The established connection pool.
-//! * `Err(LPError)` - If any step fails.
-//!
-//! # Errors
-//! Returns an `LPError` if:
-//! - The database URL cannot be constructed.
-//! - Database existence check or creation fails.
-//! - Connection pool cannot be established.
-//! - Schema creation or table dropping fails.
-//! - Migrations fail.
-//!
-//! # Instrumentation
-//! This function is instrumented for tracing and logs key events and errors.
-//!
-//! # Example
-//! ```ignore
-//! let pool = init_db().await?;
-//! ```
-
 use sqlx::migrate::MigrateDatabase;
 use sqlx::postgres::PgPoolOptions;
 
@@ -94,6 +64,12 @@ pub async fn init_db() -> Result<sqlx::Pool<sqlx::Postgres>, LPError> {
         )
         .await?;
         sqlx_operation_with_retries!(
+            sqlx::query("DROP TABLE IF EXISTS nhl_player")
+                .execute(&pool)
+                .await
+        )
+        .await?;
+        sqlx_operation_with_retries!(
             sqlx::query("DROP TABLE IF EXISTS nhl_team")
                 .execute(&pool)
                 .await
@@ -111,12 +87,12 @@ pub async fn init_db() -> Result<sqlx::Pool<sqlx::Postgres>, LPError> {
                 .await
         )
         .await?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS api_cache")
-                .execute(&pool)
-                .await
-        )
-        .await?;
+        // sqlx_operation_with_retries!(
+        //     sqlx::query("DROP TABLE IF EXISTS api_cache")
+        //         .execute(&pool)
+        //         .await
+        // )
+        // .await?;
         tracing::info!("Dropped tables in DEV_MODE");
     }
 

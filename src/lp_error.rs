@@ -1,18 +1,3 @@
-//! Defines the `LPError` enum, which represents all possible errors that can occur in the application.
-//!
-//! This error type uses the [`thiserror`](https://docs.rs/thiserror/) crate for ergonomic error handling and
-//! implements the `std::error::Error` trait. Each variant corresponds to a specific error source or context:
-//!
-//! - `Database`: Wraps errors originating from the `sqlx` crate.
-//! - `DatabaseCustom`: Represents custom database errors as a string message.
-//! - `Migration`: Wraps migration errors from `sqlx::migrate`.
-//! - `Api`: Wraps errors from the `reqwest` HTTP client.
-//! - `ApiCustom`: Represents custom API errors as a string message.
-//! - `Serde`: Wraps errors from `serde_json`.
-//! - `Env`: Represents environment variable errors as a string message.
-//!
-//! This enum allows for unified error handling throughout the application.
-
 use thiserror::Error;
 
 #[derive(Error, Debug)]

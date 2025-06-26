@@ -9,7 +9,8 @@ mod models;
 mod serde_helpers;
 mod util;
 
-use api::nhl::NhlStatsApi;
+use api::nhl_stats_api::NhlStatsApi;
+use api::nhl_web_api::NhlWebApi;
 use config::env::ENVIRONMENT_VARIABLES;
 use db::init::init_db;
 use lp_error::LPError;
@@ -28,8 +29,10 @@ async fn main() -> Result<(), LPError> {
     // will be made
     let pool = init_db().await?;
 
-    let _seasons = NhlStatsApi::new().get_nhl_seasons(&pool).await?;
-    let _franchises = NhlStatsApi::new().get_nhl_franchises(&pool).await?;
-    let _teams = NhlStatsApi::new().get_nhl_teams(&pool).await?;
+    NhlStatsApi::new().get_nhl_seasons(&pool).await?;
+    NhlStatsApi::new().get_nhl_franchises(&pool).await?;
+    NhlStatsApi::new().get_nhl_teams(&pool).await?;
+
+    NhlWebApi::new().get_nhl_player(&pool, 8475184).await?;
     Ok(())
 }

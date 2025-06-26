@@ -1,34 +1,3 @@
-//! Loads and manages application environment variables, providing defaults for optional values.
-//!
-//! This module uses the `dotenvy` crate to load environment variables from a `.env` file if present,
-//! and provides a static `ENVIRONMENT_VARIABLES` instance for global access. Required environment
-//! variables are:
-//! - `PG_HOST`
-//! - `PG_USER`
-//! - `PG_PASS`
-//!
-//! Optional environment variables with defaults:
-//! - `MAX_DB_CONNECTIONS` (default: 5)
-//! - `DEV_MODE` (default: false)
-//! - `RETRY_JITTER_DURATION_MS` (default: 100)
-//! - `RETRIES` (default: 5)
-//!
-//! If a required variable is missing or invalid, the application will panic with an error message.
-//! Optional variables fall back to their defaults if missing or invalid, with a debug log message.
-//!
-//! # Example
-//! ```rust
-//! let env = &ENVIRONMENT_VARIABLES;
-//! println!("Postgres host: {}", env.pg_host);
-//! ```
-//!
-//! # Errors
-//! Returns an `LPError::Env` if a required environment variable is missing or not unicode.
-//!
-//! # Testing
-//! Includes tests for missing and invalid environment variables, ensuring correct error handling
-//! and default value usage.
-
 use dotenvy;
 
 use once_cell::sync::Lazy;

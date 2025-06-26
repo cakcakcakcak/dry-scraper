@@ -44,7 +44,7 @@ impl NhlTeam {
                                         last_updated = now()
                                     "#
             )
-            .bind(self.id)
+            .bind(&self.id)
             .bind(&self.franchise_id)
             .bind(&self.full_name)
             .bind(&self.league_id)
