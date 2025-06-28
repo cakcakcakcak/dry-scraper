@@ -18,7 +18,7 @@ pub trait CacheableApi: std::fmt::Debug {
         endpoint: &str,
     ) -> Result<String, lp_error::LPError> {
         // query our api_cache for the endpoint we seek
-        tracing::info!(endpoint = %endpoint, "Querying api_cache for the endpoint we seek...");
+        tracing::info!("Querying api_cache for the endpoint we seek...");
         match sqlx_operation_with_retries!(
             sqlx::query("SELECT raw_data from api_cache WHERE endpoint = $1")
                 .bind(endpoint)
@@ -31,7 +31,7 @@ pub trait CacheableApi: std::fmt::Debug {
                 // if present, get the contents of the raw_data column and return it
                 match row.try_get::<String, _>("raw_data") {
                     Ok(raw_data) => {
-                        tracing::info!(endpoint = %endpoint, "Record found for endpoint. Retrieving raw_data...");
+                        tracing::info!("Record found for endpoint. Retrieving raw_data...");
                         return Ok(raw_data);
                     }
                     Err(e) => {
@@ -46,7 +46,7 @@ pub trait CacheableApi: std::fmt::Debug {
             }
             None => {
                 // otherwise fetch the raw_data, store it in our cache, and return it
-                tracing::info!(endpoint = %endpoint, "Cached record not found for endpoint. Querying API...");
+                tracing::info!("Cached record not found for endpoint. Querying API...");
                 // fall through to fetch from api
             }
         }
@@ -64,13 +64,11 @@ pub trait CacheableApi: std::fmt::Debug {
                     lp_error::LPError::Api(e)
                 })?;
 
-        tracing::info!(endpoint = %endpoint, "Response received. Parsing and inserting into cache...");
-        let raw_data = response.text().await.map_err(|e| {
-            lp_error::LPError::ApiCustom(format!(
-                "Failed to read response body for endpoint {}: {}",
-                endpoint, e
-            ))
-        })?;
+        tracing::info!("Response received. Parsing and inserting into cache...");
+        let raw_data = response
+            .text()
+            .await
+            .map_err(|e| lp_error::LPError::Api(e))?;
         sqlx_operation_with_retries!(
             sqlx::query(r#"INSERT INTO api_cache (endpoint, raw_data) VALUES ($1, $2)
                 ON CONFLICT (endpoint) DO UPDATE SET raw_data = EXCLUDED.raw_data, last_updated = now()"#)
@@ -78,11 +76,7 @@ pub trait CacheableApi: std::fmt::Debug {
                 .bind(&raw_data)
                 .execute(pool)
                 .await
-        ).await.map_err(|e| {
-            lp_error::LPError::ApiCustom(format!(
-                "Failed to insert/update cache for endpoint {}: {}",
-                endpoint, e))
-        })?;
+        ).await.map_err(|e| lp_error::LPError::Database(e))?;
         Ok(raw_data)
     }
 }

@@ -1,361 +1,272 @@
-use serde::{Deserialize, Deserializer, de::IntoDeserializer};
+impl<'de> serde::Deserialize<'de> for crate::models::game_type::GameType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use crate::models::game_type::GameType;
 
-/// usage: `#[serde(deserialize_with = "deserialize_to_bool")]`
-/// deserialize the String, int, or bool value indicated in the struct into a bool
-pub(crate) fn deserialize_to_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let v = serde_json::Value::deserialize(deserializer)?;
-    value_to_bool::<D::Error>(v)
+        let v = i32::deserialize(deserializer)?;
+        match v {
+            1 => Ok(GameType::Preseason),
+            2 => Ok(GameType::RegularSeason),
+            3 => Ok(GameType::Playoffs),
+            other => {
+                tracing::error!("Unknown `game_type` value: {}", other);
+                Err(serde::de::Error::custom(format!(
+                    "Unknown `game_type`: {}",
+                    other
+                )))
+            }
+        }
+    }
 }
 
-/// deserialize a `serde::json::Value` into a bool
-pub(crate) fn value_to_bool<E>(value: serde_json::Value) -> Result<bool, E>
-where
-    E: serde::de::Error,
-{
-    use serde_json::Value;
-    match value {
-        Value::Bool(b) => Ok(b),
-        Value::Number(n) => {
-            let number_val = n.as_i64();
-            if number_val != Some(0) && number_val != Some(1) {
+impl<'de> serde::Deserialize<'de> for crate::models::period_type::PeriodType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use crate::models::period_type::PeriodType;
+
+        let v = i32::deserialize(deserializer)?;
+        match v {
+            1 => Ok(PeriodType::Regulation),
+            2 => Ok(PeriodType::Overtime),
+            3 => Ok(PeriodType::Shootout),
+            other => {
+                tracing::error!("Unknown `period_type` value: {}", other);
+                Err(serde::de::Error::custom(format!(
+                    "Unknown `period_type`: {}",
+                    other
+                )))
+            }
+        }
+    }
+}
+
+macro_rules! make_deserialize_to_type {
+    ($func_name:ident, $ty:ty) => {
+        #[doc = concat!(
+                                                    "Deserializes the JSON object to `",
+                                                    stringify!($ty),
+                                                    "`.\nUsage: `#[serde(deserialize_with = \"",
+                                                    stringify!($func_name),
+                                                    "\")]`"
+                                                )]
+        pub fn $func_name<'de, D>(deserializer: D) -> Result<$ty, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            use serde::Deserialize;
+            use $crate::serde_helpers::JsonExt;
+            let value = serde_json::Value::deserialize(deserializer)?;
+            value.as_logged::<$ty>().ok_or_else(|| {
+                serde::de::Error::custom(format!("Failed to deserialize value `{value}` to `{}`.", stringify!($ty)))
+            })
+        }
+    };
+}
+
+make_deserialize_to_type!(deserialize_to_bool, bool);
+
+macro_rules! make_deserialize_key_to_type {
+    ($func_name:ident, $key:expr, $ty:ty) => {
+        #[doc = concat!(
+                                                    "Deserializes the value from the `\"",
+                                                    $key,
+                                                    "\"` key in the JSON object to `",
+                                                    stringify!($ty),
+                                                    "`.\nUsage: `#[serde(deserialize_with = \"",
+                                                    stringify!($func_name),
+                                                    "\")]`"
+                                                )]
+        pub fn $func_name<'de, D>(deserializer: D) -> Result<$ty, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            use serde::Deserialize;
+            use $crate::serde_helpers::JsonExt;
+            let value = serde_json::Value::deserialize(deserializer)?;
+            value.get_key_as_logged::<$ty>($key).ok_or_else(|| {
+                serde::de::Error::custom(format!("Failed to deserialize value `{value}` to `{}`.", stringify!($ty)))
+            })
+        }
+    };
+}
+
+make_deserialize_key_to_type!(deserialize_default_to_string, "default", String);
+
+macro_rules! make_deserialize_key_to_option_type {
+    ($func_name:ident, $key:expr, $ty:ty) => {
+        #[doc = concat!(
+                                                    "Deserializes the value from the `\"",
+                                                    $key,
+                                                    "\"` key in the JSON object to `Option<",
+                                                    stringify!($ty),
+                                                    ">`.\nUsage: `#[serde(deserialize_with = \"",
+                                                    stringify!($func_name),
+                                                    "\")]`"
+                                                )]
+        pub fn $func_name<'de, D>(deserializer: D) -> Result<Option<$ty>, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            use serde::Deserialize;
+            use $crate::serde_helpers::JsonExt;
+            let value = serde_json::Value::deserialize(deserializer)?;
+            match value.get_key_as_logged::<$ty>($key) {
+                Some(v) => Ok(Some(v)),
+                None => Err(serde::de::Error::custom(format!("Failed to deserialize value `{value}` to `Option<{}>`.", stringify!($ty))))
+            }
+        }
+    };
+}
+
+make_deserialize_key_to_option_type!(deserialize_default_to_option_string, "default", String);
+
+pub trait AsLogged: Sized {
+    fn as_logged(value: &serde_json::Value) -> Option<Self>;
+    fn get_key_as_logged(value: &serde_json::Value, key: &str) -> Option<Self> {
+        match value.get(&key) {
+            Some(v) => v.as_logged::<Self>(),
+            None => {
+                tracing::warn!("Key `{key}` not found in json object: {value:?}");
+                None
+            }
+        }
+    }
+    fn get_nested_as_logged(value: &serde_json::Value, keys: &[&str]) -> Option<Self> {
+        let mut current = value;
+        for &key in keys {
+            current = match current.get(key) {
+                Some(v) => v,
+                None => {
+                    tracing::warn!("Key `{key}` not found in json object: {current:?}");
+                    return None;
+                }
+            }
+        }
+        Self::as_logged(current)
+    }
+}
+impl AsLogged for serde_json::Value {
+    fn as_logged(value: &serde_json::Value) -> Option<Self> {
+        Some(value.clone())
+    }
+}
+impl AsLogged for String {
+    fn as_logged(value: &serde_json::Value) -> Option<Self> {
+        use serde_json::Value;
+        match value {
+            Value::String(s) => Some(s.to_string()),
+            Value::Bool(b) => Some(b.to_string()),
+            Value::Number(n) => Some(n.to_string()),
+            Value::Null => Some(String::new()),
+            serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+                let s = value.to_string();
+                tracing::warn!("Converting complex JSON value to string: {}", s);
+                Some(s)
+            }
+        }
+    }
+}
+
+impl AsLogged for i32 {
+    fn as_logged(value: &serde_json::Value) -> Option<Self> {
+        use serde_json::Value;
+        match value {
+            Value::Bool(true) => Some(1),
+            Value::Bool(false) => Some(0),
+            Value::Number(n) => n.as_i64().and_then(|v| {
+                i32::try_from(v).ok().or_else(|| {
+                    tracing::warn!("Number out of range for i32: {n}");
+                    None
+                })
+            }),
+            Value::String(s) => match s.parse::<i32>() {
+                Ok(n) => Some(n),
+                Err(e) => {
+                    tracing::warn!("Could not parse string `{s}` as i32: {e}");
+                    None
+                }
+            },
+            Value::Null => {
                 tracing::warn!(
-                    "int_to_bool: unexpected value {n} (expected 0 or 1), converting to `true`."
+                    "value_to_i32: unexpected value `serde_json::Value::Null`, converting to `0`."
                 );
+                Some(0)
             }
-            Ok(n != 0.into())
-        }
-        Value::String(ref s) if s == "true" => Ok(true),
-        Value::String(ref s) if s == "false" => Ok(false),
-        Value::Null => {
-            tracing::warn!(
-                "value_to_bool: unexpected value `serde_json::Value::Null`, converting to `false`."
-            );
-            Ok(false)
-        }
-        other => Err(E::custom(format!(
-            "Unable to meaningfully deserialize value to bool: {:?}",
-            other
-        ))),
-    }
-}
-
-/// usage: `#[serde(deserialize_with = "deserialize_to_string")]`
-/// deserialize the number value indicated in the struct into a string
-pub(crate) fn deserialize_to_string<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = serde_json::Value::deserialize(deserializer)?;
-    value_to_string::<D::Error>(value)
-}
-
-/// deserialize a `serde::json::Value` into a `String``
-pub(crate) fn value_to_string<E>(value: serde_json::Value) -> Result<String, E>
-where
-    E: serde::de::Error,
-{
-    use serde_json::Value;
-    match &value {
-        Value::Bool(b) => Ok(b.to_string()),
-        Value::Number(n) => Ok(n.to_string()),
-        Value::String(s) => Ok(s.to_string()),
-        Value::Null => Ok(String::new()),
-        Value::Array(_) => Ok(value.to_string()),
-        Value::Object(_) => Ok(value.to_string()),
-    }
-}
-
-/// deserialize a `serde::json::Value` into an `i32`
-pub(crate) fn value_to_i32<E>(value: serde_json::Value) -> Result<i32, E>
-where
-    E: serde::de::Error,
-{
-    use serde_json::Value;
-    match &value {
-        Value::Bool(true) => Ok(1),
-        Value::Bool(false) => Ok(0),
-        Value::Number(n) => n
-            .as_i64()
-            .and_then(|v| i32::try_from(v).ok())
-            .ok_or_else(|| E::custom(format!("Number out of range for i32: {n}"))),
-        Value::String(s) => match s.parse::<i32>() {
-            Ok(n) => Ok(n),
-            Err(e) => {
-                tracing::warn!("Could not parse string `{s}` as i32: {e}");
-                Err(E::custom(e))
+            other => {
+                tracing::warn!("Unable to meaningfully deserialize value {other} to `i32`");
+                None
             }
-        },
-        Value::Null => {
-            tracing::warn!(
-                "value_to_i32: unexpected value `serde_json::Value::Null`, converting to `0`."
-            );
-            Ok(0)
-        }
-        other => Err(E::custom(format!(
-            "Unable to meaningfully deserialize value to `i32`: {:?}",
-            other
-        ))),
-    }
-}
-
-/// usage: `#[serde(deserialize_with = "deserialize_json_object_default_to_string")]`
-/// deserialize the value from the '"default"' key in the json object to `String`
-pub(crate) fn deserialize_json_object_default_to_string<'de, D>(
-    deserializer: D,
-) -> Result<Option<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    use serde_json::Value;
-    let json = Value::deserialize(deserializer)?;
-    match get_key_as_string(&json, "default") {
-        Some(v) => Ok(Some(v)),
-        None => Ok(None),
-    }
-}
-
-/// usage: `#[serde(deserialize_with = "deserialize_json_object_default_to_i32")]`
-/// deserialize the value from the '"default"' key in the json object to `i32`
-pub(crate) fn deserialize_json_object_default_to_i32<'de, D>(
-    deserializer: D,
-) -> Result<Option<i32>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    use serde_json::Value;
-    let json = Value::deserialize(deserializer)?;
-    match get_key_as_i32(&json, "default") {
-        Some(v) => Ok(Some(v)),
-        None => Ok(None),
-    }
-}
-
-/// usage: `#[serde(deserialize_with = "deserialize_json_object_default_to_bool")]`
-/// deserialize the value from the '"default"' key in the json object to `bool`
-pub(crate) fn deserialize_json_object_default_to_bool<'de, D>(
-    deserializer: D,
-) -> Result<Option<bool>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    use serde_json::Value;
-    let json = Value::deserialize(deserializer)?;
-    match get_key_as_bool(&json, "default") {
-        Some(v) => Ok(Some(v)),
-        None => Ok(None),
-    }
-}
-
-pub(crate) fn get_key_as_value(value: &serde_json::Value, key: &str) -> Option<serde_json::Value> {
-    match value.get(&key) {
-        Some(v) => Some(v.clone()),
-        None => {
-            tracing::warn!("Key `{key}` not found in json object: {value:?}");
-            None
         }
     }
 }
 
-pub(crate) fn get_key_as_string(value: &serde_json::Value, key: &str) -> Option<String> {
-    match value.get(&key) {
-        Some(v) => value_to_string::<serde::de::value::Error>(v.clone()).ok(),
-        None => {
-            tracing::warn!("Key `{key}` not found in json object: {value:?}");
-            None
+impl AsLogged for bool {
+    fn as_logged(value: &serde_json::Value) -> Option<Self> {
+        use serde_json::Value;
+
+        match value {
+            Value::Bool(b) => Some(*b),
+            Value::String(s) if s == "true" => Some(true),
+            Value::String(s) if s == "false" => Some(false),
+            Value::Number(n) => {
+                let number_val = n.as_i64();
+                if number_val != Some(0) && number_val != Some(1) {
+                    tracing::warn!(
+                        "int_to_bool: unexpected value {n} (expected 0 or 1), converting to `true`."
+                    );
+                }
+                Some(number_val != Some(0))
+            }
+            Value::Null => {
+                tracing::warn!(
+                    "value_to_bool: unexpected value `serde_json::Value::Null`, converting to `false`."
+                );
+                Some(false)
+            }
+            other => {
+                tracing::warn!(
+                    "value_to_bool: unable to meaningfully convert value {other} to bool"
+                );
+                None
+            }
         }
     }
 }
 
-pub(crate) fn get_key_as_i32(value: &serde_json::Value, key: &str) -> Option<i32> {
-    match value.get(&key) {
-        Some(v) => value_to_i32::<serde::de::value::Error>(v.clone()).ok(),
-        None => {
-            tracing::warn!("Key `{key}` not found in json object: {value:?}");
-            None
-        }
+// Extension trait for ergonomic method call
+pub trait JsonExt {
+    fn as_logged<T: AsLogged>(&self) -> Option<T>;
+    fn get_key_as_logged<T: AsLogged>(&self, key: &str) -> Option<T>;
+    fn get_nested_as_logged<T: AsLogged>(&self, keys: &[&str]) -> Option<T>;
+    fn get_key_as_string(&self, key: &str) -> Option<String> {
+        self.get_key_as_logged::<String>(key)
+    }
+    fn get_key_as_i32(&self, key: &str) -> Option<i32> {
+        self.get_key_as_logged::<i32>(key)
+    }
+    fn get_key_as_bool(&self, key: &str) -> Option<bool> {
+        self.get_key_as_logged::<bool>(key)
+    }
+    fn get_key_as_value(&self, key: &str) -> Option<serde_json::Value> {
+        self.get_key_as_logged::<serde_json::Value>(key)
+    }
+    fn get_nested_as_string(&self, keys: &[&str]) -> Option<String> {
+        self.get_nested_as_logged::<String>(keys)
     }
 }
 
-pub(crate) fn get_key_as_bool(value: &serde_json::Value, key: &str) -> Option<bool> {
-    match value.get(&key) {
-        Some(v) => value_to_bool::<serde::de::value::Error>(v.clone()).ok(),
-        None => {
-            tracing::warn!("Key `{key}` not found in json object: {value:?}");
-            None
-        }
+impl JsonExt for serde_json::Value {
+    fn as_logged<T: AsLogged>(&self) -> Option<T> {
+        T::as_logged(self)
     }
-}
-
-pub(crate) fn try_get<'a>(
-    field: &str,
-    json: &'a serde_json::Value,
-    endpoint: &str,
-) -> Result<&'a serde_json::Value, crate::lp_error::LPError> {
-    json.get(field).ok_or_else(|| {
-        crate::lp_error::LPError::ApiCustom(format!(
-            "No '{}' field found in API response for endpoint {}",
-            field, endpoint
-        ))
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use std::str::FromStr;
-
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn test_value_to_bool() {
-        assert_eq!(
-            value_to_bool::<serde::de::value::Error>(json!(true)).unwrap(),
-            true
-        );
-        assert_eq!(
-            value_to_bool::<serde::de::value::Error>(json!(false)).unwrap(),
-            false
-        );
-        assert_eq!(
-            value_to_bool::<serde::de::value::Error>(json!(1)).unwrap(),
-            true
-        );
-        assert_eq!(
-            value_to_bool::<serde::de::value::Error>(json!(0)).unwrap(),
-            false
-        );
-        assert_eq!(
-            value_to_bool::<serde::de::value::Error>(json!("true")).unwrap(),
-            true
-        );
-        assert_eq!(
-            value_to_bool::<serde::de::value::Error>(json!("false")).unwrap(),
-            false
-        );
-        assert_eq!(
-            value_to_bool::<serde::de::value::Error>(serde_json::Value::Null).unwrap(),
-            false
-        );
-
-        let err = value_to_bool::<serde::de::value::Error>(json!("notabool"));
-        assert!(err.is_err());
+    fn get_key_as_logged<T: AsLogged>(&self, key: &str) -> Option<T> {
+        T::get_key_as_logged(self, key)
     }
-
-    #[test]
-    fn test_value_to_string() {
-        assert_eq!(
-            value_to_string::<serde::de::value::Error>(json!(true)).unwrap(),
-            "true"
-        );
-        assert_eq!(
-            value_to_string::<serde::de::value::Error>(json!(123)).unwrap(),
-            "123"
-        );
-        assert_eq!(
-            value_to_string::<serde::de::value::Error>(json!("abc")).unwrap(),
-            "abc"
-        );
-        assert_eq!(
-            value_to_string::<serde::de::value::Error>(serde_json::Value::Null).unwrap(),
-            ""
-        );
-        assert_eq!(
-            value_to_string::<serde::de::value::Error>(json!([1, 2, 3])).unwrap(),
-            "[1,2,3]"
-        );
-        assert_eq!(
-            value_to_string::<serde::de::value::Error>(json!({"a":1})).unwrap(),
-            "{\"a\":1}"
-        );
-    }
-
-    #[test]
-    fn test_value_to_i32() {
-        assert_eq!(
-            value_to_i32::<serde::de::value::Error>(json!(true)).unwrap(),
-            1
-        );
-        assert_eq!(
-            value_to_i32::<serde::de::value::Error>(json!(false)).unwrap(),
-            0
-        );
-        assert_eq!(
-            value_to_i32::<serde::de::value::Error>(json!(42)).unwrap(),
-            42
-        );
-        assert_eq!(
-            value_to_i32::<serde::de::value::Error>(json!("123")).unwrap(),
-            123
-        );
-        assert_eq!(
-            value_to_i32::<serde::de::value::Error>(serde_json::Value::Null).unwrap(),
-            0
-        );
-
-        let err = value_to_i32::<serde::de::value::Error>(json!("notanint"));
-        assert!(err.is_err());
-        let err = value_to_i32::<serde::de::value::Error>(json!([1, 2, 3]));
-        assert!(err.is_err());
-    }
-    #[test]
-    fn test_get_key_as_value() {
-        let v = json!({"default": "hello"});
-        assert_eq!(get_key_as_value(&v, "default"), Some(json!("hello")));
-        let v = json!({});
-        assert_eq!(get_key_as_value(&v, "missing"), None);
-    }
-
-    #[test]
-    fn test_get_key_as_string() {
-        let v = json!({"default": "hello"});
-        assert_eq!(get_key_as_string(&v, "default"), Some("hello".to_string()));
-        let v = json!({});
-        assert_eq!(get_key_as_string(&v, "missing"), None);
-    }
-
-    #[test]
-    fn test_get_key_as_i32() {
-        let v = json!({"default": 42});
-        assert_eq!(get_key_as_i32(&v, "default"), Some(42));
-        let v = json!({"default": "123"});
-        assert_eq!(get_key_as_i32(&v, "default"), Some(123));
-        let v = json!({});
-        assert_eq!(get_key_as_i32(&v, "missing"), None);
-    }
-
-    #[test]
-    fn test_get_key_as_bool() {
-        let v = json!({"default": true});
-        assert_eq!(get_key_as_bool(&v, "default"), Some(true));
-        let v = json!({"default": 0});
-        assert_eq!(get_key_as_bool(&v, "default"), Some(false));
-        let v = json!({});
-        assert_eq!(get_key_as_bool(&v, "missing"), None);
-    }
-
-    #[test]
-    fn test_deserialize_json_object_default_to_string() {
-        let v = json!({"default": "abc"});
-        let s: Option<String> =
-            deserialize_json_object_default_to_string(v.into_deserializer()).unwrap();
-        assert_eq!(s, Some("abc".to_string()));
-    }
-
-    #[test]
-    fn test_deserialize_json_object_default_to_i32() {
-        let v = json!({"default": 99});
-        let s: Option<i32> = deserialize_json_object_default_to_i32(v.into_deserializer()).unwrap();
-        assert_eq!(s, Some(99));
-    }
-
-    #[test]
-    fn test_deserialize_json_object_default_to_bool() {
-        let v = json!({"default": false});
-        let s: Option<bool> =
-            deserialize_json_object_default_to_bool(v.into_deserializer()).unwrap();
-        assert_eq!(s, Some(false));
+    fn get_nested_as_logged<T: AsLogged>(&self, keys: &[&str]) -> Option<T> {
+        T::get_nested_as_logged(self, keys)
     }
 }

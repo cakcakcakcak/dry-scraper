@@ -6,7 +6,7 @@ use crate::api::cacheable::CacheableApi;
 use crate::models::nhl_franchise::NhlFranchise;
 use crate::models::nhl_season::NhlSeason;
 use crate::models::nhl_team::NhlTeam;
-use crate::serde_helpers::try_get;
+use crate::serde_helpers::JsonExt;
 use crate::sqlx_operation_with_retries;
 
 pub struct NhlStatsApi {
@@ -34,6 +34,7 @@ impl NhlStatsApi {
         }
     }
 
+    #[tracing::instrument(skip(pool))]
     pub async fn get_nhl_seasons(
         &self,
         pool: &sqlx::Pool<sqlx::Postgres>,
@@ -62,7 +63,11 @@ impl NhlStatsApi {
         let raw_json: serde_json::Value = serde_json::from_str(&raw_data)?;
 
         // retrieve the data field from the json
-        let data = try_get("data", &raw_json, &endpoint)?;
+        let Some(data) = raw_json.get_key_as_logged::<serde_json::Value>("data") else {
+            return Err(lp_error::LPError::ApiCustom(format!(
+                "Missing 'data' field in response from {endpoint}"
+            )));
+        };
 
         // parse data field into an array of nhl seasons
         let data_array = data.as_array().ok_or_else(|| {
@@ -104,6 +109,7 @@ impl NhlStatsApi {
         Ok(seasons)
     }
 
+    #[tracing::instrument(skip(pool))]
     pub async fn get_nhl_teams(
         &self,
         pool: &sqlx::Pool<sqlx::Postgres>,
@@ -129,7 +135,11 @@ impl NhlStatsApi {
         let raw_json: serde_json::Value = serde_json::from_str(&raw_data)?;
 
         // retrieve the data field from the json
-        let data = try_get("data", &raw_json, &endpoint)?;
+        let Some(data) = raw_json.get_key_as_logged::<serde_json::Value>("data") else {
+            return Err(lp_error::LPError::ApiCustom(format!(
+                "Missing 'data' field in response from {endpoint}"
+            )));
+        };
 
         // parse data field into an array of nhl teams
         let data_array = data.as_array().ok_or_else(|| {
@@ -171,6 +181,7 @@ impl NhlStatsApi {
         Ok(teams)
     }
 
+    #[tracing::instrument(skip(pool))]
     pub async fn get_nhl_franchises(
         &self,
         pool: &sqlx::Pool<sqlx::Postgres>,
@@ -199,7 +210,11 @@ impl NhlStatsApi {
         let raw_json: serde_json::Value = serde_json::from_str(&raw_data)?;
 
         // retrieve the data field from the json
-        let data = try_get("data", &raw_json, &endpoint)?;
+        let Some(data) = raw_json.get_key_as_logged::<serde_json::Value>("data") else {
+            return Err(lp_error::LPError::ApiCustom(format!(
+                "Missing 'data' field in response from {endpoint}"
+            )));
+        };
 
         // parse data field into an array of nhl franchises
         let data_array = data.as_array().ok_or_else(|| {

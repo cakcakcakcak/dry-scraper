@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
-use crate::serde_helpers::{deserialize_json_object_default_to_string, deserialize_to_bool};
+use crate::serde_helpers::{
+    deserialize_default_to_option_string, deserialize_default_to_string, deserialize_to_bool,
+};
 use crate::sqlx_operation_with_retries;
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -10,21 +12,21 @@ use crate::sqlx_operation_with_retries;
 pub struct NhlPlayer {
     #[serde(rename = "playerId")]
     pub id: i32,
+    #[serde(deserialize_with = "deserialize_default_to_string")]
+    pub first_name: String,
+    #[serde(deserialize_with = "deserialize_default_to_string")]
+    pub last_name: String,
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_to_bool")]
     pub is_active: bool,
     pub current_team_id: Option<i32>,
     pub current_team_abbrev: Option<String>,
-    #[serde(deserialize_with = "deserialize_json_object_default_to_string")]
+    #[serde(deserialize_with = "deserialize_default_to_option_string")]
     pub full_team_name: Option<String>,
-    #[serde(deserialize_with = "deserialize_json_object_default_to_string")]
+    #[serde(deserialize_with = "deserialize_default_to_option_string")]
     pub team_common_name: Option<String>,
-    #[serde(deserialize_with = "deserialize_json_object_default_to_string")]
+    #[serde(deserialize_with = "deserialize_default_to_option_string")]
     pub team_place_name_with_preposition: Option<String>,
-    #[serde(deserialize_with = "deserialize_json_object_default_to_string")]
-    pub first_name: Option<String>,
-    #[serde(deserialize_with = "deserialize_json_object_default_to_string")]
-    pub last_name: Option<String>,
     pub team_logo: String,
     pub sweater_number: i32,
     pub position: String,
@@ -34,11 +36,11 @@ pub struct NhlPlayer {
     pub height_in_centimeters: i32,
     pub weight_in_pounds: i32,
     pub weight_in_kilograms: i32,
-    pub birth_date: Option<chrono::NaiveDate>,
-    #[serde(deserialize_with = "deserialize_json_object_default_to_string")]
-    pub birth_city: Option<String>,
-    #[serde(deserialize_with = "deserialize_json_object_default_to_string")]
-    pub birth_state_province: Option<String>,
+    pub birth_date: chrono::NaiveDate,
+    #[serde(deserialize_with = "deserialize_default_to_string")]
+    pub birth_city: String,
+    #[serde(deserialize_with = "deserialize_default_to_string")]
+    pub birth_state_province: String,
     pub birth_country: String,
     pub shoots_catches: String,
     pub draft_year: Option<i32>,
@@ -62,14 +64,14 @@ impl NhlPlayer {
         sqlx_operation_with_retries! (
             sqlx::query(r#"INSERT INTO nhl_player (
                                         id,
+                                        first_name,
+                                        last_name,
                                         is_active,
                                         current_team_id,
                                         current_team_abbrev,
                                         full_team_name,
                                         team_common_name,
                                         team_place_name_with_preposition,
-                                        first_name,
-                                        last_name,
                                         team_logo,
                                         sweater_number,
                                         position,
@@ -100,14 +102,14 @@ impl NhlPlayer {
                                         $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,
                                         $31,$32,$33)
                                     ON CONFLICT (id) DO UPDATE SET
+                                        first_name = EXCLUDED.first_name,
+                                        last_name = EXCLUDED.last_name,
                                         is_active = EXCLUDED.is_active,
                                         current_team_id = EXCLUDED.current_team_id,
                                         current_team_abbrev = EXCLUDED.current_team_abbrev,
                                         full_team_name = EXCLUDED.full_team_name,
                                         team_common_name = EXCLUDED.team_common_name,
                                         team_place_name_with_preposition = EXCLUDED.team_place_name_with_preposition,
-                                        first_name = EXCLUDED.first_name,
-                                        last_name = EXCLUDED.last_name,
                                         team_logo = EXCLUDED.team_logo,
                                         sweater_number = EXCLUDED.sweater_number,
                                         position = EXCLUDED.position,
@@ -136,14 +138,14 @@ impl NhlPlayer {
                                     "#
             )
             .bind(&self.id)
+            .bind(&self.first_name)
+            .bind(&self.last_name)
             .bind(&self.is_active)
             .bind(&self.current_team_id)
             .bind(&self.current_team_abbrev)
             .bind(&self.full_team_name)
             .bind(&self.team_common_name)
             .bind(&self.team_place_name_with_preposition)
-            .bind(&self.first_name)
-            .bind(&self.last_name)
             .bind(&self.team_logo)
             .bind(&self.sweater_number)
             .bind(&self.position)

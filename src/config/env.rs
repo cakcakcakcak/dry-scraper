@@ -36,7 +36,7 @@ pub struct EnvironmentVariables {
     pub pg_user: String,
     pub pg_pass: String,
     pub max_db_connections: u32,
-    pub dev_mode: bool,
+    pub reset_db: bool,
     pub retry_jitter_duration_ms: u64,
     pub retries: usize,
 }
@@ -58,7 +58,7 @@ impl EnvironmentVariables {
                     );
                     DEFAULT_MAX_DB_CONNECTIONS}),
 
-            dev_mode: Self::get_environment_variable("DEV_MODE")
+            reset_db: Self::get_environment_variable("RESET_DB")
                 .unwrap_or_else(|_| "false".to_string()) == "true",
                 
             retry_jitter_duration_ms: Self::get_environment_variable("RETRY_JITTER_DURATION_MS")
@@ -111,7 +111,7 @@ mod tests {
             std::env::set_var("PG_USER", "pg_user");
             std::env::set_var("PG_PASS", "pg_pass");
             std::env::set_var("MAX_DB_CONNECTIONS", "5");
-            std::env::set_var("DEV_MODE", "true");
+            std::env::set_var("RESET_DB", "true");
             std::env::set_var("RETRY_JITTER_DURATION_MS", "100");
             std::env::set_var("RETRIES", "5");
         }
@@ -129,7 +129,7 @@ mod tests {
             std::env::remove_var("PG_USER");
             std::env::set_var("PG_PASS", "pg_pass");
             std::env::set_var("MAX_DB_CONNECTIONS", "5");
-            std::env::set_var("DEV_MODE", "true");
+            std::env::set_var("RESET_DB", "true");
             std::env::set_var("RETRY_JITTER_DURATION_MS", "100");
             std::env::set_var("RETRIES", "5");
         }
@@ -147,7 +147,7 @@ mod tests {
             std::env::set_var("PG_USER", "pg_user");
             std::env::remove_var("PG_PASS");
             std::env::set_var("MAX_DB_CONNECTIONS", "5");
-            std::env::set_var("DEV_MODE", "true");
+            std::env::set_var("RESET_DB", "true");
             std::env::set_var("RETRY_JITTER_DURATION_MS", "100");
             std::env::set_var("RETRIES", "5");
         }
@@ -165,7 +165,7 @@ mod tests {
             std::env::set_var("PG_USER", "pg_user");
             std::env::set_var("PG_PASS", "pg_pass");
             std::env::remove_var("MAX_DB_CONNECTIONS");
-            std::env::set_var("DEV_MODE", "true");
+            std::env::set_var("RESET_DB", "true");
             std::env::set_var("RETRY_JITTER_DURATION_MS", "100");
             std::env::set_var("RETRIES", "5");
         }
@@ -181,7 +181,7 @@ mod tests {
             std::env::set_var("PG_USER", "pg_user");
             std::env::set_var("PG_PASS", "pg_pass");
             std::env::set_var("MAX_DB_CONNECTIONS", "notanumber");
-            std::env::set_var("DEV_MODE", "true");
+            std::env::set_var("RESET_DB", "true");
             std::env::set_var("RETRY_JITTER_DURATION_MS", "100");
             std::env::set_var("RETRIES", "5");
         }
@@ -191,19 +191,19 @@ mod tests {
     }
 
     #[test]
-    fn test_env_var_missing_dev_mode() {
+    fn test_env_var_missing_reset_db() {
         unsafe {
             std::env::set_var("PG_HOST", "pg_host");
             std::env::set_var("PG_USER", "pg_user");
             std::env::set_var("PG_PASS", "pg_pass");
             std::env::set_var("MAX_DB_CONNECTIONS", "5");
-            std::env::remove_var("DEV_MODE");
+            std::env::remove_var("RESET_DB");
             std::env::set_var("RETRY_JITTER_DURATION_MS", "100");
             std::env::set_var("RETRIES", "5");
         }
 
         let env = EnvironmentVariables::from_env().unwrap();
-        assert!(!env.dev_mode);
+        assert!(!env.reset_db);
     }
 
     #[test]
@@ -213,13 +213,13 @@ mod tests {
             std::env::set_var("PG_USER", "pg_user");
             std::env::set_var("PG_PASS", "pg_pass");
             std::env::set_var("MAX_DB_CONNECTIONS", "5");
-            std::env::set_var("DEV_MODE", "nottrueorfalse");
+            std::env::set_var("RESET_DB", "nottrueorfalse");
             std::env::set_var("RETRY_JITTER_DURATION_MS", "100");
             std::env::set_var("RETRIES", "5");
         }
 
         let env = EnvironmentVariables::from_env().unwrap();
-        assert!(!env.dev_mode);
+        assert!(!env.reset_db);
     }
 
     #[test]
@@ -229,7 +229,7 @@ mod tests {
             std::env::set_var("PG_USER", "pg_user");
             std::env::set_var("PG_PASS", "pg_pass");
             std::env::set_var("MAX_DB_CONNECTIONS", "5");
-            std::env::set_var("DEV_MODE", "true");
+            std::env::set_var("RESET_DB", "true");
             std::env::remove_var("RETRY_JITTER_DURATION_MS");
             std::env::set_var("RETRIES", "5");
         }
@@ -245,7 +245,7 @@ mod tests {
             std::env::set_var("PG_USER", "pg_user");
             std::env::set_var("PG_PASS", "pg_pass");
             std::env::set_var("MAX_DB_CONNECTIONS", "5");
-            std::env::set_var("DEV_MODE", "true");
+            std::env::set_var("RESET_DB", "true");
             std::env::set_var("RETRY_JITTER_DURATION_MS", "100");
             std::env::set_var("RETRIES", "5");
         }
@@ -261,7 +261,7 @@ mod tests {
             std::env::set_var("PG_USER", "pg_user");
             std::env::set_var("PG_PASS", "pg_pass");
             std::env::set_var("MAX_DB_CONNECTIONS", "5");
-            std::env::set_var("DEV_MODE", "true");
+            std::env::set_var("RESET_DB", "true");
             std::env::set_var("RETRY_JITTER_DURATION_MS", "100");
             std::env::remove_var("RETRIES");
         }
@@ -277,7 +277,7 @@ mod tests {
             std::env::set_var("PG_USER", "pg_user");
             std::env::set_var("PG_PASS", "pg_pass");
             std::env::set_var("MAX_DB_CONNECTIONS", "5");
-            std::env::set_var("DEV_MODE", "true");
+            std::env::set_var("RESET_DB", "true");
             std::env::set_var("RETRY_JITTER_DURATION_MS", "100");
             std::env::set_var("RETRIES", "notanumber");
         }

@@ -55,10 +55,22 @@ pub async fn init_db() -> Result<sqlx::Pool<sqlx::Postgres>, LPError> {
     )
     .await?;
 
-    if ENVIRONMENT_VARIABLES.dev_mode {
-        tracing::warn!("DEV_MODE enabled: dropping tables for clean state");
+    if ENVIRONMENT_VARIABLES.reset_db {
+        tracing::warn!("RESET_DB enabled: dropping tables and enums for clean state");
         sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations")
+            sqlx::query("DROP TABLE IF EXISTS nhl_game")
+                .execute(&pool)
+                .await
+        )
+        .await?;
+        sqlx_operation_with_retries!(
+            sqlx::query("DROP TYPE IF EXISTS game_type")
+                .execute(&pool)
+                .await
+        )
+        .await?;
+        sqlx_operation_with_retries!(
+            sqlx::query("DROP TYPE IF EXISTS period_type")
                 .execute(&pool)
                 .await
         )
@@ -87,13 +99,19 @@ pub async fn init_db() -> Result<sqlx::Pool<sqlx::Postgres>, LPError> {
                 .await
         )
         .await?;
+        sqlx_operation_with_retries!(
+            sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations")
+                .execute(&pool)
+                .await
+        )
+        .await?;
         // sqlx_operation_with_retries!(
         //     sqlx::query("DROP TABLE IF EXISTS api_cache")
         //         .execute(&pool)
         //         .await
         // )
         // .await?;
-        tracing::info!("Dropped tables in DEV_MODE");
+        tracing::info!("Dropped tables in RESET_DB");
     }
 
     // run migrations

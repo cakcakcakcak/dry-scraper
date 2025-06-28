@@ -34,5 +34,6 @@ async fn main() -> Result<(), LPError> {
     NhlStatsApi::new().get_nhl_teams(&pool).await?;
 
     NhlWebApi::new().get_nhl_player(&pool, 8475184).await?;
+    NhlWebApi::new().get_nhl_game(&pool, 1963020025).await?;
     Ok(())
 }
