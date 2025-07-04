@@ -130,23 +130,27 @@ pub trait AsLogged: Sized {
         match value.get(&key) {
             Some(v) => v.as_logged::<Self>(),
             None => {
-                tracing::warn!("Key `{key}` not found in json object: {value:?}");
+                tracing::debug!("Key `{key}` not found in json object: {value:?}");
                 None
             }
         }
     }
     fn get_nested_as_logged(value: &serde_json::Value, keys: &[&str]) -> Option<Self> {
-        let mut current = value;
-        for &key in keys {
-            current = match current.get(key) {
-                Some(v) => v,
-                None => {
-                    tracing::warn!("Key `{key}` not found in json object: {current:?}");
-                    return None;
-                }
-            }
-        }
-        Self::as_logged(current)
+        let current = keys.iter().try_fold(value, |current, &key| {
+            current.get(key).or_else(|| {
+                tracing::debug!("Key `{key}` not found in json object: {current:?}");
+                None
+            })
+        });
+        current.and_then(Self::as_logged)
+    }
+    fn as_logged_any<S, T>(source: S) -> Option<T>
+    where
+        S: Into<serde_json::Value>,
+        T: AsLogged,
+    {
+        let value = source.into();
+        T::as_logged(&value)
     }
 }
 impl AsLogged for serde_json::Value {
@@ -164,7 +168,7 @@ impl AsLogged for String {
             Value::Null => Some(String::new()),
             serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
                 let s = value.to_string();
-                tracing::warn!("Converting complex JSON value to string: {}", s);
+                tracing::debug!("Converting complex JSON value to string: {}", s);
                 Some(s)
             }
         }
@@ -179,25 +183,25 @@ impl AsLogged for i32 {
             Value::Bool(false) => Some(0),
             Value::Number(n) => n.as_i64().and_then(|v| {
                 i32::try_from(v).ok().or_else(|| {
-                    tracing::warn!("Number out of range for i32: {n}");
+                    tracing::debug!("Number out of range for i32: {n}");
                     None
                 })
             }),
             Value::String(s) => match s.parse::<i32>() {
                 Ok(n) => Some(n),
                 Err(e) => {
-                    tracing::warn!("Could not parse string `{s}` as i32: {e}");
+                    tracing::debug!("Could not parse string `{s}` as i32: {e}");
                     None
                 }
             },
             Value::Null => {
-                tracing::warn!(
+                tracing::debug!(
                     "value_to_i32: unexpected value `serde_json::Value::Null`, converting to `0`."
                 );
                 Some(0)
             }
             other => {
-                tracing::warn!("Unable to meaningfully deserialize value {other} to `i32`");
+                tracing::debug!("Unable to meaningfully deserialize value {other} to `i32`");
                 None
             }
         }
@@ -215,20 +219,20 @@ impl AsLogged for bool {
             Value::Number(n) => {
                 let number_val = n.as_i64();
                 if number_val != Some(0) && number_val != Some(1) {
-                    tracing::warn!(
+                    tracing::debug!(
                         "int_to_bool: unexpected value {n} (expected 0 or 1), converting to `true`."
                     );
                 }
                 Some(number_val != Some(0))
             }
             Value::Null => {
-                tracing::warn!(
+                tracing::debug!(
                     "value_to_bool: unexpected value `serde_json::Value::Null`, converting to `false`."
                 );
                 Some(false)
             }
             other => {
-                tracing::warn!(
+                tracing::debug!(
                     "value_to_bool: unable to meaningfully convert value {other} to bool"
                 );
                 None
@@ -256,6 +260,13 @@ pub trait JsonExt {
     }
     fn get_nested_as_string(&self, keys: &[&str]) -> Option<String> {
         self.get_nested_as_logged::<String>(keys)
+    }
+    fn as_logged_any<T: AsLogged>(&self) -> Option<T>
+    where
+        Self: Sized + Clone + Into<serde_json::Value>,
+    {
+        let value: serde_json::Value = self.clone().into();
+        T::as_logged(&value)
     }
 }
 

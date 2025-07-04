@@ -58,6 +58,12 @@ pub async fn init_db() -> Result<sqlx::Pool<sqlx::Postgres>, LPError> {
     if ENVIRONMENT_VARIABLES.reset_db {
         tracing::warn!("RESET_DB enabled: dropping tables and enums for clean state");
         sqlx_operation_with_retries!(
+            sqlx::query("DROP TABLE IF EXISTS nhl_playoff_series")
+                .execute(&pool)
+                .await
+        )
+        .await?;
+        sqlx_operation_with_retries!(
             sqlx::query("DROP TABLE IF EXISTS nhl_game")
                 .execute(&pool)
                 .await

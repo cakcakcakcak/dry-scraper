@@ -8,16 +8,3 @@ pub enum GameType {
     RegularSeason,
     Playoffs,
 }
-impl GameType {
-    fn from_str(n: i32) -> Option<GameType> {
-        match n {
-            1 => Some(crate::models::game_type::GameType::Preseason),
-            2 => Some(crate::models::game_type::GameType::RegularSeason),
-            3 => Some(crate::models::game_type::GameType::Playoffs),
-            n => {
-                tracing::warn!("Encountered unexpected value {n} when accessing `GameType`");
-                None
-            }
-        }
-    }
-}

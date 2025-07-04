@@ -21,7 +21,7 @@ pub trait CacheableApi: std::fmt::Debug {
         tracing::info!("Querying api_cache for the endpoint we seek...");
         match sqlx_operation_with_retries!(
             sqlx::query("SELECT raw_data from api_cache WHERE endpoint = $1")
-                .bind(endpoint)
+                .bind(&endpoint)
                 .fetch_optional(pool)
                 .await
         )
@@ -36,7 +36,7 @@ pub trait CacheableApi: std::fmt::Debug {
                     }
                     Err(e) => {
                         tracing::warn!(
-                            endpoint = %endpoint,
+                            endpoint = %&endpoint,
                             error = %e,
                             "Cached record for endpoint is unusable. Attempting to refresh from API..."
                         );
@@ -72,7 +72,7 @@ pub trait CacheableApi: std::fmt::Debug {
         sqlx_operation_with_retries!(
             sqlx::query(r#"INSERT INTO api_cache (endpoint, raw_data) VALUES ($1, $2)
                 ON CONFLICT (endpoint) DO UPDATE SET raw_data = EXCLUDED.raw_data, last_updated = now()"#)
-                .bind(endpoint)
+                .bind(&endpoint)
                 .bind(&raw_data)
                 .execute(pool)
                 .await
