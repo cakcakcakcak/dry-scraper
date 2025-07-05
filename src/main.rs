@@ -1,3 +1,4 @@
+use clap::Parser;
 use tokio;
 use tracing_subscriber;
 
@@ -9,21 +10,25 @@ mod models;
 mod serde_helpers;
 mod util;
 
+use config::CONFIG;
+
 use api::nhl_stats_api::NhlStatsApi;
 use api::nhl_web_api::NhlWebApi;
-use config::env::ENVIRONMENT_VARIABLES;
 use db::init::init_db;
 use lp_error::LPError;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), LPError> {
-    // validate environment variables and initialize a static ENVIRONMENT_VARIABLES struct
-    _ = &*ENVIRONMENT_VARIABLES;
+    // load the .env file into the environment variables, if it exists
+    dotenvy::dotenv();
 
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_env("LOG_LEVEL"))
         .init();
+
+    // validate command line arguments and environment variables and initialize a static CONFIG struct
+    _ = &*CONFIG;
 
     // initialize the lp database and return the pool of connections with which all db queries
     // will be made

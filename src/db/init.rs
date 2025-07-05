@@ -6,7 +6,7 @@ use tracing::instrument;
 use tokio_retry::RetryIf;
 
 use crate::LPError;
-use crate::config::env::ENVIRONMENT_VARIABLES;
+use crate::config::CONFIG;
 use crate::sqlx_operation_with_retries;
 use crate::util::{default_retry_strategy, is_transient_sqlx_error};
 
@@ -30,14 +30,14 @@ pub async fn init_db() -> Result<sqlx::Pool<sqlx::Postgres>, LPError> {
 
     // create a connection pool of `max_db_connections`, with retry strategy
     tracing::info!(
-        max_db_connections = ENVIRONMENT_VARIABLES.max_db_connections,
+        max_db_connections = CONFIG.max_db_connections,
         "Creating connection pool"
     );
     let pool = RetryIf::spawn(
         default_retry_strategy(),
         || async {
             PgPoolOptions::new()
-                .max_connections(ENVIRONMENT_VARIABLES.max_db_connections)
+                .max_connections(CONFIG.max_db_connections)
                 .connect(&db_url)
                 .await
         },
@@ -55,7 +55,7 @@ pub async fn init_db() -> Result<sqlx::Pool<sqlx::Postgres>, LPError> {
     )
     .await?;
 
-    if ENVIRONMENT_VARIABLES.reset_db {
+    if CONFIG.reset_db {
         tracing::warn!("RESET_DB enabled: dropping tables and enums for clean state");
         sqlx_operation_with_retries!(
             sqlx::query("DROP TABLE IF EXISTS nhl_playoff_series")
@@ -129,9 +129,9 @@ pub async fn init_db() -> Result<sqlx::Pool<sqlx::Postgres>, LPError> {
 }
 
 fn database_url() -> Result<String, LPError> {
-    let pg_host = &ENVIRONMENT_VARIABLES.pg_host;
-    let pg_user = &*ENVIRONMENT_VARIABLES.pg_user;
-    let pg_pass = &*ENVIRONMENT_VARIABLES.pg_pass;
+    let pg_host = &*CONFIG.pg_host;
+    let pg_user = &*CONFIG.pg_user;
+    let pg_pass = &*CONFIG.pg_pass;
 
     Ok(format!("postgres://{pg_user}:{pg_pass}@{pg_host}/lp"))
 }

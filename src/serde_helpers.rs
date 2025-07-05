@@ -195,9 +195,7 @@ impl AsLogged for i32 {
                 }
             },
             Value::Null => {
-                tracing::debug!(
-                    "value_to_i32: unexpected value `serde_json::Value::Null`, converting to `0`."
-                );
+                tracing::debug!("Unexpected value `serde_json::Value::Null`, converting to `0`.");
                 Some(0)
             }
             other => {
@@ -220,21 +218,19 @@ impl AsLogged for bool {
                 let number_val = n.as_i64();
                 if number_val != Some(0) && number_val != Some(1) {
                     tracing::debug!(
-                        "int_to_bool: unexpected value {n} (expected 0 or 1), converting to `true`."
+                        "Unexpected value {n} (expected 0 or 1), converting to `true`."
                     );
                 }
                 Some(number_val != Some(0))
             }
             Value::Null => {
                 tracing::debug!(
-                    "value_to_bool: unexpected value `serde_json::Value::Null`, converting to `false`."
+                    "Unexpected value `serde_json::Value::Null`, converting to `false`."
                 );
                 Some(false)
             }
             other => {
-                tracing::debug!(
-                    "value_to_bool: unable to meaningfully convert value {other} to bool"
-                );
+                tracing::debug!("Unable to meaningfully convert value {other} to bool");
                 None
             }
         }

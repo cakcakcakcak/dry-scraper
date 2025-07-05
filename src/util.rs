@@ -1,7 +1,7 @@
 use tokio_retry::RetryIf;
 use tokio_retry::strategy::{ExponentialBackoff, jitter};
 
-use crate::config::env::ENVIRONMENT_VARIABLES;
+use crate::config::CONFIG;
 
 #[macro_export]
 macro_rules! sqlx_operation_with_retries {
@@ -18,9 +18,9 @@ macro_rules! reqwest_with_retries {
 }
 
 pub fn default_retry_strategy() -> impl Iterator<Item = std::time::Duration> {
-    ExponentialBackoff::from_millis(ENVIRONMENT_VARIABLES.retry_jitter_duration_ms)
+    ExponentialBackoff::from_millis(CONFIG.retry_jitter_duration_ms)
         .map(jitter)
-        .take(ENVIRONMENT_VARIABLES.retries)
+        .take(CONFIG.retries)
 }
 
 pub fn is_transient_sqlx_error(e: &sqlx::Error) -> bool {
