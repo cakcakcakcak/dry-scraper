@@ -38,6 +38,7 @@ impl NhlWebApi {
     #[tracing::instrument(skip(pool))]
     pub async fn get_nhl_player(
         &self,
+        nhl_stats_api: &NhlStatsApi,
         pool: &sqlx::Pool<sqlx::Postgres>,
         player_id: i32,
     ) -> Result<NhlPlayer, lp_error::LPError> {
@@ -81,7 +82,7 @@ impl NhlWebApi {
         player.api_cache_endpoint = Some(endpoint.clone());
 
         tracing::debug!("Upserting player with ID {player_id} into lp database.");
-        player.upsert(&pool).await?;
+        player.upsert(nhl_stats_api, &pool).await?;
         tracing::debug!("Upserted player with ID {player_id} into lp database.");
 
         Ok(player)
@@ -90,6 +91,7 @@ impl NhlWebApi {
     #[tracing::instrument(skip(pool))]
     pub async fn get_nhl_game(
         &self,
+        nhl_stats_api: &NhlStatsApi,
         pool: &sqlx::Pool<sqlx::Postgres>,
         game_id: i32,
     ) -> Result<NhlGame, lp_error::LPError> {
@@ -161,14 +163,21 @@ impl NhlWebApi {
         game.api_cache_endpoint = Some(endpoint.clone());
 
         tracing::debug!("Upserting game with ID {game_id} into lp database.");
-        game.upsert(&pool).await?;
+        game.upsert(nhl_stats_api, &pool).await?;
         tracing::debug!("Upserted game with ID {game_id} into lp database.");
 
         Ok(game)
     }
+
+    fn year_to_season_id(year: &str) -> i32 {
+        let end_year: i32 = year.parse().expect("Year must be a valid integer string");
+        (end_year - 1) * 10000 + end_year
+    }
+
     #[tracing::instrument(skip(pool))]
     pub async fn get_nhl_playoff_series(
         &self,
+        nhl_stats_api: &NhlStatsApi,
         pool: &sqlx::Pool<sqlx::Postgres>,
     ) -> Result<Vec<NhlPlayoffSeries>, lp_error::LPError> {
         // query nhl_playoff_series database to see if the desired data is already present
@@ -243,7 +252,7 @@ impl NhlWebApi {
 
         struct BracketContext {
             bracket: NhlPlayoffBracket,
-            year: i32,
+            season_id: i32,
             endpoint: String,
             json: serde_json::Value,
         }
@@ -255,7 +264,7 @@ impl NhlWebApi {
             .zip(bracket_jsons)
             .map(|(((bracket, year), endpoint), json)| BracketContext {
                 bracket,
-                year: year.parse::<i32>().unwrap(),
+                season_id: Self::year_to_season_id(&year),
                 endpoint,
                 json: serde_json::from_str(&json).unwrap(),
             })
@@ -275,7 +284,7 @@ impl NhlWebApi {
                     .into_iter()
                     .zip(series_json_array)
                     .filter_map(move |(mut series, series_json)| {
-                        series.year = Some(context.year);
+                        series.season_id = Some(context.season_id);
                         series.raw_json = Some(series_json.clone());
                         series.api_cache_endpoint = Some(context.endpoint.clone());
 
@@ -307,7 +316,7 @@ impl NhlWebApi {
                             }
                             None => tracing::warn!(
                                 "Failed to parse topSeedTeam for {} bracket, series {}",
-                                context.year,
+                                context.season_id,
                                 series.series_letter
                             ),
                         }
@@ -342,7 +351,7 @@ impl NhlWebApi {
                             }
                             None => tracing::warn!(
                                 "Failed to parse bottomSeedTeam for {} bracket, series {}",
-                                context.year,
+                                context.season_id,
                                 series.series_letter
                             ),
                         }
@@ -352,25 +361,9 @@ impl NhlWebApi {
             })
             .collect();
 
-        let all_team_ids: std::collections::HashSet<i32> = all_series
+        let upserts = all_series
             .iter()
-            .flat_map(|series| [series.top_seed_team_id, series.bottom_seed_team_id])
-            .flatten()
-            .collect();
-        let existing_team_ids: std::collections::HashSet<i32> =
-            sqlx::query_scalar("SELECT id FROM nhl_team WHERE id = ANY($1)")
-                .bind(&all_team_ids.iter().collect::<Vec<_>>())
-                .fetch_all(pool)
-                .await?
-                .into_iter()
-                .collect();
-        let missing_team_ids = all_team_ids.difference(&existing_team_ids);
-
-        for team_id in missing_team_ids {
-            NhlStatsApi::new().get_nhl_team(&pool, *team_id).await?;
-        }
-
-        let upserts = all_series.iter().map(|series| series.upsert(&pool));
+            .map(|series| series.upsert(nhl_stats_api, &pool));
         let upsert_results = join_all(upserts).await;
 
         // log any failed upserts
@@ -380,7 +373,7 @@ impl NhlWebApi {
             .for_each(|(series, result)| {
                 if let Err(e) = result {
                     tracing::warn!(
-                        year = series.year,
+                        year = series.season_id,
                         series_letter = series.series_letter,
                         error = ?e,
                         "Failed to upsert NHL playoff series"

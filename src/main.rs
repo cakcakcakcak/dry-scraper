@@ -21,8 +21,9 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> Result<(), LPError> {
     // load the .env file into the environment variables, if it exists
-    dotenvy::dotenv();
+    _ = dotenvy::dotenv();
 
+    // initialize logging with the level indicated by environment variable
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_env("LOG_LEVEL"))
         .init();
@@ -34,9 +35,14 @@ async fn main() -> Result<(), LPError> {
     // will be made
     let pool = init_db().await?;
 
-    NhlStatsApi::new().get_nhl_seasons(&pool).await?;
-    NhlStatsApi::new().get_nhl_franchises(&pool).await?;
-    NhlStatsApi::new().get_nhl_teams(&pool).await?;
-    NhlWebApi::new().get_nhl_playoff_series(&pool).await?;
+    let nhl_stats_api = NhlStatsApi::new();
+    nhl_stats_api.get_nhl_seasons(&pool).await?;
+    nhl_stats_api.get_nhl_franchises(&pool).await?;
+    nhl_stats_api.get_nhl_teams(&pool).await?;
+
+    let nhl_web_api = NhlWebApi::new();
+    nhl_web_api
+        .get_nhl_playoff_series(&nhl_stats_api, &pool)
+        .await?;
     Ok(())
 }

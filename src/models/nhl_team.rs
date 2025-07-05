@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
+use crate::api::cacheable::CacheableApi;
+use crate::api::nhl_stats_api::NhlStatsApi;
+use crate::lp_error::LPError;
 use crate::sqlx_operation_with_retries;
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -19,7 +22,29 @@ pub struct NhlTeam {
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl NhlTeam {
-    pub async fn upsert(&self, pool: &sqlx::Pool<sqlx::Postgres>) -> Result<(), sqlx::Error> {
+    pub async fn verify_relationships(
+        &self,
+        nhl_stats_api: &NhlStatsApi,
+        pool: &sqlx::Pool<sqlx::Postgres>,
+    ) -> Result<(), LPError> {
+        if let Some(endpoint) = &self.api_cache_endpoint {
+            let _ = nhl_stats_api.get_or_cache_endpoint(pool, endpoint).await?;
+        }
+        if let Some(franchise_id) = self.franchise_id {
+            let _ = nhl_stats_api.get_nhl_franchise(pool, franchise_id).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn upsert(
+        &self,
+        nhl_stats_api: &NhlStatsApi,
+        pool: &sqlx::Pool<sqlx::Postgres>,
+    ) -> Result<(), LPError> {
+        match self.verify_relationships(nhl_stats_api, pool).await {
+            Ok(_) => (),
+            Err(e) => return Err(e),
+        };
         sqlx_operation_with_retries!(
             sqlx::query(
                 r#"INSERT INTO nhl_team (

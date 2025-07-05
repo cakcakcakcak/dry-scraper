@@ -111,12 +111,6 @@ pub async fn init_db() -> Result<sqlx::Pool<sqlx::Postgres>, LPError> {
                 .await
         )
         .await?;
-        // sqlx_operation_with_retries!(
-        //     sqlx::query("DROP TABLE IF EXISTS api_cache")
-        //         .execute(&pool)
-        //         .await
-        // )
-        // .await?;
         tracing::info!("Dropped tables in RESET_DB");
     }
 

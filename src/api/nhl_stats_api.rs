@@ -35,6 +35,33 @@ impl NhlStatsApi {
     }
 
     #[tracing::instrument(skip(pool))]
+    pub async fn get_nhl_season(
+        &self,
+        pool: &sqlx::Pool<sqlx::Postgres>,
+        id: i32,
+    ) -> Result<NhlSeason, lp_error::LPError> {
+        // query nhl_franchise database to see if the desired data is already present
+        let season: Option<NhlSeason> = sqlx_operation_with_retries!(
+            sqlx::query_as::<sqlx::Postgres, NhlSeason>("SELECT * FROM nhl_season WHERE id = $1")
+                .bind(id)
+                .fetch_optional(pool)
+                .await
+        )
+        .await?;
+        if season.is_some() {
+            tracing::debug!("NHL season {id} found in lp database.");
+            return Ok(season.unwrap());
+        } else {
+            tracing::warn!("NHL season {id} not found.");
+        }
+        let seasons = self.get_nhl_seasons(pool).await?;
+        seasons
+            .into_iter()
+            .find(|season| season.id == id)
+            .ok_or_else(|| lp_error::LPError::ApiCustom(format!("NHL season {id} not found.")))
+    }
+
+    #[tracing::instrument(skip(pool))]
     pub async fn get_nhl_seasons(
         &self,
         pool: &sqlx::Pool<sqlx::Postgres>,
@@ -89,7 +116,7 @@ impl NhlStatsApi {
 
         // build the upsert futures, run them concurrently, and propagate any errors
         tracing::info!("Upserting seasons into database...");
-        let upserts = seasons.iter().map(|season| season.upsert(&pool));
+        let upserts = seasons.iter().map(|season| season.upsert(self, &pool));
         let upsert_results = join_all(upserts).await;
 
         // log any failed seasons
@@ -163,7 +190,7 @@ impl NhlStatsApi {
 
         // build the upsert futures, run them concurrently, and propagate any errors
         tracing::info!("Upserting teams into database...");
-        let upserts = teams.iter().map(|team| team.upsert(&pool));
+        let upserts = teams.iter().map(|team| team.upsert(self, &pool));
         let upsert_results = join_all(upserts).await;
 
         // log any failed teams
@@ -240,7 +267,7 @@ impl NhlStatsApi {
 
         // build the upsert futures, run them concurrently, and propagate any errors
         tracing::info!("Upserting team into database...");
-        match team.upsert(&pool).await {
+        match team.upsert(self, &pool).await {
             Ok(_) => (),
             Err(e) => tracing::warn!(team = ?team, "Failed to upsert NHL team: {e}"),
         }
@@ -248,6 +275,32 @@ impl NhlStatsApi {
         tracing::info!("Upserted NHL team with id {team_id} into database. Now returning it.");
 
         Ok(team)
+    }
+
+    #[tracing::instrument(skip(pool))]
+    pub async fn get_nhl_franchise(
+        &self,
+        pool: &sqlx::Pool<sqlx::Postgres>,
+        id: i32,
+    ) -> Result<NhlFranchise, lp_error::LPError> {
+        // query nhl_franchise database to see if the desired data is already present
+        let franchise: Option<NhlFranchise> = sqlx_operation_with_retries!(
+            sqlx::query_as::<sqlx::Postgres, NhlFranchise>(
+                "SELECT * FROM nhl_franchise WHERE id = $1"
+            )
+            .bind(id)
+            .fetch_optional(pool)
+            .await
+        )
+        .await?;
+        if franchise.is_some() {
+            tracing::debug!("NHL franchise with ID {id} found in lp database.");
+            return Ok(franchise.unwrap());
+        } else {
+            Err(lp_error::LPError::ApiCustom(format!(
+                "NHL franchise with ID {id} not found."
+            )))
+        }
     }
 
     #[tracing::instrument(skip(pool))]
@@ -303,7 +356,9 @@ impl NhlStatsApi {
 
         // build the upsert futures, run them concurrently, and propagate any errors
         tracing::info!("Upserting franchise into database...");
-        let upserts = franchises.iter().map(|franchise| franchise.upsert(&pool));
+        let upserts = franchises
+            .iter()
+            .map(|franchise| franchise.upsert(self, &pool));
         let upsert_results = join_all(upserts).await;
 
         // log any failed franchises

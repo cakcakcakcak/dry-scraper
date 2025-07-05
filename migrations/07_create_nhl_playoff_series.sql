@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS nhl_playoff_series (
-    year INTEGER NOT NULL,
+    season_id INTEGER NOT NULL REFERENCES nhl_season (id),
     series_letter CHAR(1) NOT NULL,
     series_url TEXT NOT NULL,
     series_title TEXT NOT NULL,
@@ -30,5 +30,5 @@ CREATE TABLE IF NOT EXISTS nhl_playoff_series (
     raw_json JSONB NOT NULL,
     api_cache_endpoint TEXT NOT NULL REFERENCES api_cache (endpoint),
     last_updated TIMESTAMP DEFAULT now(),
-    PRIMARY KEY (year, series_letter)
+    PRIMARY KEY (season_id, series_letter)
 )

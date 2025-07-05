@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+use crate::api::cacheable::CacheableApi;
+use crate::api::nhl_stats_api::NhlStatsApi;
+use crate::api::nhl_web_api::NhlWebApi;
+use crate::lp_error::LPError;
 use crate::sqlx_operation_with_retries;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -14,7 +18,7 @@ pub struct NhlPlayoffBracket {
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct NhlPlayoffSeries {
-    pub year: Option<i32>,
+    pub season_id: Option<i32>,
     pub series_letter: String,
     pub series_url: String,
     pub series_title: String,
@@ -47,10 +51,46 @@ pub struct NhlPlayoffSeries {
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl NhlPlayoffSeries {
-    pub async fn upsert(&self, pool: &sqlx::Pool<sqlx::Postgres>) -> Result<(), sqlx::Error> {
+    pub async fn verify_relationships(
+        &self,
+        nhl_stats_api: &NhlStatsApi,
+        pool: &sqlx::Pool<sqlx::Postgres>,
+    ) -> Result<(), LPError> {
+        let _ = nhl_stats_api
+            .get_nhl_season(pool, self.season_id.unwrap())
+            .await?;
+        if let Some(winning_team_id) = self.winning_team_id {
+            let _ = nhl_stats_api.get_nhl_team(pool, winning_team_id).await?;
+        }
+        if let Some(losing_team_id) = self.losing_team_id {
+            let _ = nhl_stats_api.get_nhl_team(pool, losing_team_id).await?;
+        }
+        if let Some(top_seed_team_id) = self.top_seed_team_id {
+            let _ = nhl_stats_api.get_nhl_team(pool, top_seed_team_id).await?;
+        }
+        if let Some(bottom_seed_team_id) = self.bottom_seed_team_id {
+            let _ = nhl_stats_api
+                .get_nhl_team(pool, bottom_seed_team_id)
+                .await?;
+        }
+        if let Some(endpoint) = &self.api_cache_endpoint {
+            let _ = nhl_stats_api.get_or_cache_endpoint(pool, endpoint).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn upsert(
+        &self,
+        nhl_stats_api: &NhlStatsApi,
+        pool: &sqlx::Pool<sqlx::Postgres>,
+    ) -> Result<(), LPError> {
+        match self.verify_relationships(nhl_stats_api, pool).await {
+            Ok(_) => (),
+            Err(e) => return Err(e),
+        };
         sqlx_operation_with_retries! (
             sqlx::query(r#"INSERT INTO nhl_playoff_series (
-                                        year,
+                                        season_id,
                                         series_letter,
                                         series_url,
                                         series_title,
@@ -84,7 +124,7 @@ impl NhlPlayoffSeries {
                                         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
                                         $11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
                                         $21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
-                                    ON CONFLICT (year, series_letter) DO UPDATE SET
+                                    ON CONFLICT (season_id, series_letter) DO UPDATE SET
                                         series_url = EXCLUDED.series_url,
                                         series_title = EXCLUDED.series_title,
                                         series_abbreviation = EXCLUDED.series_abbreviation,
@@ -116,7 +156,7 @@ impl NhlPlayoffSeries {
                                         last_updated = now()
                                     "#
             )
-            .bind(&self.year)
+            .bind(&self.season_id)
             .bind(&self.series_letter)
             .bind(&self.series_url)
             .bind(&self.series_title)

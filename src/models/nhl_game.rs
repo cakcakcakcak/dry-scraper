@@ -3,6 +3,10 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
+use crate::api::cacheable::CacheableApi;
+use crate::api::nhl_stats_api::NhlStatsApi;
+use crate::api::nhl_web_api::NhlWebApi;
+use crate::lp_error::LPError;
 use crate::models::game_type::GameType;
 use crate::models::period_type::PeriodType;
 use crate::serde_helpers::deserialize_default_to_string;
@@ -58,7 +62,33 @@ pub struct NhlGame {
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl NhlGame {
-    pub async fn upsert(&self, pool: &sqlx::Pool<sqlx::Postgres>) -> Result<(), sqlx::Error> {
+    pub async fn verify_relationships(
+        &self,
+        nhl_stats_api: &NhlStatsApi,
+        pool: &sqlx::Pool<sqlx::Postgres>,
+    ) -> Result<(), LPError> {
+        let _ = nhl_stats_api.get_nhl_season(pool, self.season).await?;
+        if let Some(away_team_id) = self.away_team_id {
+            let _ = nhl_stats_api.get_nhl_team(pool, away_team_id).await?;
+        }
+        if let Some(home_team_id) = self.home_team_id {
+            let _ = nhl_stats_api.get_nhl_team(pool, home_team_id).await?;
+        }
+        if let Some(endpoint) = &self.api_cache_endpoint {
+            let _ = nhl_stats_api.get_or_cache_endpoint(pool, endpoint).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn upsert(
+        &self,
+        nhl_stats_api: &NhlStatsApi,
+        pool: &sqlx::Pool<sqlx::Postgres>,
+    ) -> Result<(), LPError> {
+        match self.verify_relationships(nhl_stats_api, pool).await {
+            Ok(_) => (),
+            Err(e) => return Err(e),
+        };
         sqlx_operation_with_retries! (
             sqlx::query(r#"INSERT INTO nhl_game (
                                         id,

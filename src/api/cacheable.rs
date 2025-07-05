@@ -3,6 +3,7 @@ use sqlx::Row;
 use tracing::instrument;
 
 use crate::lp_error;
+use crate::models::api_cache::ApiCache;
 
 use crate::reqwest_with_retries;
 use crate::sqlx_operation_with_retries;
@@ -18,7 +19,7 @@ pub trait CacheableApi: std::fmt::Debug {
         endpoint: &str,
     ) -> Result<String, lp_error::LPError> {
         // query our api_cache for the endpoint we seek
-        tracing::info!("Querying api_cache for the endpoint we seek...");
+        tracing::debug!("Querying api_cache for the endpoint we seek...");
         match sqlx_operation_with_retries!(
             sqlx::query("SELECT raw_data from api_cache WHERE endpoint = $1")
                 .bind(&endpoint)
@@ -31,7 +32,7 @@ pub trait CacheableApi: std::fmt::Debug {
                 // if present, get the contents of the raw_data column and return it
                 match row.try_get::<String, _>("raw_data") {
                     Ok(raw_data) => {
-                        tracing::info!("Record found for endpoint. Retrieving raw_data...");
+                        tracing::debug!("Record found for endpoint. Retrieving raw_data...");
                         return Ok(raw_data);
                     }
                     Err(e) => {
@@ -64,19 +65,20 @@ pub trait CacheableApi: std::fmt::Debug {
                     lp_error::LPError::Api(e)
                 })?;
 
-        tracing::info!("Response received. Parsing and inserting into cache...");
+        tracing::debug!("Response received. Parsing and inserting into cache...");
         let raw_data = response
             .text()
             .await
             .map_err(|e| lp_error::LPError::Api(e))?;
-        sqlx_operation_with_retries!(
-            sqlx::query(r#"INSERT INTO api_cache (endpoint, raw_data) VALUES ($1, $2)
-                ON CONFLICT (endpoint) DO UPDATE SET raw_data = EXCLUDED.raw_data, last_updated = now()"#)
-                .bind(&endpoint)
-                .bind(&raw_data)
-                .execute(pool)
-                .await
-        ).await.map_err(|e| lp_error::LPError::Database(e))?;
-        Ok(raw_data)
+        let cache_record = ApiCache {
+            endpoint: endpoint.to_string(),
+            raw_data: raw_data,
+            last_updated: None,
+        };
+
+        tracing::debug!("Upserting cache record with endpoint {endpoint} into lp database.");
+        cache_record.upsert(&pool).await?;
+        tracing::debug!("Upserting cache record with endpoint {endpoint} into lp database.");
+        Ok(cache_record.raw_data)
     }
 }
