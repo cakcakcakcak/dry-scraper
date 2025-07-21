@@ -1,0 +1,9 @@
+pub mod nhl_model_common;
+pub mod nhl_franchise;
+pub mod nhl_game;
+pub mod nhl_play;
+pub mod nhl_player;
+pub mod nhl_playoff_series;
+pub mod nhl_roster_spot;
+pub mod nhl_season;
+pub mod nhl_team;

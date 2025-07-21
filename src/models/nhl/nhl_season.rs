@@ -1,16 +1,22 @@
+use std::str::FromStr;
+
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
-use crate::api::cacheable::CacheableApi;
-use crate::api::nhl_stats_api::NhlStatsApi;
+use crate::db::DbPool;
+use crate::db::persistable::Persistable;
 use crate::lp_error::LPError;
+use crate::models::traits::{DbStruct, IntoDbStruct};
 use crate::serde_helpers::deserialize_to_bool;
+
+use crate::impl_has_type_name;
 use crate::sqlx_operation_with_retries;
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NhlSeason {
+pub struct NhlSeasonJson {
     pub id: i32,
     #[serde(deserialize_with = "deserialize_to_bool")]
     pub all_star_game_in_use: bool,
@@ -46,34 +52,128 @@ pub struct NhlSeason {
     pub total_regular_season_games: i32,
     #[serde(deserialize_with = "deserialize_to_bool")]
     pub wildcard_in_use: bool,
-    pub api_cache_endpoint: Option<String>,
-    pub raw_json: Option<serde_json::Value>,
-    pub last_updated: Option<chrono::NaiveDateTime>,
+}
+impl IntoDbStruct for NhlSeasonJson {
+    type U = NhlSeason;
+
+    fn to_db_struct(self) -> Self::U {
+        let NhlSeasonJson {
+            id,
+            all_star_game_in_use,
+            conferences_in_use,
+            divisions_in_use,
+            end_date,
+            entry_draft_in_use,
+            formatted_season_id,
+            minimum_playoff_minutes_for_goalie_stats_leaders,
+            minimum_regular_games_for_goalie_stats_leaders,
+            nhl_stanley_cup_owner,
+            number_of_games,
+            olympics_participation,
+            point_for_ot_loss_in_use,
+            preseason_startdate,
+            regular_season_end_date,
+            row_in_use,
+            season_ordinal,
+            start_date,
+            supplemental_draft_in_use,
+            ties_in_use,
+            total_playoff_games,
+            total_regular_season_games,
+            wildcard_in_use,
+        } = self;
+        NhlSeason {
+            id,
+            all_star_game_in_use,
+            conferences_in_use,
+            divisions_in_use,
+            end_date,
+            entry_draft_in_use,
+            formatted_season_id,
+            minimum_playoff_minutes_for_goalie_stats_leaders,
+            minimum_regular_games_for_goalie_stats_leaders,
+            nhl_stanley_cup_owner,
+            number_of_games,
+            olympics_participation,
+            point_for_ot_loss_in_use,
+            preseason_startdate,
+            regular_season_end_date,
+            row_in_use,
+            season_ordinal,
+            start_date,
+            supplemental_draft_in_use,
+            ties_in_use,
+            total_playoff_games,
+            total_regular_season_games,
+            wildcard_in_use,
+            endpoint: String::new(),
+            raw_json: serde_json::Value::Null,
+            last_updated: None,
+        }
+    }
 }
 
-impl NhlSeason {
-    pub async fn verify_relationships(
-        &self,
-        nhl_stats_api: &NhlStatsApi,
-        pool: &sqlx::Pool<sqlx::Postgres>,
-    ) -> Result<(), LPError> {
-        if let Some(endpoint) = &self.api_cache_endpoint {
-            let _ = nhl_stats_api.get_or_cache_endpoint(pool, endpoint).await?;
-        }
+#[derive(Debug, FromRow, Clone)]
+pub struct NhlSeason {
+    pub id: i32,
+    pub all_star_game_in_use: bool,
+    pub conferences_in_use: bool,
+    pub divisions_in_use: bool,
+    pub end_date: chrono::NaiveDateTime,
+    pub entry_draft_in_use: bool,
+    pub formatted_season_id: String,
+    pub minimum_playoff_minutes_for_goalie_stats_leaders: i32,
+    pub minimum_regular_games_for_goalie_stats_leaders: i32,
+    pub nhl_stanley_cup_owner: bool,
+    pub number_of_games: i32,
+    pub olympics_participation: bool,
+    pub point_for_ot_loss_in_use: bool,
+    pub preseason_startdate: Option<chrono::NaiveDateTime>,
+    pub regular_season_end_date: chrono::NaiveDateTime,
+    pub row_in_use: bool,
+    pub season_ordinal: i32,
+    pub start_date: chrono::NaiveDateTime,
+    pub supplemental_draft_in_use: bool,
+    pub ties_in_use: bool,
+    pub total_playoff_games: i32,
+    pub total_regular_season_games: i32,
+    pub wildcard_in_use: bool,
+    pub endpoint: String,
+    pub raw_json: serde_json::Value,
+    pub last_updated: Option<chrono::NaiveDateTime>,
+}
+impl DbStruct for NhlSeason {
+    fn fill_context(&mut self, endpoint: String, raw_data: String) -> Result<(), LPError> {
+        self.endpoint = endpoint;
+
+        let raw_json = serde_json::Value::from_str(&raw_data)?;
+        self.raw_json = raw_json;
         Ok(())
     }
+}
 
-    pub async fn upsert(
-        &self,
-        nhl_stats_api: &NhlStatsApi,
-        pool: &sqlx::Pool<sqlx::Postgres>,
-    ) -> Result<(), LPError> {
-        match self.verify_relationships(nhl_stats_api, pool).await {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        };
-        sqlx_operation_with_retries! (
-            sqlx::query(r#"INSERT INTO nhl_season (
+#[async_trait]
+impl Persistable for NhlSeason {
+    type Id = i32;
+
+    fn id(&self) -> Self::Id {
+        self.id
+    }
+
+    #[tracing::instrument(skip(pool))]
+    async fn try_db(pool: &DbPool, id: Self::Id) -> Result<Option<Self>, LPError> {
+        sqlx_operation_with_retries!(
+            sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_season WHERE id=$1"#)
+                .bind(id)
+                .fetch_optional(pool)
+                .await
+        )
+        .await
+        .map_err(LPError::from)
+    }
+
+    fn create_query(&self) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
+        sqlx::query(r#"INSERT INTO nhl_season (
                                         id, 
                                         all_star_game_in_use, 
                                         conferences_in_use, 
@@ -98,7 +198,7 @@ impl NhlSeason {
                                         total_regular_season_games, 
                                         wildcard_in_use,
                                         raw_json,
-                                        api_cache_endpoint
+                                        endpoint
                                     ) VALUES (
                                         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
                                         $14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
@@ -126,7 +226,7 @@ impl NhlSeason {
                                         total_regular_season_games = EXCLUDED.total_regular_season_games,
                                         wildcard_in_use = EXCLUDED.wildcard_in_use,
                                         raw_json = EXCLUDED.raw_json,
-                                        api_cache_endpoint = EXCLUDED.api_cache_endpoint,
+                                        endpoint = EXCLUDED.endpoint,
                                         last_updated = now()
                                     "#)
                     .bind(&self.id)
@@ -153,9 +253,9 @@ impl NhlSeason {
                     .bind(&self.total_regular_season_games)
                     .bind(&self.wildcard_in_use)
                     .bind(&self.raw_json)
-                    .bind(&self.api_cache_endpoint)
-                    .execute(pool).await
-        ).await?;
-        Ok(())
+                    .bind(&self.endpoint)
     }
 }
+
+impl_has_type_name!(NhlSeasonJson);
+impl_has_type_name!(NhlSeason);

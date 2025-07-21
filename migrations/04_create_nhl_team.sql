@@ -6,6 +6,6 @@ CREATE TABLE IF NOT EXISTS nhl_team (
     raw_tricode CHAR(3) NOT NULL,
     tricode CHAR(3) NOT NULL,
     raw_json JSONB NOT NULL,
-    api_cache_endpoint TEXT NOT NULL REFERENCES api_cache (endpoint),
-    last_updated TIMESTAMP DEFAULT now()
+    endpoint TEXT NOT NULL REFERENCES api_cache (endpoint),
+    last_updated TIMESTAMP DEFAULT now() NOT NULL
 )

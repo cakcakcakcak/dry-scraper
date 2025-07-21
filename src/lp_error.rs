@@ -1,3 +1,5 @@
+use std::num::ParseIntError;
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -16,4 +18,6 @@ pub enum LPError {
     Serde(#[from] serde_json::Error),
     #[error("Environment variable error: {0}")]
     Env(String),
+    #[error("Parse error: {0}")]
+    Parse(#[from] ParseIntError),
 }

@@ -7,11 +7,12 @@ use tokio_retry::RetryIf;
 
 use crate::LPError;
 use crate::config::CONFIG;
+use crate::db::DbPool;
 use crate::sqlx_operation_with_retries;
 use crate::util::{default_retry_strategy, is_transient_sqlx_error};
 
 #[instrument]
-pub async fn init_db() -> Result<sqlx::Pool<sqlx::Postgres>, LPError> {
+pub async fn init_db() -> Result<DbPool, LPError> {
     // get the environment variables and construct the database_url
     let db_url = database_url()?;
     tracing::debug!(db_url = %db_url, "Constructed lp database URL");
@@ -57,6 +58,12 @@ pub async fn init_db() -> Result<sqlx::Pool<sqlx::Postgres>, LPError> {
 
     if CONFIG.reset_db {
         tracing::warn!("RESET_DB enabled: dropping tables and enums for clean state");
+        sqlx_operation_with_retries!(
+            sqlx::query("DROP TABLE IF EXISTS nhl_play")
+                .execute(&pool)
+                .await
+        )
+        .await?;
         sqlx_operation_with_retries!(
             sqlx::query("DROP TABLE IF EXISTS nhl_playoff_series")
                 .execute(&pool)

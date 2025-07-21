@@ -7,7 +7,8 @@ use once_cell::sync::Lazy;
 use cli_args::CliArgs;
 use env_vars::EnvironmentVariables;
 
-const DEFAULT_MAX_DB_CONNECTIONS: u32 = 5;
+const DEFAULT_MAX_DB_CONNECTIONS: u32 = 32;
+const UPSERT_CONCURRENCY: usize = 32;
 const DEFAULT_RETRY_JITTER_DURATION_MS: u64 = 100;
 const DEFAULT_RETRIES: usize = 5;
 
@@ -19,6 +20,7 @@ pub struct Config {
     pub pg_pass: String,
     pub season_limit: Option<usize>,
     pub max_db_connections: u32,
+    pub upsert_concurrency: usize,
     pub reset_db: bool,
     pub retry_jitter_duration_ms: u64,
     pub retries: usize,
@@ -56,6 +58,10 @@ impl Config {
             .max_db_connections
             .or(env_vars.max_db_connections)
             .unwrap_or(DEFAULT_MAX_DB_CONNECTIONS);
+        let upsert_concurrency = cli_args
+            .upsert_concurrency
+            .or(env_vars.upsert_concurrency)
+            .unwrap_or(UPSERT_CONCURRENCY);
         let reset_db = cli_args.reset_db.or(env_vars.reset_db).unwrap_or(false);
         let retry_jitter_duration_ms = cli_args
             .retry_jitter_duration_ms
@@ -72,6 +78,7 @@ impl Config {
             pg_pass,
             season_limit,
             max_db_connections,
+            upsert_concurrency,
             reset_db,
             retry_jitter_duration_ms,
             retries,

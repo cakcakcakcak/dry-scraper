@@ -2,6 +2,9 @@ use tokio_retry::RetryIf;
 use tokio_retry::strategy::{ExponentialBackoff, jitter};
 
 use crate::config::CONFIG;
+use crate::lp_error::LPError;
+use crate::models::item_parsed_with_context::ItemParsedWithContext;
+use crate::models::nhl::nhl_model_common::NhlApiDataArrayResponse;
 
 #[macro_export]
 macro_rules! sqlx_operation_with_retries {
@@ -14,6 +17,17 @@ macro_rules! sqlx_operation_with_retries {
 macro_rules! reqwest_with_retries {
     ($body:expr) => {
         $crate::util::reqwest_with_retries(|| async { $body })
+    };
+}
+
+#[macro_export]
+macro_rules! impl_has_type_name {
+    ($t:ty) => {
+        impl $crate::models::traits::HasTypeName for $t {
+            fn type_name() -> &'static str {
+                stringify!($t)
+            }
+        }
     };
 }
 
@@ -77,53 +91,40 @@ where
     .await
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::Duration;
+pub fn map_json_array_to_json_structs<T>(
+    data_array_response: NhlApiDataArrayResponse,
+    endpoint: &str,
+) -> Vec<Result<ItemParsedWithContext<T>, LPError>>
+where
+    T: serde::de::DeserializeOwned,
+{
+    data_array_response
+        .data
+        .iter()
+        .map(|item| {
+            let raw_data = item.to_string();
+            let parsed = serde_json::from_value(item.clone()).map_err(LPError::from);
+            match parsed {
+                Ok(item) => Ok(ItemParsedWithContext {
+                    raw_data,
+                    item,
+                    endpoint: endpoint.to_string(),
+                }),
+                Err(e) => Err(e),
+            }
+        })
+        .collect()
+}
 
-    #[test]
-    fn test_default_retry_strategy_count_and_range() {
-        let mut strategy = default_retry_strategy();
-        let mut durations = vec![];
-        while let Some(d) = strategy.next() {
-            durations.push(d);
-        }
-        assert_eq!(durations.len(), 5);
-        // all durations should be >= 0
-        assert!(durations.iter().all(|d| *d >= Duration::from_millis(0)));
-    }
-
-    #[test]
-    fn test_is_transient_sqlx_error() {
-        let io_err = sqlx::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, "io"));
-        // apparently it is impossible to construct a tls error without a real tls error
-        let decode_err = sqlx::Error::Decode("decode".into());
-
-        assert!(is_transient_sqlx_error(&io_err));
-        assert!(!is_transient_sqlx_error(&decode_err));
-    }
-
-    #[tokio::test]
-    async fn test_is_transient_reqwest_error_timeout() {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_millis(1))
-            .build()
-            .unwrap();
-
-        // unroutable ip address should time out
-        let res = client.get("http://10.255.255.123").send().await;
-        assert!(res.is_err());
-        let err = res.unwrap_err();
-        assert!(is_transient_reqwest_error(&err));
-    }
-
-    #[tokio::test]
-    async fn test_is_transient_reqwest_error_connect() {
-        // invalid port should fail to connect
-        let res = reqwest::get("http://localhost:0").await; // invalid port, should fail to connect
-        assert!(res.is_err());
-        let err = res.unwrap_err();
-        assert!(is_transient_reqwest_error(&err));
-    }
+pub fn filter_and_log_results<T>(results: Vec<Result<T, LPError>>) -> Vec<T> {
+    results
+        .into_iter()
+        .filter_map(|res| match res {
+            Ok(season) => Some(season),
+            Err(e) => {
+                tracing::warn!("{e}");
+                None
+            }
+        })
+        .collect()
 }

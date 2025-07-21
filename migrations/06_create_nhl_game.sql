@@ -53,6 +53,6 @@ CREATE TABLE IF NOT EXISTS nhl_game (
     game_outcome_last_period_type period_type NOT NULL,
     reg_periods INTEGER NOT NULL,
     raw_json JSONB NOT NULL,
-    api_cache_endpoint TEXT NOT NULL REFERENCES api_cache (endpoint),
-    last_updated TIMESTAMP DEFAULT now()
+    endpoint TEXT NOT NULL REFERENCES api_cache (endpoint),
+    last_updated TIMESTAMP DEFAULT now() NOT NULL
 )

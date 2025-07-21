@@ -1,18 +1,34 @@
+use std::str::FromStr;
+
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
-use crate::api::cacheable::CacheableApi;
-use crate::api::nhl_stats_api::NhlStatsApi;
+use crate::db::DbPool;
+use crate::db::persistable::Persistable;
 use crate::lp_error::LPError;
-use crate::serde_helpers::{
-    deserialize_default_to_option_string, deserialize_default_to_string, deserialize_to_bool,
-};
+use crate::models::traits::{DbStruct, IntoDbStruct};
+use crate::serde_helpers::JsonExt;
+use crate::serde_helpers::{deserialize_default_to_string, deserialize_to_bool};
+
+use crate::impl_has_type_name;
+use crate::make_deserialize_key_to_type;
 use crate::sqlx_operation_with_retries;
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NhlPlayer {
+pub struct DraftDetails {
+    pub year: Option<i32>,
+    pub team_abbrev: Option<String>,
+    pub round: Option<i32>,
+    pub pick_in_round: Option<i32>,
+    pub overall_pick: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NhlPlayerJson {
     #[serde(rename = "playerId")]
     pub id: i32,
     #[serde(deserialize_with = "deserialize_default_to_string")]
@@ -46,11 +62,7 @@ pub struct NhlPlayer {
     pub birth_state_province: String,
     pub birth_country: String,
     pub shoots_catches: String,
-    pub draft_year: Option<i32>,
-    pub draft_team_abbreviation: Option<String>,
-    pub draft_round: Option<i32>,
-    pub draft_pick_in_round: Option<i32>,
-    pub draft_overall_pick: Option<i32>,
+    pub draft_details: Option<DraftDetails>,
     pub player_slug: String,
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_to_bool")]
@@ -58,36 +70,163 @@ pub struct NhlPlayer {
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_to_bool")]
     pub in_hhof: bool,
-    pub api_cache_endpoint: Option<String>,
-    pub raw_json: Option<serde_json::Value>,
+}
+impl IntoDbStruct for NhlPlayerJson {
+    type U = NhlPlayer;
+
+    fn to_db_struct(self) -> Self::U {
+        let NhlPlayerJson {
+            id,
+            first_name,
+            last_name,
+            is_active,
+            current_team_id,
+            current_team_abbrev,
+            full_team_name,
+            team_common_name,
+            team_place_name_with_preposition,
+            team_logo,
+            sweater_number,
+            position,
+            headshot,
+            hero_image,
+            height_in_inches,
+            height_in_centimeters,
+            weight_in_pounds,
+            weight_in_kilograms,
+            birth_date,
+            birth_city,
+            birth_state_province,
+            birth_country,
+            shoots_catches,
+            draft_details,
+            player_slug,
+            in_top100_all_time,
+            in_hhof,
+        } = self;
+        let (
+            draft_year,
+            draft_team_abbreviation,
+            draft_round,
+            draft_pick_in_round,
+            draft_overall_pick,
+        ) = match draft_details {
+            Some(d) => (
+                d.year,
+                d.team_abbrev,
+                d.round,
+                d.pick_in_round,
+                d.overall_pick,
+            ),
+            None => (None, None, None, None, None),
+        };
+        NhlPlayer {
+            id,
+            first_name,
+            last_name,
+            is_active,
+            current_team_id,
+            current_team_abbrev,
+            full_team_name,
+            team_common_name,
+            team_place_name_with_preposition,
+            team_logo,
+            sweater_number,
+            position,
+            headshot,
+            hero_image,
+            height_in_inches,
+            height_in_centimeters,
+            weight_in_pounds,
+            weight_in_kilograms,
+            birth_date,
+            birth_city,
+            birth_state_province,
+            birth_country,
+            shoots_catches,
+            draft_year,
+            draft_team_abbreviation,
+            draft_round,
+            draft_pick_in_round,
+            draft_overall_pick,
+            player_slug,
+            in_top100_all_time,
+            in_hhof,
+            endpoint: String::new(),
+            raw_json: serde_json::Value::Null,
+            last_updated: None,
+        }
+    }
+}
+
+#[derive(Debug, FromRow)]
+pub struct NhlPlayer {
+    pub id: i32,
+    pub first_name: String,
+    pub last_name: String,
+    pub is_active: bool,
+    pub current_team_id: Option<i32>,
+    pub current_team_abbrev: Option<String>,
+    pub full_team_name: Option<String>,
+    pub team_common_name: Option<String>,
+    pub team_place_name_with_preposition: Option<String>,
+    pub team_logo: String,
+    pub sweater_number: i32,
+    pub position: String,
+    pub headshot: String,
+    pub hero_image: String,
+    pub height_in_inches: i32,
+    pub height_in_centimeters: i32,
+    pub weight_in_pounds: i32,
+    pub weight_in_kilograms: i32,
+    pub birth_date: chrono::NaiveDate,
+    pub birth_city: String,
+    pub birth_state_province: String,
+    pub birth_country: String,
+    pub shoots_catches: String,
+    pub draft_year: Option<i32>,
+    pub draft_team_abbreviation: Option<String>,
+    pub draft_round: Option<i32>,
+    pub draft_pick_in_round: Option<i32>,
+    pub draft_overall_pick: Option<i32>,
+    pub player_slug: String,
+    pub in_top100_all_time: bool,
+    pub in_hhof: bool,
+    pub endpoint: String,
+    pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl NhlPlayer {
-    pub async fn verify_relationships(
-        &self,
-        nhl_stats_api: &NhlStatsApi,
-        pool: &sqlx::Pool<sqlx::Postgres>,
-    ) -> Result<(), LPError> {
-        if let Some(endpoint) = &self.api_cache_endpoint {
-            let _ = nhl_stats_api.get_or_cache_endpoint(pool, endpoint).await?;
-        }
-        if let Some(current_team_id) = self.current_team_id {
-            let _ = nhl_stats_api.get_nhl_team(pool, current_team_id).await?;
-        }
+impl DbStruct for NhlPlayer {
+    fn fill_context(&mut self, endpoint: String, raw_data: String) -> Result<(), LPError> {
+        self.endpoint = endpoint;
+
+        let raw_json = serde_json::Value::from_str(&raw_data)?;
+        self.raw_json = raw_json;
         Ok(())
     }
+}
+#[async_trait]
+impl Persistable for NhlPlayer {
+    type Id = i32;
 
-    pub async fn upsert(
-        &self,
-        nhl_stats_api: &NhlStatsApi,
-        pool: &sqlx::Pool<sqlx::Postgres>,
-    ) -> Result<(), LPError> {
-        match self.verify_relationships(nhl_stats_api, pool).await {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        };
-        sqlx_operation_with_retries! (
-            sqlx::query(r#"INSERT INTO nhl_player (
+    fn id(&self) -> Self::Id {
+        self.id
+    }
+
+    #[tracing::instrument(skip(pool))]
+    async fn try_db(pool: &DbPool, id: Self::Id) -> Result<Option<Self>, LPError> {
+        sqlx_operation_with_retries!(
+            sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_player WHERE id=$1"#)
+                .bind(id)
+                .fetch_optional(pool)
+                .await
+        )
+        .await
+        .map_err(LPError::from)
+    }
+
+    fn create_query(&self) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
+        sqlx::query(r#"INSERT INTO nhl_player (
                                         id,
                                         first_name,
                                         last_name,
@@ -119,7 +258,7 @@ impl NhlPlayer {
                                         player_slug,
                                         in_top100_all_time,
                                         in_hhof,
-                                        api_cache_endpoint,
+                                        endpoint,
                                         raw_json
                                     ) VALUES (
                                         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
@@ -157,7 +296,7 @@ impl NhlPlayer {
                                         player_slug = EXCLUDED.player_slug,
                                         in_top100_all_time = EXCLUDED.in_top100_all_time,
                                         in_hhof = EXCLUDED.in_hhof,
-                                        api_cache_endpoint = EXCLUDED.api_cache_endpoint,
+                                        endpoint = EXCLUDED.endpoint,
                                         raw_json = EXCLUDED.raw_json,
                                         last_updated = now()
                                     "#
@@ -193,10 +332,16 @@ impl NhlPlayer {
             .bind(&self.player_slug)
             .bind(&self.in_top100_all_time)
             .bind(&self.in_hhof)
-            .bind(&self.api_cache_endpoint)
+            .bind(&self.endpoint)
             .bind(&self.raw_json)
-            .execute(pool).await
-        ).await?;
-        Ok(())
     }
 }
+
+make_deserialize_key_to_type!(
+    deserialize_default_to_option_string,
+    "default",
+    Option<String>
+);
+
+impl_has_type_name!(NhlPlayerJson);
+impl_has_type_name!(NhlPlayer);

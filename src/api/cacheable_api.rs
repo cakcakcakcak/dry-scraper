@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use sqlx::Row;
 use tracing::instrument;
 
+use crate::db::DbPool;
 use crate::lp_error;
 use crate::models::api_cache::ApiCache;
 
@@ -15,7 +16,7 @@ pub trait CacheableApi: std::fmt::Debug {
     #[instrument(skip(pool))]
     async fn get_or_cache_endpoint(
         &self,
-        pool: &sqlx::Pool<sqlx::Postgres>,
+        pool: &DbPool,
         endpoint: &str,
     ) -> Result<String, lp_error::LPError> {
         // query our api_cache for the endpoint we seek
@@ -78,7 +79,6 @@ pub trait CacheableApi: std::fmt::Debug {
 
         tracing::debug!("Upserting cache record with endpoint {endpoint} into lp database.");
         cache_record.upsert(&pool).await?;
-        tracing::debug!("Upserting cache record with endpoint {endpoint} into lp database.");
         Ok(cache_record.raw_data)
     }
 }

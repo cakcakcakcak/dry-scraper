@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS nhl_playoff_series (
     bottom_seed_team_logo TEXT NOT NULL,
     bottom_seed_team_dark_logo TEXT NOT NULL,
     raw_json JSONB NOT NULL,
-    api_cache_endpoint TEXT NOT NULL REFERENCES api_cache (endpoint),
-    last_updated TIMESTAMP DEFAULT now(),
+    endpoint TEXT NOT NULL REFERENCES api_cache (endpoint),
+    last_updated TIMESTAMP DEFAULT now() NOT NULL,
     PRIMARY KEY (season_id, series_letter)
 )

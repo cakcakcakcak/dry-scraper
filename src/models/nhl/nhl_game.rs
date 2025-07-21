@@ -1,96 +1,253 @@
+use std::str::FromStr;
+
+use async_trait::async_trait;
 use chrono;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use sqlx::Execute as _;
+use sqlx::Executor as _;
 use sqlx::FromRow;
+use sqlx::postgres::Postgres;
 
-use crate::api::cacheable::CacheableApi;
-use crate::api::nhl_stats_api::NhlStatsApi;
-use crate::api::nhl_web_api::NhlWebApi;
+use crate::api::cacheable_api::CacheableApi;
+use crate::api::nhl::nhl_stats_api::NhlStatsApi;
+use crate::db::DbPool;
+use crate::db::persistable::Persistable;
 use crate::lp_error::LPError;
-use crate::models::game_type::GameType;
-use crate::models::period_type::PeriodType;
-use crate::serde_helpers::deserialize_default_to_string;
+use crate::models::nhl::nhl_model_common::{
+    GameType, LocalizedNameJson, PeriodDescriptorJson, PeriodTypeJson,
+};
+use crate::models::nhl::nhl_play::NhlPlayJson;
+use crate::models::nhl::nhl_roster_spot::NhlRosterSpotJson;
+use crate::models::traits::{DbStruct, IntoDbStruct};
+
+use crate::impl_has_type_name;
 use crate::sqlx_operation_with_retries;
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 #[serde(rename_all = "camelCase")]
-pub struct NhlGame {
+pub struct ClockJson {
+    pub time_remaining: String,
+    pub seconds_remaining: i32,
+    pub running: bool,
+    pub in_intermission: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct TvBroadcastsJson {
+    pub id: i32,
+    pub market: String,
+    pub country_code: String,
+    pub network: String,
+    pub sequence_number: i32,
+}
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct GameOutcomeJson {
+    pub last_period_type: PeriodTypeJson,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamGameJson {
+    pub id: i32,
+    pub common_name: LocalizedNameJson,
+    pub abbrev: String,
+    pub score: i32,
+    pub sog: i32,
+    pub logo: String,
+    pub dark_logo: String,
+    pub place_name: LocalizedNameJson,
+    pub place_name_with_preposition: LocalizedNameJson,
+}
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct NhlGameJson {
     pub id: i32,
     pub season: i32,
     pub game_type: GameType,
     pub limited_scoring: bool,
     pub game_date: chrono::NaiveDate,
-    #[serde(deserialize_with = "deserialize_default_to_string")]
-    pub venue: String,
-    #[serde(deserialize_with = "deserialize_default_to_string")]
-    pub venue_location: String,
+    pub venue: LocalizedNameJson,
+    pub venue_location: LocalizedNameJson,
     #[serde(rename = "startTimeUTC")]
     pub start_time_utc: chrono::DateTime<chrono::Utc>,
     #[serde(rename = "easternUTCOffset")]
     pub eastern_utc_offset: String,
     #[serde(rename = "venueUTCOffset")]
     pub venue_utc_offset: String,
-    pub period_descriptor_number: Option<i32>,
-    pub period_descriptor_type: Option<PeriodType>,
-    pub period_descriptor_max_regulation_periods: Option<i32>,
-    pub away_team_id: Option<i32>,
-    pub away_team_name: Option<String>,
-    pub away_team_abbrev: Option<String>,
-    pub away_team_score: Option<i32>,
-    pub away_team_sog: Option<i32>,
-    pub away_team_logo: Option<String>,
-    pub away_team_dark_logo: Option<String>,
-    pub away_team_place_name: Option<String>,
-    pub away_team_place_name_with_preposition: Option<String>,
-    pub home_team_id: Option<i32>,
-    pub home_team_name: Option<String>,
-    pub home_team_abbrev: Option<String>,
-    pub home_team_score: Option<i32>,
-    pub home_team_sog: Option<i32>,
-    pub home_team_logo: Option<String>,
-    pub home_team_dark_logo: Option<String>,
-    pub home_team_place_name: Option<String>,
-    pub home_team_place_name_with_preposition: Option<String>,
+    pub tv_broadcasts: Vec<TvBroadcastsJson>,
+    pub game_state: String,
+    pub game_schedule_state: String,
+    pub period_descriptor: PeriodDescriptorJson,
+    pub away_team: TeamGameJson,
+    pub home_team: TeamGameJson,
+    pub shootout_in_use: bool,
+    pub ot_in_use: bool,
+    pub clock: ClockJson,
+    pub display_period: i32,
+    pub max_periods: i32,
+    pub game_outcome: GameOutcomeJson,
+    pub plays: Vec<NhlPlayJson>,
+    pub roster_spots: Vec<NhlRosterSpotJson>,
+    pub reg_periods: i32,
+}
+impl IntoDbStruct for NhlGameJson {
+    type U = NhlGame;
+
+    fn to_db_struct(self) -> Self::U {
+        let NhlGameJson {
+            id,
+            season,
+            game_type,
+            limited_scoring,
+            game_date,
+            venue,
+            venue_location,
+            start_time_utc,
+            eastern_utc_offset,
+            venue_utc_offset,
+            game_state,
+            game_schedule_state,
+            period_descriptor,
+            away_team,
+            home_team,
+            tv_broadcasts,
+            shootout_in_use,
+            ot_in_use,
+            clock,
+            display_period,
+            max_periods,
+            game_outcome,
+            plays,
+            roster_spots,
+            reg_periods,
+        } = self;
+        NhlGame {
+            id,
+            season,
+            game_type,
+            limited_scoring,
+            game_date,
+            venue: venue.default,
+            venue_location: venue_location.default,
+            start_time_utc,
+            eastern_utc_offset,
+            venue_utc_offset,
+            period_descriptor_number: period_descriptor.number,
+            period_descriptor_type: period_descriptor.period_type,
+            period_descriptor_max_regulation_periods: period_descriptor.max_regulation_periods,
+            away_team_id: away_team.id,
+            away_team_name: away_team.common_name.default,
+            away_team_abbrev: away_team.abbrev,
+            away_team_score: away_team.score,
+            away_team_sog: away_team.sog,
+            away_team_logo: away_team.logo,
+            away_team_dark_logo: away_team.dark_logo,
+            away_team_place_name: away_team.place_name.default,
+            away_team_place_name_with_preposition: away_team.place_name_with_preposition.default,
+            home_team_id: home_team.id,
+            home_team_name: home_team.common_name.default,
+            home_team_abbrev: home_team.abbrev,
+            home_team_score: home_team.score,
+            home_team_sog: home_team.sog,
+            home_team_logo: home_team.logo,
+            home_team_dark_logo: home_team.dark_logo,
+            home_team_place_name: home_team.place_name.default,
+            home_team_place_name_with_preposition: home_team.place_name_with_preposition.default,
+            shootout_in_use,
+            ot_in_use,
+            display_period,
+            max_periods,
+            game_outcome_last_period_type: game_outcome.last_period_type,
+            reg_periods,
+            endpoint: String::new(),
+            raw_json: serde_json::Value::Null,
+            last_updated: None,
+        }
+    }
+}
+#[derive(Debug, FromRow, Clone)]
+pub struct NhlGame {
+    pub id: i32,
+    pub season: i32,
+    pub game_type: GameType,
+    pub limited_scoring: bool,
+    pub game_date: chrono::NaiveDate,
+    pub venue: String,
+    pub venue_location: String,
+    pub start_time_utc: chrono::DateTime<chrono::Utc>,
+    pub eastern_utc_offset: String,
+    pub venue_utc_offset: String,
+    pub period_descriptor_number: i32,
+    pub period_descriptor_type: PeriodTypeJson,
+    pub period_descriptor_max_regulation_periods: i32,
+    pub away_team_id: i32,
+    pub away_team_name: String,
+    pub away_team_abbrev: String,
+    pub away_team_score: i32,
+    pub away_team_sog: i32,
+    pub away_team_logo: String,
+    pub away_team_dark_logo: String,
+    pub away_team_place_name: String,
+    pub away_team_place_name_with_preposition: String,
+    pub home_team_id: i32,
+    pub home_team_name: String,
+    pub home_team_abbrev: String,
+    pub home_team_score: i32,
+    pub home_team_sog: i32,
+    pub home_team_logo: String,
+    pub home_team_dark_logo: String,
+    pub home_team_place_name: String,
+    pub home_team_place_name_with_preposition: String,
     pub shootout_in_use: bool,
     pub ot_in_use: bool,
     pub display_period: i32,
-    pub max_periods: Option<i32>,
-    pub game_outcome_last_period_type: Option<PeriodType>,
+    pub max_periods: i32,
+    pub game_outcome_last_period_type: PeriodTypeJson,
     pub reg_periods: i32,
-    pub api_cache_endpoint: Option<String>,
-    pub raw_json: Option<serde_json::Value>,
+    pub endpoint: String,
+    pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl NhlGame {
-    pub async fn verify_relationships(
-        &self,
-        nhl_stats_api: &NhlStatsApi,
-        pool: &sqlx::Pool<sqlx::Postgres>,
-    ) -> Result<(), LPError> {
-        let _ = nhl_stats_api.get_nhl_season(pool, self.season).await?;
-        if let Some(away_team_id) = self.away_team_id {
-            let _ = nhl_stats_api.get_nhl_team(pool, away_team_id).await?;
-        }
-        if let Some(home_team_id) = self.home_team_id {
-            let _ = nhl_stats_api.get_nhl_team(pool, home_team_id).await?;
-        }
-        if let Some(endpoint) = &self.api_cache_endpoint {
-            let _ = nhl_stats_api.get_or_cache_endpoint(pool, endpoint).await?;
-        }
+impl DbStruct for NhlGame {
+    fn fill_context(&mut self, endpoint: String, raw_data: String) -> Result<(), LPError> {
+        self.endpoint = endpoint;
+
+        let raw_json = serde_json::Value::from_str(&raw_data)?;
+        self.raw_json = raw_json;
+        Ok(())
+    }
+}
+#[async_trait]
+impl Persistable for NhlGame {
+    type Id = i32;
+
+    fn id(&self) -> Self::Id {
+        self.id
+    }
+
+    #[tracing::instrument(skip(pool))]
+    async fn try_db(pool: &DbPool, id: Self::Id) -> Result<Option<Self>, LPError> {
+        sqlx_operation_with_retries!(
+            sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_game WHERE id=$1"#)
+                .bind(id)
+                .fetch_optional(pool)
+                .await
+        )
+        .await
+        .map_err(LPError::from)
+    }
+
+    #[tracing::instrument(skip(pool))]
+    async fn upsert(&self, pool: &DbPool) -> Result<(), LPError> {
+        sqlx_operation_with_retries!(self.create_query().execute(pool).await).await?;
         Ok(())
     }
 
-    pub async fn upsert(
-        &self,
-        nhl_stats_api: &NhlStatsApi,
-        pool: &sqlx::Pool<sqlx::Postgres>,
-    ) -> Result<(), LPError> {
-        match self.verify_relationships(nhl_stats_api, pool).await {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        };
-        sqlx_operation_with_retries! (
-            sqlx::query(r#"INSERT INTO nhl_game (
+    fn create_query(&self) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
+        sqlx::query(r#"INSERT INTO nhl_game (
                                         id,
                                         season,
                                         game_type,
@@ -128,7 +285,7 @@ impl NhlGame {
                                         max_periods,
                                         game_outcome_last_period_type,
                                         reg_periods,
-                                        api_cache_endpoint,
+                                        endpoint,
                                         raw_json
                                     ) VALUES (
                                         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
@@ -172,7 +329,7 @@ impl NhlGame {
                                         max_periods = EXCLUDED.max_periods,
                                         game_outcome_last_period_type = EXCLUDED.game_outcome_last_period_type,
                                         reg_periods = EXCLUDED.reg_periods,
-                                        api_cache_endpoint = EXCLUDED.api_cache_endpoint,
+                                        endpoint = EXCLUDED.endpoint,
                                         raw_json = EXCLUDED.raw_json,
                                         last_updated = now()
                                     "#
@@ -214,10 +371,10 @@ impl NhlGame {
             .bind(&self.max_periods)
             .bind(&self.game_outcome_last_period_type)
             .bind(&self.reg_periods)
-            .bind(&self.api_cache_endpoint)
+            .bind(&self.endpoint)
             .bind(&self.raw_json)
-            .execute(pool).await
-        ).await?;
-        Ok(())
     }
 }
+
+impl_has_type_name!(NhlGameJson);
+impl_has_type_name!(NhlGame);

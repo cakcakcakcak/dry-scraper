@@ -1,50 +1,48 @@
-impl<'de> serde::Deserialize<'de> for crate::models::game_type::GameType {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        use crate::models::game_type::GameType;
+use serde::{self, Deserialize, Deserializer};
+use serde_json::Value;
+use sqlx::postgres::types::PgInterval;
 
-        let v = i32::deserialize(deserializer)?;
-        match v {
-            1 => Ok(GameType::Preseason),
-            2 => Ok(GameType::RegularSeason),
-            3 => Ok(GameType::Playoffs),
-            other => {
-                tracing::error!("Unknown `game_type` value: {}", other);
-                Err(serde::de::Error::custom(format!(
-                    "Unknown `game_type`: {}",
-                    other
-                )))
-            }
-        }
-    }
+use crate::lp_error::LPError;
+
+pub fn deserialize_mmss_to_pginterval<'de, D>(deserializer: D) -> Result<PgInterval, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    let parts: Vec<&str> = s.split(':').collect();
+    let (minutes, seconds) = match parts.as_slice() {
+        [mm, ss] => (
+            mm.parse::<i64>().unwrap_or(0),
+            ss.parse::<i64>().unwrap_or(0),
+        ),
+        _ => (0, 0),
+    };
+    let total_us = (minutes * 60 + seconds) * 1_000_000;
+    Ok(PgInterval {
+        months: 0,
+        days: 0,
+        microseconds: total_us,
+    })
 }
 
-impl<'de> serde::Deserialize<'de> for crate::models::period_type::PeriodType {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        use crate::models::period_type::PeriodType;
-
-        let v = i32::deserialize(deserializer)?;
-        match v {
-            1 => Ok(PeriodType::Regulation),
-            2 => Ok(PeriodType::Overtime),
-            3 => Ok(PeriodType::Shootout),
-            other => {
-                tracing::error!("Unknown `period_type` value: {}", other);
-                Err(serde::de::Error::custom(format!(
-                    "Unknown `period_type`: {}",
-                    other
-                )))
-            }
-        }
-    }
-}
-
+#[macro_export]
 macro_rules! make_deserialize_to_type {
+    ($func_name:ident, Option<$ty:ty>) => {
+        #[doc = concat!(
+                                                    "Deserializes the JSON object to `Option<",
+                                                    stringify!($ty),
+                                                    ">`.\nUsage: `#[serde(deserialize_with = \"",
+                                                    stringify!($func_name),
+                                                    "\")]`"
+                                                )]
+        pub fn $func_name<'de, D>(deserializer: D) -> Result<Option<$ty>, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let value = serde_json::Value::deserialize(deserializer)?;
+            Ok(value.as_logged::<$ty>())
+        }
+    };
     ($func_name:ident, $ty:ty) => {
         #[doc = concat!(
                                                     "Deserializes the JSON object to `",
@@ -57,8 +55,6 @@ macro_rules! make_deserialize_to_type {
         where
             D: serde::Deserializer<'de>,
         {
-            use serde::Deserialize;
-            use $crate::serde_helpers::JsonExt;
             let value = serde_json::Value::deserialize(deserializer)?;
             value.as_logged::<$ty>().ok_or_else(|| {
                 serde::de::Error::custom(format!("Failed to deserialize value `{value}` to `{}`.", stringify!($ty)))
@@ -67,9 +63,26 @@ macro_rules! make_deserialize_to_type {
     };
 }
 
-make_deserialize_to_type!(deserialize_to_bool, bool);
-
+#[macro_export]
 macro_rules! make_deserialize_key_to_type {
+    ($func_name:ident, $key:expr, Option<$ty:ty>) => {
+        #[doc = concat!(
+                                                    "Deserializes the value from the `\"",
+                                                    $key,
+                                                    "\"` key in the JSON object to `Option<",
+                                                    stringify!($ty),
+                                                    ">`.\nUsage: `#[serde(deserialize_with = \"",
+                                                    stringify!($func_name),
+                                                    "\")]`"
+                                                )]
+        pub fn $func_name<'de, D>(deserializer: D) -> Result<Option<$ty>, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let value = serde_json::Value::deserialize(deserializer)?;
+            Ok(value.get_key_as_logged::<$ty>($key))
+        }
+    };
     ($func_name:ident, $key:expr, $ty:ty) => {
         #[doc = concat!(
                                                     "Deserializes the value from the `\"",
@@ -84,45 +97,62 @@ macro_rules! make_deserialize_key_to_type {
         where
             D: serde::Deserializer<'de>,
         {
-            use serde::Deserialize;
-            use $crate::serde_helpers::JsonExt;
             let value = serde_json::Value::deserialize(deserializer)?;
             value.get_key_as_logged::<$ty>($key).ok_or_else(|| {
-                serde::de::Error::custom(format!("Failed to deserialize value `{value}` to `{}`.", stringify!($ty)))
+                serde::de::Error::custom(format!(
+                    "Failed to deserialize value `{value}` to `{}`.",
+                    stringify!($ty)
+                ))
             })
         }
     };
 }
 
-make_deserialize_key_to_type!(deserialize_default_to_string, "default", String);
-
-macro_rules! make_deserialize_key_to_option_type {
-    ($func_name:ident, $key:expr, $ty:ty) => {
+#[macro_export]
+macro_rules! make_deserialize_nested_key_to_type {
+    ($func_name:ident, [$($key:expr),+], Option<$ty:ty>) => {
         #[doc = concat!(
-                                                    "Deserializes the value from the `\"",
-                                                    $key,
-                                                    "\"` key in the JSON object to `Option<",
-                                                    stringify!($ty),
-                                                    ">`.\nUsage: `#[serde(deserialize_with = \"",
-                                                    stringify!($func_name),
-                                                    "\")]`"
-                                                )]
+            "Deserializes the value from the nested keys `[",
+            $(stringify!($key), ", "),+,
+            "]` in the JSON object to `Option<",
+            stringify!($ty),
+            ">`.\nUsage: `#[serde(deserialize_with = \"",
+            stringify!($func_name),
+            "\")]`"
+        )]
         pub fn $func_name<'de, D>(deserializer: D) -> Result<Option<$ty>, D::Error>
         where
             D: serde::Deserializer<'de>,
         {
-            use serde::Deserialize;
-            use $crate::serde_helpers::JsonExt;
             let value = serde_json::Value::deserialize(deserializer)?;
-            match value.get_key_as_logged::<$ty>($key) {
-                Some(v) => Ok(Some(v)),
-                None => Err(serde::de::Error::custom(format!("Failed to deserialize value `{value}` to `Option<{}>`.", stringify!($ty))))
-            }
+            Ok(value.get_nested_key_as_logged::<$ty>(&[$($key),+]))
+        }
+    };
+    ($func_name:ident, [$($key:expr),+], $ty:ty) => {
+        #[doc = concat!(
+            "Deserializes the value from the nested keys `[",
+            $(stringify!($key), ", "),+,
+            "]` in the JSON object to `",
+            stringify!($ty),
+            "`.\nUsage: `#[serde(deserialize_with = \"",
+            stringify!($func_name),
+            "\")]`"
+        )]
+        pub fn $func_name<'de, D>(deserializer: D) -> Result<$ty, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let value = serde_json::Value::deserialize(deserializer)?;
+            value.get_nested_key_as_logged::<$ty>(&[$($key),+]).ok_or_else(|| {
+                serde::de::Error::custom(format!(
+                    "Failed to deserialize nested keys `[{}]` to `{}`.",
+                    vec![$($key),+].join(", "),
+                    stringify!($ty)
+                ))
+            })
         }
     };
 }
-
-make_deserialize_key_to_option_type!(deserialize_default_to_option_string, "default", String);
 
 pub trait AsLogged: Sized {
     fn as_logged(value: &serde_json::Value) -> Option<Self>;
@@ -135,7 +165,7 @@ pub trait AsLogged: Sized {
             }
         }
     }
-    fn get_nested_as_logged(value: &serde_json::Value, keys: &[&str]) -> Option<Self> {
+    fn get_nested_key_as_logged(value: &serde_json::Value, keys: &[&str]) -> Option<Self> {
         let current = keys.iter().try_fold(value, |current, &key| {
             current.get(key).or_else(|| {
                 tracing::debug!("Key `{key}` not found in json object: {current:?}");
@@ -160,7 +190,6 @@ impl AsLogged for serde_json::Value {
 }
 impl AsLogged for String {
     fn as_logged(value: &serde_json::Value) -> Option<Self> {
-        use serde_json::Value;
         match value {
             Value::String(s) => Some(s.to_string()),
             Value::Bool(b) => Some(b.to_string()),
@@ -174,10 +203,8 @@ impl AsLogged for String {
         }
     }
 }
-
 impl AsLogged for i32 {
     fn as_logged(value: &serde_json::Value) -> Option<Self> {
-        use serde_json::Value;
         match value {
             Value::Bool(true) => Some(1),
             Value::Bool(false) => Some(0),
@@ -205,11 +232,8 @@ impl AsLogged for i32 {
         }
     }
 }
-
 impl AsLogged for bool {
     fn as_logged(value: &serde_json::Value) -> Option<Self> {
-        use serde_json::Value;
-
         match value {
             Value::Bool(b) => Some(*b),
             Value::String(s) if s == "true" => Some(true),
@@ -241,7 +265,7 @@ impl AsLogged for bool {
 pub trait JsonExt {
     fn as_logged<T: AsLogged>(&self) -> Option<T>;
     fn get_key_as_logged<T: AsLogged>(&self, key: &str) -> Option<T>;
-    fn get_nested_as_logged<T: AsLogged>(&self, keys: &[&str]) -> Option<T>;
+    fn get_nested_key_as_logged<T: AsLogged>(&self, keys: &[&str]) -> Option<T>;
     fn get_key_as_string(&self, key: &str) -> Option<String> {
         self.get_key_as_logged::<String>(key)
     }
@@ -255,7 +279,7 @@ pub trait JsonExt {
         self.get_key_as_logged::<serde_json::Value>(key)
     }
     fn get_nested_as_string(&self, keys: &[&str]) -> Option<String> {
-        self.get_nested_as_logged::<String>(keys)
+        self.get_nested_key_as_logged::<String>(keys)
     }
     fn as_logged_any<T: AsLogged>(&self) -> Option<T>
     where
@@ -273,7 +297,28 @@ impl JsonExt for serde_json::Value {
     fn get_key_as_logged<T: AsLogged>(&self, key: &str) -> Option<T> {
         T::get_key_as_logged(self, key)
     }
-    fn get_nested_as_logged<T: AsLogged>(&self, keys: &[&str]) -> Option<T> {
-        T::get_nested_as_logged(self, keys)
+    fn get_nested_key_as_logged<T: AsLogged>(&self, keys: &[&str]) -> Option<T> {
+        T::get_nested_key_as_logged(self, keys)
     }
 }
+
+pub fn parse_mmss_to_pginterval(s: &str) -> sqlx::postgres::types::PgInterval {
+    let parts: Vec<&str> = s.split(':').collect();
+    let (minutes, seconds) = match parts.as_slice() {
+        [mm, ss] => (
+            mm.parse::<i64>().unwrap_or(0),
+            ss.parse::<i64>().unwrap_or(0),
+        ),
+        _ => (0, 0),
+    };
+    let total_us = (minutes * 60 + seconds) * 1_000_000;
+    PgInterval {
+        months: 0,
+        days: 0,
+        microseconds: total_us,
+    }
+}
+
+make_deserialize_to_type!(deserialize_to_bool, bool);
+make_deserialize_to_type!(deserialize_to_option_i32, Option<i32>);
+make_deserialize_key_to_type!(deserialize_default_to_string, "default", String);

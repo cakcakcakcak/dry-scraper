@@ -1,24 +1,40 @@
+use std::str::FromStr;
+
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-use crate::api::cacheable::CacheableApi;
-use crate::api::nhl_stats_api::NhlStatsApi;
-use crate::api::nhl_web_api::NhlWebApi;
+use crate::db::DbPool;
+use crate::db::persistable::Persistable;
 use crate::lp_error::LPError;
+use crate::models::traits::{DbStruct, IntoDbStruct};
+
+use crate::impl_has_type_name;
 use crate::sqlx_operation_with_retries;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NhlPlayoffBracket {
+pub struct NhlPlayoffBracketJson {
     pub bracket_logo: String,
     pub bracket_logo_fr: String,
-    pub series: Vec<NhlPlayoffSeries>,
+    pub series: Vec<NhlPlayoffSeriesJson>,
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NhlPlayoffSeries {
-    pub season_id: Option<i32>,
+pub struct NhlSeedTeamJson {
+    pub id: i32,
+    pub abbrev: String,
+    pub name: String,
+    pub common_name: String,
+    pub place_name_with_preposition: String,
+    pub logo: String,
+    pub dark_logo: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NhlPlayoffSeriesJson {
     pub series_letter: String,
     pub series_url: String,
     pub series_title: String,
@@ -32,64 +48,155 @@ pub struct NhlPlayoffSeries {
     pub bottom_seed_wins: i32,
     pub winning_team_id: Option<i32>, // as far as i can tell, only optional because of the 1919 SCF, cancelled due to spanish flu
     pub losing_team_id: Option<i32>,
-    pub top_seed_team_id: Option<i32>,
-    pub top_seed_team_abbrev: Option<String>,
-    pub top_seed_team_name: Option<String>,
-    pub top_seed_team_common_name: Option<String>,
-    pub top_seed_team_place_name_with_preposition: Option<String>,
-    pub top_seed_team_logo: Option<String>,
-    pub top_seed_team_dark_logo: Option<String>,
-    pub bottom_seed_team_id: Option<i32>,
-    pub bottom_seed_team_abbrev: Option<String>,
-    pub bottom_seed_team_name: Option<String>,
-    pub bottom_seed_team_common_name: Option<String>,
-    pub bottom_seed_team_place_name_with_preposition: Option<String>,
-    pub bottom_seed_team_logo: Option<String>,
-    pub bottom_seed_team_dark_logo: Option<String>,
-    pub api_cache_endpoint: Option<String>,
-    pub raw_json: Option<serde_json::Value>,
+    pub top_seed_team: NhlSeedTeamJson,
+    pub bottom_seed_team: NhlSeedTeamJson,
+}
+impl IntoDbStruct for NhlPlayoffSeriesJson {
+    type U = NhlPlayoffSeries;
+
+    fn to_db_struct(self) -> Self::U {
+        let NhlPlayoffSeriesJson {
+            series_letter,
+            series_url,
+            series_title,
+            series_abbrev,
+            playoff_round,
+            top_seed_rank,
+            top_seed_rank_abbrev,
+            top_seed_wins,
+            bottom_seed_rank,
+            bottom_seed_rank_abbrev,
+            bottom_seed_wins,
+            winning_team_id,
+            losing_team_id,
+            top_seed_team,
+            bottom_seed_team,
+        } = self;
+        let season_id = series_url.split("/").collect::<Vec<&str>>()[3]
+            .parse::<i32>()
+            .unwrap();
+        let NhlSeedTeamJson {
+            id: top_seed_team_id,
+            abbrev: top_seed_team_abbrev,
+            name: top_seed_team_name,
+            common_name: top_seed_team_common_name,
+            place_name_with_preposition: top_seed_team_place_name_with_preposition,
+            logo: top_seed_team_logo,
+            dark_logo: top_seed_team_dark_logo,
+        } = top_seed_team;
+        let NhlSeedTeamJson {
+            id: bottom_seed_team_id,
+            abbrev: bottom_seed_team_abbrev,
+            name: bottom_seed_team_name,
+            common_name: bottom_seed_team_common_name,
+            place_name_with_preposition: bottom_seed_team_place_name_with_preposition,
+            logo: bottom_seed_team_logo,
+            dark_logo: bottom_seed_team_dark_logo,
+        } = bottom_seed_team;
+        NhlPlayoffSeries {
+            season_id,
+            series_letter,
+            series_url,
+            series_title,
+            series_abbrev,
+            playoff_round,
+            top_seed_rank,
+            top_seed_rank_abbrev,
+            top_seed_wins,
+            bottom_seed_rank,
+            bottom_seed_rank_abbrev,
+            bottom_seed_wins,
+            winning_team_id,
+            losing_team_id,
+            top_seed_team_id,
+            top_seed_team_abbrev,
+            top_seed_team_name,
+            top_seed_team_common_name,
+            top_seed_team_place_name_with_preposition,
+            top_seed_team_logo,
+            top_seed_team_dark_logo,
+            bottom_seed_team_id,
+            bottom_seed_team_abbrev,
+            bottom_seed_team_name,
+            bottom_seed_team_common_name,
+            bottom_seed_team_place_name_with_preposition,
+            bottom_seed_team_logo,
+            bottom_seed_team_dark_logo,
+            endpoint: String::new(),
+            raw_json: serde_json::Value::Null,
+            last_updated: None,
+        }
+    }
+}
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct NhlPlayoffSeries {
+    pub season_id: i32,
+    pub series_letter: String,
+    pub series_url: String,
+    pub series_title: String,
+    pub series_abbrev: String,
+    pub playoff_round: i32,
+    pub top_seed_rank: i32,
+    pub top_seed_rank_abbrev: String,
+    pub top_seed_wins: i32,
+    pub bottom_seed_rank: i32,
+    pub bottom_seed_rank_abbrev: String,
+    pub bottom_seed_wins: i32,
+    pub winning_team_id: Option<i32>, // as far as i can tell, only optional because of the 1919 SCF, cancelled due to spanish flu
+    pub losing_team_id: Option<i32>,
+    pub top_seed_team_id: i32,
+    pub top_seed_team_abbrev: String,
+    pub top_seed_team_name: String,
+    pub top_seed_team_common_name: String,
+    pub top_seed_team_place_name_with_preposition: String,
+    pub top_seed_team_logo: String,
+    pub top_seed_team_dark_logo: String,
+    pub bottom_seed_team_id: i32,
+    pub bottom_seed_team_abbrev: String,
+    pub bottom_seed_team_name: String,
+    pub bottom_seed_team_common_name: String,
+    pub bottom_seed_team_place_name_with_preposition: String,
+    pub bottom_seed_team_logo: String,
+    pub bottom_seed_team_dark_logo: String,
+    pub endpoint: String,
+    pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl NhlPlayoffSeries {
-    pub async fn verify_relationships(
-        &self,
-        nhl_stats_api: &NhlStatsApi,
-        pool: &sqlx::Pool<sqlx::Postgres>,
-    ) -> Result<(), LPError> {
-        let _ = nhl_stats_api
-            .get_nhl_season(pool, self.season_id.unwrap())
-            .await?;
-        if let Some(winning_team_id) = self.winning_team_id {
-            let _ = nhl_stats_api.get_nhl_team(pool, winning_team_id).await?;
-        }
-        if let Some(losing_team_id) = self.losing_team_id {
-            let _ = nhl_stats_api.get_nhl_team(pool, losing_team_id).await?;
-        }
-        if let Some(top_seed_team_id) = self.top_seed_team_id {
-            let _ = nhl_stats_api.get_nhl_team(pool, top_seed_team_id).await?;
-        }
-        if let Some(bottom_seed_team_id) = self.bottom_seed_team_id {
-            let _ = nhl_stats_api
-                .get_nhl_team(pool, bottom_seed_team_id)
-                .await?;
-        }
-        if let Some(endpoint) = &self.api_cache_endpoint {
-            let _ = nhl_stats_api.get_or_cache_endpoint(pool, endpoint).await?;
-        }
+impl DbStruct for NhlPlayoffSeries {
+    fn fill_context(&mut self, endpoint: String, raw_data: String) -> Result<(), LPError> {
+        self.endpoint = endpoint;
+
+        let raw_json = serde_json::Value::from_str(&raw_data)?;
+        self.raw_json = raw_json;
         Ok(())
     }
+}
+#[async_trait]
+impl Persistable for NhlPlayoffSeries {
+    type Id = (i32, String);
 
-    pub async fn upsert(
-        &self,
-        nhl_stats_api: &NhlStatsApi,
-        pool: &sqlx::Pool<sqlx::Postgres>,
-    ) -> Result<(), LPError> {
-        match self.verify_relationships(nhl_stats_api, pool).await {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        };
-        sqlx_operation_with_retries! (
-            sqlx::query(r#"INSERT INTO nhl_playoff_series (
+    fn id(&self) -> Self::Id {
+        (self.season_id, self.series_letter.clone())
+    }
+
+    #[tracing::instrument(skip(pool))]
+    async fn try_db(pool: &DbPool, id: Self::Id) -> Result<Option<Self>, LPError> {
+        sqlx_operation_with_retries!(
+            sqlx::query_as::<_, Self>(
+                r#"SELECT * FROM nhl_playoff_series WHERE season_id=$1 AND series_letter=$2"#
+            )
+            .bind(id.0.clone())
+            .bind(id.1.clone())
+            .fetch_optional(pool)
+            .await
+        )
+        .await
+        .map_err(LPError::from)
+    }
+
+    fn create_query(&self) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
+        sqlx::query(r#"INSERT INTO nhl_playoff_series (
                                         season_id,
                                         series_letter,
                                         series_url,
@@ -118,7 +225,7 @@ impl NhlPlayoffSeries {
                                         bottom_seed_team_place_name_with_preposition,
                                         bottom_seed_team_logo,
                                         bottom_seed_team_dark_logo,
-                                        api_cache_endpoint,
+                                        endpoint,
                                         raw_json
                                     ) VALUES (
                                         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
@@ -151,7 +258,7 @@ impl NhlPlayoffSeries {
                                         bottom_seed_team_place_name_with_preposition = EXCLUDED.bottom_seed_team_place_name_with_preposition,
                                         bottom_seed_team_logo = EXCLUDED.bottom_seed_team_logo,
                                         bottom_seed_team_dark_logo = EXCLUDED.bottom_seed_team_dark_logo,
-                                        api_cache_endpoint = EXCLUDED.api_cache_endpoint,
+                                        endpoint = EXCLUDED.endpoint,
                                         raw_json = EXCLUDED.raw_json,
                                         last_updated = now()
                                     "#
@@ -184,10 +291,11 @@ impl NhlPlayoffSeries {
             .bind(&self.bottom_seed_team_place_name_with_preposition)
             .bind(&self.bottom_seed_team_logo)
             .bind(&self.bottom_seed_team_dark_logo)
-            .bind(&self.api_cache_endpoint)
+            .bind(&self.endpoint)
             .bind(&self.raw_json)
-            .execute(pool).await
-        ).await?;
-        Ok(())
     }
 }
+
+impl_has_type_name!(NhlPlayoffSeriesJson);
+impl_has_type_name!(NhlPlayoffSeries);
+impl_has_type_name!(NhlPlayoffBracketJson);

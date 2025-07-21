@@ -14,6 +14,8 @@ pub struct CliArgs {
     #[arg(long)]
     pub max_db_connections: Option<u32>,
     #[arg(long)]
+    pub upsert_concurrency: Option<usize>,
+    #[arg(long)]
     pub reset_db: Option<bool>,
     #[arg(long)]
     pub retry_jitter_duration_ms: Option<u64>,

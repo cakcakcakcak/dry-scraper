@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+use crate::db::DbPool;
 use crate::sqlx_operation_with_retries;
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -11,7 +12,7 @@ pub struct ApiCache {
 }
 
 impl ApiCache {
-    pub async fn upsert(&self, pool: &sqlx::Pool<sqlx::Postgres>) -> Result<(), sqlx::Error> {
+    pub async fn upsert(&self, pool: &DbPool) -> Result<(), sqlx::Error> {
         sqlx_operation_with_retries!(
             sqlx::query(
                 r#"INSERT INTO api_cache (endpoint, raw_data)
