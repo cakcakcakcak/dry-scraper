@@ -1,8 +1,6 @@
 use sqlx::migrate::MigrateDatabase;
 use sqlx::postgres::PgPoolOptions;
 
-use tracing::instrument;
-
 use tokio_retry::RetryIf;
 
 use crate::LPError;
@@ -11,7 +9,7 @@ use crate::db::DbPool;
 use crate::sqlx_operation_with_retries;
 use crate::util::{default_retry_strategy, is_transient_sqlx_error};
 
-#[instrument]
+#[tracing::instrument]
 pub async fn init_db() -> Result<DbPool, LPError> {
     // get the environment variables and construct the database_url
     let db_url = database_url()?;

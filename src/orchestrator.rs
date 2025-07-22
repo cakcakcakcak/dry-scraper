@@ -16,6 +16,7 @@ use crate::models::nhl::nhl_team::{NhlTeam, NhlTeamJson};
 use crate::models::traits::{DbStruct, HasTypeName, IntoDbStruct};
 use crate::util::filter_and_log_results;
 
+#[tracing::instrument(skip(pool, nhl_stats_api))]
 async fn get_nhl_api_data_array<T>(
     pool: &DbPool,
     nhl_stats_api: &NhlStatsApi,
@@ -35,17 +36,20 @@ where
 
     // VERIFY_RELATIONSHIPS
     // CORRECT ANY MISSING PIECES
-
-    T::U::upsert_all(db_records.clone(), pool);
-
     tracing::info!(
-        "Upserted {count} `{}`s into database. Now returning them.",
+        "Upserting {count} `{}`s into lp database.",
+        T::U::type_name()
+    );
+    T::U::upsert_all(db_records.clone(), pool).await?;
+    tracing::info!(
+        "Upserted {count} `{}`s into lp database. Now returning them.",
         T::U::type_name()
     );
 
     Ok(db_records)
 }
 
+#[tracing::instrument(skip(pool, nhl_stats_api))]
 pub async fn get_nhl_seasons(
     pool: &DbPool,
     nhl_stats_api: &NhlStatsApi,
@@ -55,6 +59,7 @@ pub async fn get_nhl_seasons(
     Ok(db_seasons)
 }
 
+#[tracing::instrument(skip(pool, nhl_stats_api))]
 pub async fn get_nhl_franchises(
     pool: &DbPool,
     nhl_stats_api: &NhlStatsApi,
@@ -64,6 +69,7 @@ pub async fn get_nhl_franchises(
     Ok(db_franchises)
 }
 
+#[tracing::instrument(skip(pool, nhl_stats_api))]
 pub async fn get_nhl_teams(
     pool: &DbPool,
     nhl_stats_api: &NhlStatsApi,
@@ -73,6 +79,7 @@ pub async fn get_nhl_teams(
     Ok(db_teams)
 }
 
+#[tracing::instrument(skip(pool, nhl_stats_api))]
 pub async fn get_nhl_team(
     pool: &DbPool,
     nhl_stats_api: &NhlStatsApi,
@@ -81,12 +88,15 @@ pub async fn get_nhl_team(
     let team_json_with_context: ItemParsedWithContext<NhlTeamJson> =
         nhl_stats_api.get_nhl_team(pool, team_id).await?;
     let team = team_json_with_context.to_db_struct();
+
+    tracing::debug!("Upserting team with id {team_id} into lp database. Now returning it.");
     team.upsert(pool).await?;
-    tracing::debug!("Upserted team with id {team_id} into database. Now returning them.");
+    tracing::debug!("Upserted team with id {team_id} into lp database. Now returning it.");
 
     Ok(team)
 }
 
+#[tracing::instrument(skip(pool, nhl_web_api))]
 pub async fn get_nhl_player(
     pool: &DbPool,
     nhl_web_api: &NhlWebApi,
@@ -100,6 +110,7 @@ pub async fn get_nhl_player(
     Ok(player)
 }
 
+#[tracing::instrument(skip(pool, nhl_web_api))]
 pub async fn get_nhl_game(
     pool: &DbPool,
     nhl_web_api: &NhlWebApi,
@@ -113,6 +124,7 @@ pub async fn get_nhl_game(
     Ok(game)
 }
 
+#[tracing::instrument(skip(pool, nhl_web_api))]
 pub async fn get_nhl_all_games_in_season(
     pool: &DbPool,
     nhl_web_api: &NhlWebApi,
@@ -149,22 +161,27 @@ pub async fn get_nhl_all_games_in_season(
         .into_iter()
         .map(|game_json| game_json.to_db_struct())
         .collect();
-    NhlGame::upsert_all(games.clone(), pool).await?;
+
+    tracing::info!("Upserting {number_of_games} games from {season} NHL season into lp database.");
+    let successes = NhlGame::upsert_all(games.clone(), pool).await?;
+    tracing::info!(
+        "Successfull upserted {successes}/{number_of_games} games from {season} NHL season into lp database. Now returning."
+    );
 
     Ok(games)
 }
 
-pub async fn upsert_all_with_logging<T>(items: &Vec<T>, pool: &DbPool)
-where
-    T: std::fmt::Debug + DbStruct + Persistable + Sync,
-{
-    stream::iter(items)
-        .map(|item| item.upsert(pool))
-        .buffer_unordered(CONFIG.upsert_concurrency)
-        .for_each(|result| async {
-            if let Err(e) = result {
-                tracing::warn!("{e}");
-            }
-        })
-        .await;
-}
+// pub async fn upsert_all_with_logging<T>(items: &Vec<T>, pool: &DbPool)
+// where
+//     T: std::fmt::Debug + DbStruct + Persistable + Sync,
+// {
+//     stream::iter(items)
+//         .map(|item| item.upsert(pool))
+//         .buffer_unordered(CONFIG.upsert_concurrency)
+//         .for_each(|result| async {
+//             if let Err(e) = result {
+//                 tracing::warn!("{e}");
+//             }
+//         })
+//         .await;
+// }

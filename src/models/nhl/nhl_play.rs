@@ -16,7 +16,7 @@ pub struct NhlPlayJson {
     pub period_descriptor: PeriodDescriptorJson,
     pub time_in_period: String,
     pub time_remaining: String,
-    #[serde(deserialize_with = "deserialize_to_option_i32")]
+    #[serde(default, deserialize_with = "deserialize_to_option_i32")]
     pub situation_code: Option<i32>,
     pub home_team_defending_side: Option<DefendingSide>,
     pub type_code: i32,

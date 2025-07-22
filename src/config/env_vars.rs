@@ -15,7 +15,6 @@ pub struct EnvironmentVariables {
     pub retries: Option<usize>,
 }
 impl EnvironmentVariables {
-    #[instrument]
     pub fn from_env() -> Self {
         Self {
             pg_host: Self::get_parsed_env_var_with_log("PG_HOST"),
@@ -30,6 +29,7 @@ impl EnvironmentVariables {
         }
     }
 
+    #[tracing::instrument]
     fn get_environment_variable(key: &str) -> Result<String, LPError> {
         match std::env::var(key) {
             Ok(var) => Ok(var),
@@ -44,6 +44,7 @@ impl EnvironmentVariables {
         }
     }
 
+    #[tracing::instrument]
     fn get_parsed_env_var_with_log<T: std::str::FromStr>(key: &str) -> Option<T> {
         match Self::get_environment_variable(key) {
             Ok(val) => match val.parse::<T>() {

@@ -1,5 +1,7 @@
 use async_trait::async_trait;
+use indicatif::{ProgressBar, ProgressStyle};
 
+use crate::config::CONFIG;
 use crate::db::DbPool;
 use crate::lp_error::LPError;
 
@@ -25,20 +27,27 @@ pub trait Persistable: std::fmt::Debug + Sized {
         Ok(())
     }
 
+    #[tracing::instrument(skip(pool))]
     async fn upsert_all<T: Send + Persistable>(
         records: Vec<T>,
         pool: &DbPool,
-    ) -> Result<(), LPError> {
+    ) -> Result<usize, LPError> {
         let mut tx = pool.begin().await?;
+        let pb = ProgressBar::new(records.len() as u64);
+        pb.set_style(CONFIG.progress_bar_style.clone());
 
+        let mut successes: usize = records.len();
         for record in records {
             if let Err(e) = record.create_query().execute(&mut *tx).await {
                 tracing::warn!("Upsert failed for record {record:?}: {e}");
+                successes -= 1;
             }
+            pb.inc(1);
         }
+        pb.finish_using_style();
 
         tx.commit().await?;
-        Ok(())
+        Ok(successes)
     }
 }
 
