@@ -15,7 +15,6 @@ pub struct NhlStatsApi {
 }
 impl std::fmt::Debug for NhlStatsApi {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Only print the base_url, not the whole client struct
         f.debug_struct("NhlStatsApi")
             .field("base_url", &self.base_url)
             .finish()
@@ -74,7 +73,7 @@ impl NhlStatsApi {
         pool: &DbPool,
     ) -> Result<Vec<ItemParsedWithContext<T>>, LPError>
     where
-        T: serde::de::DeserializeOwned + HasEndpoint,
+        T: serde::de::DeserializeOwned + HasEndpoint + std::fmt::Debug,
     {
         let endpoint: String = T::endpoint(self, T::Params::default());
         let raw_data: String = self.get_or_cache_endpoint(pool, &endpoint).await?;

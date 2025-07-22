@@ -1,4 +1,5 @@
 use futures::stream::{self, StreamExt};
+use indicatif::ProgressBar;
 
 use crate::api::api_common::HasEndpoint;
 use crate::api::nhl::nhl_stats_api::NhlStatsApi;
@@ -16,13 +17,15 @@ use crate::models::nhl::nhl_team::{NhlTeam, NhlTeamJson};
 use crate::models::traits::{DbStruct, HasTypeName, IntoDbStruct};
 use crate::util::filter_and_log_results;
 
+use crate::with_progress_bar;
+
 #[tracing::instrument(skip(pool, nhl_stats_api))]
 async fn get_nhl_api_data_array<T>(
     pool: &DbPool,
     nhl_stats_api: &NhlStatsApi,
 ) -> Result<Vec<T::U>, LPError>
 where
-    T: serde::de::DeserializeOwned + HasEndpoint + IntoDbStruct,
+    T: serde::de::DeserializeOwned + HasEndpoint + IntoDbStruct + std::fmt::Debug,
     T::U: std::fmt::Debug + DbStruct + Persistable + HasTypeName + Clone + Send + Sync,
 {
     let data_array: Vec<ItemParsedWithContext<T>> =
@@ -124,48 +127,79 @@ pub async fn get_nhl_game(
     Ok(game)
 }
 
+pub async fn get_nhl_all_games_in_season_by_id(
+    pool: &DbPool,
+    nhl_web_api: &NhlWebApi,
+    season_id: i32,
+) -> Result<Vec<NhlGame>, LPError> {
+    let season = NhlSeason::try_db(pool, season_id).await?.ok_or_else(|| {
+        LPError::DatabaseCustom(format!(
+            "Season {season_id} not found in database. Please fetch seasons first."
+        ))
+    })?;
+
+    get_nhl_all_games_in_season(pool, nhl_web_api, &season).await
+}
+
 #[tracing::instrument(skip(pool, nhl_web_api))]
 pub async fn get_nhl_all_games_in_season(
     pool: &DbPool,
     nhl_web_api: &NhlWebApi,
-    season: i32,
+    season: &NhlSeason,
 ) -> Result<Vec<NhlGame>, LPError> {
-    let number_of_games: Option<i32> =
-        sqlx::query_scalar("SELECT total_regular_season_games FROM nhl_season WHERE id=$1")
-            .bind(season)
-            .fetch_optional(pool)
-            .await?;
-    let number_of_games = number_of_games.ok_or_else(|| {
-        LPError::DatabaseCustom(format!("{season} season not found in lp database."))
-    })?;
+    let number_of_games: i32 = season.total_regular_season_games;
+    let season_id: String = season.id.to_string();
 
-    let prefix: String = format!("{}02", season.to_string()[..4].to_string());
+    let prefix: String = format!("{}02", season_id[..4].to_string());
 
-    let fetches = stream::iter(1..=number_of_games).map(|game_number| {
-        let pool: sqlx::Pool<sqlx::Postgres> = pool.clone();
-        let nhl_web_api: &NhlWebApi = nhl_web_api;
-        let id_string: String = format!("{prefix}{game_number:04}");
-        async move {
-            let id: i32 = id_string.parse().map_err(|e| LPError::Parse(e))?;
-            nhl_web_api.fetch_from_id::<NhlGameJson>(&pool, id).await
-        }
-    });
-    let json_results: Vec<Result<ItemParsedWithContext<NhlGameJson>, LPError>> = fetches
-        .buffer_unordered(CONFIG.upsert_concurrency)
-        .collect()
-        .await;
-
+    tracing::info!(
+        "Fetching {number_of_games} games from {season_id} NHL season from API or cache."
+    );
+    let json_results: Vec<Result<ItemParsedWithContext<NhlGameJson>, LPError>> =
+        with_progress_bar!(number_of_games, |pb| {
+            let fetches = stream::iter(1..=number_of_games).map(|game_number| {
+                let pool: sqlx::Pool<sqlx::Postgres> = pool.clone();
+                let nhl_web_api: &NhlWebApi = nhl_web_api;
+                let id_string: String = format!("{prefix}{game_number:04}");
+                async move {
+                    let id: i32 = id_string.parse().map_err(|e| LPError::Parse(e))?;
+                    nhl_web_api.fetch_from_id::<NhlGameJson>(&pool, id).await
+                }
+            });
+            fetches
+                .buffer_unordered(CONFIG.upsert_concurrency)
+                .inspect(|_| pb.inc(1))
+                .collect()
+                .await
+        });
     let ok_json_results: Vec<ItemParsedWithContext<NhlGameJson>> =
         filter_and_log_results(json_results);
-    let games: Vec<NhlGame> = ok_json_results
-        .into_iter()
-        .map(|game_json| game_json.to_db_struct())
-        .collect();
+    let ok_json_result_count = ok_json_results.len();
+    tracing::info!(
+        "Successfully fetched {ok_json_result_count}/{number_of_games} games from {season_id} NHL season."
+    );
 
-    tracing::info!("Upserting {number_of_games} games from {season} NHL season into lp database.");
+    tracing::info!(
+        "Parsing {ok_json_result_count} games from {season_id} NHL season into lp database structs."
+    );
+    let games: Vec<NhlGame> = with_progress_bar!(ok_json_result_count, |pb| {
+        ok_json_results
+            .into_iter()
+            .map(|game_json| game_json.to_db_struct())
+            .inspect(|_| pb.inc(1))
+            .collect()
+    });
+    let game_count = games.len();
+    tracing::info!(
+        "Successfully parsed {game_count}/{number_of_games} games from {season_id} NHL season into lp database. Now returning."
+    );
+
+    tracing::info!(
+        "Upserting {number_of_games} games from {season_id} NHL season into lp database."
+    );
     let successes = NhlGame::upsert_all(games.clone(), pool).await?;
     tracing::info!(
-        "Successfull upserted {successes}/{number_of_games} games from {season} NHL season into lp database. Now returning."
+        "Successfully upserted {successes}/{number_of_games} games from {season_id} NHL season into lp database. Now returning."
     );
 
     Ok(games)

@@ -43,15 +43,16 @@ async fn main() -> Result<(), LPError> {
     let nhl_stats_api: NhlStatsApi = NhlStatsApi::new();
     let nhl_web_api: NhlWebApi = NhlWebApi::new();
 
-    _ = get_nhl_seasons(&pool, &nhl_stats_api).await?;
+    let seasons = get_nhl_seasons(&pool, &nhl_stats_api).await?;
     _ = get_nhl_franchises(&pool, &nhl_stats_api).await?;
     _ = get_nhl_teams(&pool, &nhl_stats_api).await?;
     _ = get_nhl_team(&pool, &nhl_stats_api, 7288).await?;
     _ = get_nhl_player(&pool, &nhl_web_api, 8478402).await?;
     _ = get_nhl_game(&pool, &nhl_web_api, 2023020204).await?;
 
-    let games = get_nhl_all_games_in_season(&pool, &nhl_web_api, 20222023).await?;
-    let games = get_nhl_all_games_in_season(&pool, &nhl_web_api, 20232024).await?;
-    let games = get_nhl_all_games_in_season(&pool, &nhl_web_api, 20242025).await?;
+    for season in seasons {
+        let games = get_nhl_all_games_in_season(&pool, &nhl_web_api, &season).await?;
+    }
+
     Ok(())
 }

@@ -50,7 +50,7 @@ impl EnvironmentVariables {
             Ok(val) => match val.parse::<T>() {
                 Ok(parsed) => Some(parsed),
                 Err(_) => {
-                    tracing::debug!(
+                    tracing::warn!(
                         "Environment variable `{key}` present but could not be parsed to `{}`.",
                         std::any::type_name::<T>()
                     );

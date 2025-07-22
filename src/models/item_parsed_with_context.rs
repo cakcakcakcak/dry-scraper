@@ -1,5 +1,6 @@
 use crate::models::traits::{DbStruct, IntoDbStruct};
 
+#[derive(Debug)]
 pub struct ItemParsedWithContext<T> {
     pub item: T,
     pub endpoint: String,
@@ -7,7 +8,7 @@ pub struct ItemParsedWithContext<T> {
 }
 impl<T> ItemParsedWithContext<T>
 where
-    T: IntoDbStruct,
+    T: IntoDbStruct + std::fmt::Debug,
 {
     pub fn to_db_struct(self) -> <T as IntoDbStruct>::U {
         let mut db_struct: <T as IntoDbStruct>::U = self.item.to_db_struct();

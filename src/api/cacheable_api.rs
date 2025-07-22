@@ -29,48 +29,49 @@ pub trait CacheableApi: std::fmt::Debug {
         )
         .await?
         {
-            Some(row) => {
-                // if present, get the contents of the raw_data column and return it
-                match row.try_get::<String, _>("raw_data") {
-                    Ok(raw_data) => {
-                        tracing::debug!("Record found for endpoint. Retrieving raw_data...");
-                        return Ok(raw_data);
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            endpoint = %&endpoint,
-                            error = %e,
-                            "Cached record for endpoint is unusable. Attempting to refresh from API..."
-                        );
-                        // fall through to fetch from API
-                    }
+            Some(row) => match row.try_get::<String, _>("raw_data") {
+                Ok(raw_data) => {
+                    tracing::debug!("Record found for endpoint. Retrieving raw_data...");
+                    return Ok(raw_data);
                 }
-            }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "Cached record for endpoint is unusable. Attempting to refresh from API..."
+                    );
+                }
+            },
             None => {
-                // otherwise fetch the raw_data, store it in our cache, and return it
-                tracing::info!("Cached record not found for endpoint. Querying API...");
-                // fall through to fetch from api
+                tracing::debug!("Cached record not found for endpoint. Querying API...");
             }
         }
-        // fetch from api, insert into cache, and return
         let response: reqwest::Response =
             reqwest_with_retries!(self.client().get(endpoint).send().await)
                 .await
                 .map_err(|e| {
-                    // network error encountered
+                    tracing::warn!(
+                        error = %e,
+                        "Error encountered while fetching from API."
+                    );
                     lp_error::LPError::Api(e)
                 })?
                 .error_for_status()
                 .map_err(|e| {
-                    // http status code not 2xx
+                    tracing::warn!(
+                        error = %e,
+                        "HTTP response code not 2xx."
+                    );
                     lp_error::LPError::Api(e)
                 })?;
 
         tracing::debug!("Response received. Parsing and inserting into cache...");
-        let raw_data = response
-            .text()
-            .await
-            .map_err(|e| lp_error::LPError::Api(e))?;
+        let raw_data = response.text().await.map_err(|e| {
+            tracing::warn!(
+                error = %e,
+                "Failed to parse response into text."
+            );
+            lp_error::LPError::Api(e)
+        })?;
         let cache_record = ApiCache {
             endpoint: endpoint.to_string(),
             raw_data: raw_data,

@@ -113,7 +113,7 @@ impl IntoDbStruct for NhlSeasonJson {
     }
 }
 
-#[derive(Debug, FromRow, Clone)]
+#[derive(FromRow, Clone)]
 pub struct NhlSeason {
     pub id: i32,
     pub all_star_game_in_use: bool,
@@ -141,6 +141,18 @@ pub struct NhlSeason {
     pub endpoint: String,
     pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
+}
+impl std::fmt::Debug for NhlSeason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Only print the base_url, not the whole client struct
+        f.debug_struct("NhlSeason")
+            .field("id", &self.id)
+            .field(
+                "total_regular_season_games",
+                &self.total_regular_season_games,
+            )
+            .finish()
+    }
 }
 impl DbStruct for NhlSeason {
     fn fill_context(&mut self, endpoint: String, raw_data: String) -> Result<(), LPError> {

@@ -7,6 +7,17 @@ use crate::models::item_parsed_with_context::ItemParsedWithContext;
 use crate::models::nhl::nhl_model_common::NhlApiDataArrayResponse;
 
 #[macro_export]
+macro_rules! with_progress_bar {
+    ($count:expr, |$pb:ident| $body:block) => {{
+        let $pb = indicatif::ProgressBar::new($count as u64);
+        $pb.set_style($crate::config::CONFIG.progress_bar_style.clone());
+        let result = { $body };
+        $pb.finish_using_style();
+        result
+    }};
+}
+
+#[macro_export]
 macro_rules! sqlx_operation_with_retries {
     ($body:expr) => {
         $crate::util::sqlx_operation_with_retries(|| async { $body })
@@ -116,13 +127,14 @@ where
         .collect()
 }
 
-pub fn filter_and_log_results<T>(results: Vec<Result<T, LPError>>) -> Vec<T> {
+#[tracing::instrument(skip(results))]
+pub fn filter_and_log_results<T: std::fmt::Debug>(results: Vec<Result<T, LPError>>) -> Vec<T> {
     results
         .into_iter()
         .filter_map(|res| match res {
             Ok(season) => Some(season),
             Err(e) => {
-                tracing::warn!("{e}");
+                tracing::warn!("{e:?}");
                 None
             }
         })
