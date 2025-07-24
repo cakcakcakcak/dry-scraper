@@ -10,18 +10,17 @@ mod orchestrator;
 mod serde_helpers;
 mod util;
 
-use config::CONFIG;
+pub use config::CONFIG;
 
-use api::nhl::nhl_stats_api::NhlStatsApi;
-use api::nhl::nhl_web_api::NhlWebApi;
-use db::DbPool;
-use db::init::init_db;
-use lp_error::LPError;
+pub use api::nhl::{NhlStatsApi, NhlWebApi};
+pub use db::DbPool;
+pub use lp_error::LPError;
+
+use db::init_db;
 use orchestrator::{
     get_nhl_all_games_in_season, get_nhl_franchises, get_nhl_game, get_nhl_player, get_nhl_seasons,
     get_nhl_team, get_nhl_teams,
 };
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), LPError> {
@@ -30,7 +29,7 @@ async fn main() -> Result<(), LPError> {
 
     // initialize logging with the level indicated by environment variable
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_env("LOG_LEVEL"))
+        .with_env_filter(tracing_subscriber::EnvFilter::from_env("LOG_LEVEL"))
         .init();
 
     // validate command line arguments and environment variables and initialize a static CONFIG struct

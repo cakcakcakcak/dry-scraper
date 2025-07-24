@@ -1,6 +1,3 @@
-use crate::db::DbPool;
-use crate::lp_error::LPError;
-
 pub trait IntoDbStruct {
     type U: DbStruct;
 
@@ -8,7 +5,7 @@ pub trait IntoDbStruct {
 }
 
 pub trait DbStruct {
-    fn fill_context(&mut self, endpoint: String, raw_data: String) -> Result<(), LPError>;
+    fn fill_context(&mut self, endpoint: String, raw_data: String);
 }
 
 pub trait HasTypeName {

@@ -4,10 +4,11 @@ use serde_json;
 use sqlx::FromRow;
 use sqlx::postgres::types::PgInterval;
 
-use crate::models::nhl::nhl_model_common::{DefendingSide, PeriodDescriptorJson, PeriodTypeJson};
-use crate::serde_helpers::{deserialize_to_option_i32, parse_mmss_to_pginterval};
+use crate::models::nhl::common::{DefendingSide, PeriodDescriptorJson, PeriodTypeJson};
+use crate::serde_helpers::{JsonExt, parse_mmss_to_pginterval};
 
 use crate::impl_has_type_name;
+use crate::make_deserialize_to_type;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,7 +26,7 @@ pub struct NhlPlayJson {
     pub details: Option<serde_json::Value>,
 }
 impl NhlPlayJson {
-    pub fn to_db_struct(self, endpoint: String, raw_json: serde_json::Value) -> NhlPlay {
+    pub fn to_db_struct(self) -> NhlPlay {
         let NhlPlayJson {
             event_id,
             period_descriptor,
@@ -88,3 +89,5 @@ pub struct NhlPlay {
 
 impl_has_type_name!(NhlPlayJson);
 impl_has_type_name!(NhlPlay);
+
+make_deserialize_to_type!(deserialize_to_option_i32, Option<i32>);

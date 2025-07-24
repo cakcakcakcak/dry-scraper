@@ -1,8 +1,6 @@
-use serde::{self, Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use sqlx::postgres::types::PgInterval;
-
-use crate::lp_error::LPError;
 
 pub fn deserialize_mmss_to_pginterval<'de, D>(deserializer: D) -> Result<PgInterval, D::Error>
 where
@@ -75,7 +73,7 @@ macro_rules! make_deserialize_key_to_type {
                                                     stringify!($func_name),
                                                     "\")]`"
                                                 )]
-        pub fn $func_name<'de, D>(deserializer: D) -> Result<Option<$ty>, D::Error>
+        fn $func_name<'de, D>(deserializer: D) -> Result<Option<$ty>, D::Error>
         where
             D: serde::Deserializer<'de>,
         {
@@ -93,7 +91,7 @@ macro_rules! make_deserialize_key_to_type {
                                                     stringify!($func_name),
                                                     "\")]`"
                                                 )]
-        pub fn $func_name<'de, D>(deserializer: D) -> Result<$ty, D::Error>
+        fn $func_name<'de, D>(deserializer: D) -> Result<$ty, D::Error>
         where
             D: serde::Deserializer<'de>,
         {
@@ -120,7 +118,7 @@ macro_rules! make_deserialize_nested_key_to_type {
             stringify!($func_name),
             "\")]`"
         )]
-        pub fn $func_name<'de, D>(deserializer: D) -> Result<Option<$ty>, D::Error>
+        fn $func_name<'de, D>(deserializer: D) -> Result<Option<$ty>, D::Error>
         where
             D: serde::Deserializer<'de>,
         {
@@ -138,7 +136,7 @@ macro_rules! make_deserialize_nested_key_to_type {
             stringify!($func_name),
             "\")]`"
         )]
-        pub fn $func_name<'de, D>(deserializer: D) -> Result<$ty, D::Error>
+        fn $func_name<'de, D>(deserializer: D) -> Result<$ty, D::Error>
         where
             D: serde::Deserializer<'de>,
         {
@@ -318,7 +316,3 @@ pub fn parse_mmss_to_pginterval(s: &str) -> sqlx::postgres::types::PgInterval {
         microseconds: total_us,
     }
 }
-
-make_deserialize_to_type!(deserialize_to_bool, bool);
-make_deserialize_to_type!(deserialize_to_option_i32, Option<i32>);
-make_deserialize_key_to_type!(deserialize_default_to_string, "default", String);

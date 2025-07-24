@@ -2,9 +2,9 @@ use crate::api::api_common::{ApiContext, FromId, HasEndpoint};
 use crate::api::cacheable_api::CacheableApi;
 use crate::db::DbPool;
 use crate::lp_error::LPError;
-use crate::models::item_parsed_with_context::ItemParsedWithContext;
-use crate::models::nhl::nhl_game::NhlGameJson;
-use crate::models::nhl::nhl_player::NhlPlayerJson;
+use crate::models::ItemParsedWithContext;
+use crate::models::nhl::game::NhlGameJson;
+use crate::models::nhl::player::NhlPlayerJson;
 
 pub struct NhlWebApi {
     pub client: reqwest::Client,
@@ -83,17 +83,22 @@ impl NhlWebApi {
     {
         let endpoint: String = T::endpoint(self, T::Params::from_id(id));
         let raw_data: String = self.get_or_cache_endpoint(pool, &endpoint).await?;
-        let json_value: serde_json::Value = serde_json::from_str(&raw_data)?;
+        let item: T = match serde_json::from_str(&raw_data) {
+            Ok(value) => value,
+            Err(e) => {
+                tracing::warn!(
+                    endpoint,
+                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
+                );
+                tracing::debug!(raw_data);
+                return Err(LPError::Serde(e));
+            }
+        };
 
-        let parsed: Result<T, LPError> =
-            serde_json::from_value(json_value.clone()).map_err(LPError::from);
-        match parsed {
-            Ok(item) => Ok(ItemParsedWithContext {
-                raw_data,
-                item,
-                endpoint: endpoint.to_string(),
-            }),
-            Err(e) => Err(e),
-        }
+        Ok(ItemParsedWithContext {
+            raw_data,
+            item,
+            endpoint: endpoint.to_string(),
+        })
     }
 }

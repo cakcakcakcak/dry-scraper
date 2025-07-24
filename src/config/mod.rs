@@ -19,7 +19,6 @@ pub struct Config {
     pub pg_host: String,
     pub pg_user: String,
     pub pg_pass: String,
-    pub season_limit: Option<usize>,
     pub max_db_connections: u32,
     pub upsert_concurrency: usize,
     pub reset_db: bool,
@@ -56,8 +55,6 @@ impl Config {
             )
         });
 
-        let season_limit = cli_args.season_limit.or(env_vars.season_limit);
-
         let max_db_connections = cli_args
             .max_db_connections
             .or(env_vars.max_db_connections)
@@ -90,7 +87,6 @@ impl Config {
             pg_host,
             pg_user,
             pg_pass,
-            season_limit,
             max_db_connections,
             upsert_concurrency,
             reset_db,

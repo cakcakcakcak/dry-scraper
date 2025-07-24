@@ -2,7 +2,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use sqlx::Type;
 
 use crate::lp_error::LPError;
-use crate::models::item_parsed_with_context::ItemParsedWithContext;
+use crate::models::ItemParsedWithContext;
+use crate::models::traits::HasTypeName;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Type, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,13 +52,6 @@ pub enum PeriodTypeJson {
     #[serde(rename = "SO")]
     Shootout = 3,
 }
-// #[derive(Debug, Clone, Copy, PartialEq, Eq, Type, Serialize, Deserialize)]
-// #[sqlx(type_name = "period_type", rename_all = "snake_case")]
-// pub enum PeriodType {
-//     Regulation = 1,
-//     Overtime = 2,
-//     Shootout = 3,
-// }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -86,20 +80,24 @@ impl NhlApiDataArrayResponse {
         endpoint: &str,
     ) -> Vec<Result<ItemParsedWithContext<T>, LPError>>
     where
-        T: serde::de::DeserializeOwned,
+        T: serde::de::DeserializeOwned + HasTypeName,
     {
         self.data
             .iter()
             .map(|item| {
-                let raw_data = item.to_string();
-                let parsed = serde_json::from_value(item.clone()).map_err(LPError::from);
+                let raw_data: String = item.to_string();
+                let parsed: Result<T, LPError> =
+                    serde_json::from_value(item.clone()).map_err(LPError::from);
                 match parsed {
                     Ok(item) => Ok(ItemParsedWithContext {
                         raw_data,
                         item,
                         endpoint: endpoint.to_string(),
                     }),
-                    Err(e) => Err(e),
+                    Err(e) => {
+                        tracing::warn!(item=%item, error=%e, "Failed to parse item to `{}`.", T::type_name());
+                        Err(e)
+                    }
                 }
             })
             .collect()

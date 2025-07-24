@@ -1,19 +1,16 @@
-use std::str::FromStr;
-
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
-use crate::db::DbPool;
-use crate::db::persistable::Persistable;
+use crate::db::{DbPool, Persistable};
 use crate::lp_error::LPError;
 use crate::models::traits::{DbStruct, IntoDbStruct};
 use crate::serde_helpers::JsonExt;
-use crate::serde_helpers::{deserialize_default_to_string, deserialize_to_bool};
 
 use crate::impl_has_type_name;
 use crate::make_deserialize_key_to_type;
+use crate::make_deserialize_to_type;
 use crate::sqlx_operation_with_retries;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -197,12 +194,19 @@ pub struct NhlPlayer {
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl DbStruct for NhlPlayer {
-    fn fill_context(&mut self, endpoint: String, raw_data: String) -> Result<(), LPError> {
+    #[tracing::instrument]
+    fn fill_context(&mut self, endpoint: String, raw_data: String) {
+        self.raw_json = match serde_json::from_str(&raw_data) {
+            Ok(value) => value,
+            Err(e) => {
+                tracing::warn!(
+                    endpoint,
+                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
+                );
+                serde_json::Value::Null
+            }
+        };
         self.endpoint = endpoint;
-
-        let raw_json = serde_json::Value::from_str(&raw_data)?;
-        self.raw_json = raw_json;
-        Ok(())
     }
 }
 #[async_trait]
@@ -345,3 +349,6 @@ make_deserialize_key_to_type!(
 
 impl_has_type_name!(NhlPlayerJson);
 impl_has_type_name!(NhlPlayer);
+
+make_deserialize_key_to_type!(deserialize_default_to_string, "default", String);
+make_deserialize_to_type!(deserialize_to_bool, bool);

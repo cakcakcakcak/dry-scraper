@@ -3,8 +3,8 @@ use tokio_retry::strategy::{ExponentialBackoff, jitter};
 
 use crate::config::CONFIG;
 use crate::lp_error::LPError;
-use crate::models::item_parsed_with_context::ItemParsedWithContext;
-use crate::models::nhl::nhl_model_common::NhlApiDataArrayResponse;
+use crate::models::ItemParsedWithContext;
+use crate::models::nhl::NhlApiDataArrayResponse;
 
 #[macro_export]
 macro_rules! with_progress_bar {
@@ -72,9 +72,9 @@ where
     RetryIf::spawn(
         default_retry_strategy(),
         || async {
-            let res = operation().await;
+            let res: Result<T, sqlx::Error> = operation().await;
             if let Err(ref e) = res {
-                tracing::debug!("sqlx operation failed after error: {:?}", e);
+                tracing::warn!("A sqlx operation failed after error: {:?}", e);
             }
             res
         },
@@ -93,7 +93,7 @@ where
         || async {
             let res = operation().await;
             if let Err(ref e) = res {
-                tracing::debug!("reqwest operation failed after error {:?}", e);
+                tracing::warn!("A reqwest operation failed after error {:?}", e);
             }
             res
         },
@@ -102,41 +102,6 @@ where
     .await
 }
 
-pub fn map_json_array_to_json_structs<T>(
-    data_array_response: NhlApiDataArrayResponse,
-    endpoint: &str,
-) -> Vec<Result<ItemParsedWithContext<T>, LPError>>
-where
-    T: serde::de::DeserializeOwned,
-{
-    data_array_response
-        .data
-        .iter()
-        .map(|item| {
-            let raw_data = item.to_string();
-            let parsed = serde_json::from_value(item.clone()).map_err(LPError::from);
-            match parsed {
-                Ok(item) => Ok(ItemParsedWithContext {
-                    raw_data,
-                    item,
-                    endpoint: endpoint.to_string(),
-                }),
-                Err(e) => Err(e),
-            }
-        })
-        .collect()
-}
-
-#[tracing::instrument(skip(results))]
-pub fn filter_and_log_results<T: std::fmt::Debug>(results: Vec<Result<T, LPError>>) -> Vec<T> {
-    results
-        .into_iter()
-        .filter_map(|res| match res {
-            Ok(season) => Some(season),
-            Err(e) => {
-                tracing::warn!("{e:?}");
-                None
-            }
-        })
-        .collect()
+pub fn filter_results<T>(results: Vec<Result<T, LPError>>) -> Vec<T> {
+    results.into_iter().filter_map(Result::ok).collect()
 }

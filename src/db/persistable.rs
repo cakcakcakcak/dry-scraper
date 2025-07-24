@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
 
 use crate::config::CONFIG;
 use crate::db::DbPool;
@@ -32,8 +32,8 @@ pub trait Persistable: std::fmt::Debug + Sized {
         records: Vec<T>,
         pool: &DbPool,
     ) -> Result<usize, LPError> {
-        let mut tx = pool.begin().await?;
-        let pb = ProgressBar::new(records.len() as u64);
+        let mut tx: sqlx::Transaction<'static, sqlx::Postgres> = pool.begin().await?;
+        let pb: ProgressBar = ProgressBar::new(records.len() as u64);
         pb.set_style(CONFIG.progress_bar_style.clone());
 
         let mut successes: usize = records.len();

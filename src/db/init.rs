@@ -11,28 +11,24 @@ use crate::util::{default_retry_strategy, is_transient_sqlx_error};
 
 #[tracing::instrument]
 pub async fn init_db() -> Result<DbPool, LPError> {
-    // get the environment variables and construct the database_url
-    let db_url = database_url()?;
-    tracing::debug!(db_url = %db_url, "Constructed lp database URL");
+    let db_url: String = database_url()?;
+    tracing::debug!(db_url);
 
-    // check if lp database exists, with retry strategy
     let db_exists =
         sqlx_operation_with_retries!(sqlx::Postgres::database_exists(&db_url).await).await?;
-    tracing::info!(db_exists, "Checked if lp database exists");
+    tracing::debug!(db_exists, "Checked if lp database exists");
 
-    // if lp database does not exist, with retry strategy
     if !db_exists {
         tracing::warn!("lp database does not exist, attempting to create it.");
         _ = sqlx_operation_with_retries!(sqlx::Postgres::create_database(&db_url).await).await?;
         tracing::info!("lp database created");
     }
 
-    // create a connection pool of `max_db_connections`, with retry strategy
     tracing::info!(
         max_db_connections = CONFIG.max_db_connections,
         "Creating connection pool"
     );
-    let pool = RetryIf::spawn(
+    let pool: sqlx::Pool<sqlx::Postgres> = RetryIf::spawn(
         default_retry_strategy(),
         || async {
             PgPoolOptions::new()
@@ -45,7 +41,6 @@ pub async fn init_db() -> Result<DbPool, LPError> {
     .await?;
     tracing::info!("Connection pool created.");
 
-    // create public schema if it doesn't already exist
     tracing::debug!("Ensuring public schema exists");
     sqlx_operation_with_retries!(
         sqlx::query("CREATE SCHEMA IF NOT EXISTS public")
@@ -57,13 +52,19 @@ pub async fn init_db() -> Result<DbPool, LPError> {
     if CONFIG.reset_db {
         tracing::warn!("RESET_DB enabled: dropping tables and enums for clean state");
         sqlx_operation_with_retries!(
+            sqlx::query("DROP TABLE IF EXISTS nhl_playoff_series")
+                .execute(&pool)
+                .await
+        )
+        .await?;
+        sqlx_operation_with_retries!(
             sqlx::query("DROP TABLE IF EXISTS nhl_play")
                 .execute(&pool)
                 .await
         )
         .await?;
         sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS nhl_playoff_series")
+            sqlx::query("DROP TABLE IF EXISTS nhl_roster_spot")
                 .execute(&pool)
                 .await
         )
@@ -128,9 +129,9 @@ pub async fn init_db() -> Result<DbPool, LPError> {
 }
 
 fn database_url() -> Result<String, LPError> {
-    let pg_host = &*CONFIG.pg_host;
-    let pg_user = &*CONFIG.pg_user;
-    let pg_pass = &*CONFIG.pg_pass;
+    let pg_host: &str = &*CONFIG.pg_host;
+    let pg_user: &str = &*CONFIG.pg_user;
+    let pg_pass: &str = &*CONFIG.pg_pass;
 
     Ok(format!("postgres://{pg_user}:{pg_pass}@{pg_host}/lp"))
 }

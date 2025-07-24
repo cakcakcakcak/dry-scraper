@@ -4,7 +4,7 @@ use serde_json;
 use sqlx::FromRow;
 use sqlx::postgres::types::PgInterval;
 
-use crate::models::nhl::nhl_model_common::LocalizedNameJson;
+use crate::models::nhl::common::LocalizedNameJson;
 use crate::serde_helpers::deserialize_mmss_to_pginterval;
 
 use crate::impl_has_type_name;

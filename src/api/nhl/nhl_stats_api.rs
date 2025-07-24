@@ -2,12 +2,13 @@ use crate::api::api_common::{ApiContext, HasEndpoint};
 use crate::api::cacheable_api::CacheableApi;
 use crate::db::DbPool;
 use crate::lp_error::LPError;
-use crate::models::item_parsed_with_context::ItemParsedWithContext;
-use crate::models::nhl::nhl_franchise::NhlFranchiseJson;
-use crate::models::nhl::nhl_model_common::NhlApiDataArrayResponse;
-use crate::models::nhl::nhl_season::NhlSeasonJson;
-use crate::models::nhl::nhl_team::NhlTeamJson;
-use crate::util::filter_and_log_results;
+use crate::models::ItemParsedWithContext;
+use crate::models::nhl::common::NhlApiDataArrayResponse;
+use crate::models::nhl::franchise::NhlFranchiseJson;
+use crate::models::nhl::season::NhlSeasonJson;
+use crate::models::nhl::team::NhlTeamJson;
+use crate::models::traits::HasTypeName;
+use crate::util::filter_results;
 
 pub struct NhlStatsApi {
     pub client: reqwest::Client,
@@ -73,19 +74,27 @@ impl NhlStatsApi {
         pool: &DbPool,
     ) -> Result<Vec<ItemParsedWithContext<T>>, LPError>
     where
-        T: serde::de::DeserializeOwned + HasEndpoint + std::fmt::Debug,
+        T: serde::de::DeserializeOwned + HasEndpoint + HasTypeName + std::fmt::Debug,
     {
         let endpoint: String = T::endpoint(self, T::Params::default());
         let raw_data: String = self.get_or_cache_endpoint(pool, &endpoint).await?;
 
-        let json_value: serde_json::Value = serde_json::from_str(&raw_data)?;
-        let data_array_response: NhlApiDataArrayResponse =
-            serde_json::from_value(json_value.clone()).map_err(|e| LPError::Serde(e))?;
+        let data_array_response: NhlApiDataArrayResponse = match serde_json::from_str(&raw_data) {
+            Ok(value) => value,
+            Err(e) => {
+                tracing::warn!(
+                    endpoint,
+                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
+                );
+                tracing::debug!(raw_data);
+                return Err(LPError::Serde(e));
+            }
+        };
 
         let results: Vec<Result<ItemParsedWithContext<T>, LPError>> =
             data_array_response.map_json_array_to_json_structs(&endpoint);
 
-        Ok(filter_and_log_results::<ItemParsedWithContext<T>>(results))
+        Ok(filter_results::<ItemParsedWithContext<T>>(results))
     }
 
     #[tracing::instrument(skip(pool))]
@@ -97,14 +106,22 @@ impl NhlStatsApi {
         let endpoint: String = self.nhl_team_endpoint(team_id);
         let raw_data: String = self.get_or_cache_endpoint(pool, &endpoint).await?;
 
-        let json_value: serde_json::Value = serde_json::from_str(&raw_data)?;
-        let data_array_response: NhlApiDataArrayResponse =
-            serde_json::from_value(json_value.clone()).map_err(|e| LPError::Serde(e))?;
+        let data_array_response: NhlApiDataArrayResponse = match serde_json::from_str(&raw_data) {
+            Ok(value) => value,
+            Err(e) => {
+                tracing::warn!(
+                    endpoint,
+                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
+                );
+                tracing::debug!(raw_data);
+                return Err(LPError::Serde(e));
+            }
+        };
 
         let results: Vec<Result<ItemParsedWithContext<NhlTeamJson>, LPError>> =
             data_array_response.map_json_array_to_json_structs(&endpoint);
         let mut filtered_results: Vec<ItemParsedWithContext<NhlTeamJson>> =
-            filter_and_log_results::<ItemParsedWithContext<NhlTeamJson>>(results);
+            filter_results::<ItemParsedWithContext<NhlTeamJson>>(results);
 
         let team_json: ItemParsedWithContext<NhlTeamJson> = filtered_results
             .pop()

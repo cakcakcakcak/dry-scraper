@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use sqlx::Row;
 use tracing::instrument;
 
-use crate::db::DbPool;
+use crate::db::{DbPool, Persistable};
 use crate::lp_error;
 use crate::models::api_cache::ApiCache;
 

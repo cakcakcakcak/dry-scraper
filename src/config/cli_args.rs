@@ -10,8 +10,6 @@ pub struct CliArgs {
     #[arg(long)]
     pub pg_pass: Option<String>,
     #[arg(long)]
-    pub season_limit: Option<usize>,
-    #[arg(long)]
     pub max_db_connections: Option<u32>,
     #[arg(long)]
     pub upsert_concurrency: Option<usize>,

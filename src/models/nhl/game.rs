@@ -1,30 +1,22 @@
-use std::str::FromStr;
-
 use async_trait::async_trait;
 use chrono;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use sqlx::Execute as _;
-use sqlx::Executor as _;
 use sqlx::FromRow;
-use sqlx::postgres::Postgres;
 
-use crate::api::cacheable_api::CacheableApi;
-use crate::api::nhl::nhl_stats_api::NhlStatsApi;
-use crate::db::DbPool;
-use crate::db::persistable::Persistable;
+use crate::db::{DbPool, Persistable};
 use crate::lp_error::LPError;
-use crate::models::nhl::nhl_model_common::{
+use crate::models::nhl::common::{
     GameType, LocalizedNameJson, PeriodDescriptorJson, PeriodTypeJson,
 };
-use crate::models::nhl::nhl_play::NhlPlayJson;
-use crate::models::nhl::nhl_roster_spot::NhlRosterSpotJson;
+use crate::models::nhl::play::NhlPlayJson;
+use crate::models::nhl::roster_spot::NhlRosterSpotJson;
 use crate::models::traits::{DbStruct, IntoDbStruct};
 
 use crate::impl_has_type_name;
 use crate::sqlx_operation_with_retries;
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClockJson {
     pub time_remaining: String,
@@ -33,7 +25,7 @@ pub struct ClockJson {
     pub in_intermission: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TvBroadcastsJson {
     pub id: i32,
@@ -42,13 +34,13 @@ pub struct TvBroadcastsJson {
     pub network: String,
     pub sequence_number: i32,
 }
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameOutcomeJson {
     pub last_period_type: PeriodTypeJson,
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamGameJson {
     pub id: i32,
@@ -61,7 +53,7 @@ pub struct TeamGameJson {
     pub place_name: LocalizedNameJson,
     pub place_name_with_preposition: LocalizedNameJson,
 }
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NhlGameJson {
     pub id: i32,
@@ -85,7 +77,8 @@ pub struct NhlGameJson {
     pub home_team: TeamGameJson,
     pub shootout_in_use: bool,
     pub ot_in_use: bool,
-    pub clock: ClockJson,
+    #[serde(default)]
+    pub clock: Option<ClockJson>,
     pub display_period: i32,
     pub max_periods: i32,
     pub game_outcome: GameOutcomeJson,
@@ -168,7 +161,7 @@ impl IntoDbStruct for NhlGameJson {
         }
     }
 }
-#[derive(Debug, FromRow, Clone)]
+#[derive(Clone, Debug, FromRow)]
 pub struct NhlGame {
     pub id: i32,
     pub season: i32,
@@ -212,12 +205,19 @@ pub struct NhlGame {
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl DbStruct for NhlGame {
-    fn fill_context(&mut self, endpoint: String, raw_data: String) -> Result<(), LPError> {
+    #[tracing::instrument]
+    fn fill_context(&mut self, endpoint: String, raw_data: String) {
+        self.raw_json = match serde_json::from_str(&raw_data) {
+            Ok(value) => value,
+            Err(e) => {
+                tracing::warn!(
+                    endpoint,
+                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
+                );
+                serde_json::Value::Null
+            }
+        };
         self.endpoint = endpoint;
-
-        let raw_json = serde_json::Value::from_str(&raw_data)?;
-        self.raw_json = raw_json;
-        Ok(())
     }
 }
 #[async_trait]
@@ -238,12 +238,6 @@ impl Persistable for NhlGame {
         )
         .await
         .map_err(LPError::from)
-    }
-
-    #[tracing::instrument(skip(pool))]
-    async fn upsert(&self, pool: &DbPool) -> Result<(), LPError> {
-        sqlx_operation_with_retries!(self.create_query().execute(pool).await).await?;
-        Ok(())
     }
 
     fn create_query(&self) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {

@@ -1,18 +1,15 @@
-use std::str::FromStr;
-
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
-use crate::db::DbPool;
-use crate::db::persistable::Persistable;
+use crate::db::{DbPool, Persistable};
 use crate::lp_error::LPError;
 use crate::models::traits::{DbStruct, IntoDbStruct};
-use crate::serde_helpers::deserialize_to_bool;
+use crate::serde_helpers::JsonExt;
 
-use crate::impl_has_type_name;
 use crate::sqlx_operation_with_retries;
+use crate::{impl_has_type_name, make_deserialize_to_type};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -155,12 +152,19 @@ impl std::fmt::Debug for NhlSeason {
     }
 }
 impl DbStruct for NhlSeason {
-    fn fill_context(&mut self, endpoint: String, raw_data: String) -> Result<(), LPError> {
+    #[tracing::instrument]
+    fn fill_context(&mut self, endpoint: String, raw_data: String) {
+        self.raw_json = match serde_json::from_str(&raw_data) {
+            Ok(value) => value,
+            Err(e) => {
+                tracing::warn!(
+                    endpoint,
+                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
+                );
+                serde_json::Value::Null
+            }
+        };
         self.endpoint = endpoint;
-
-        let raw_json = serde_json::Value::from_str(&raw_data)?;
-        self.raw_json = raw_json;
-        Ok(())
     }
 }
 
@@ -271,3 +275,5 @@ impl Persistable for NhlSeason {
 
 impl_has_type_name!(NhlSeasonJson);
 impl_has_type_name!(NhlSeason);
+
+make_deserialize_to_type!(deserialize_to_bool, bool);
