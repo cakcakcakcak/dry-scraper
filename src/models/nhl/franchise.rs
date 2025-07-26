@@ -56,18 +56,6 @@ pub struct NhlFranchise {
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl DbStruct for NhlFranchise {}
-impl NhlFranchise {
-    pub async fn verify_relationships(
-        &self,
-        nhl_stats_api: &NhlStatsApi,
-        pool: &DbPool,
-    ) -> Result<(), LPError> {
-        let _ = nhl_stats_api
-            .get_or_cache_endpoint(pool, &self.endpoint)
-            .await?;
-        Ok(())
-    }
-}
 
 #[async_trait]
 impl Persistable for NhlFranchise {

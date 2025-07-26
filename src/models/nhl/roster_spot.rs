@@ -1,15 +1,17 @@
+use async_trait::async_trait;
 use chrono;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
-use sqlx::postgres::types::PgInterval;
 
+use crate::LPError;
+use crate::db::{DbPool, Persistable};
 use crate::models::nhl::GameNhlContext;
 use crate::models::nhl::LocalizedNameJson;
 use crate::models::traits::{DbStruct, IntoDbStruct};
-use crate::serde_helpers::deserialize_mmss_to_pginterval;
 
 use crate::impl_has_type_name;
+use crate::sqlx_operation_with_retries;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,7 +38,11 @@ impl IntoDbStruct for NhlRosterSpotJson {
             position_code,
             headshot,
         } = self;
-        let GameNhlContext { endpoint, game_id, raw_json } = context;
+        let GameNhlContext {
+            endpoint,
+            game_id,
+            raw_json,
+        } = context;
 
         NhlRosterSpot {
             game_id,
@@ -69,6 +75,72 @@ pub struct NhlRosterSpot {
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl DbStruct for NhlRosterSpot {}
+
+#[async_trait]
+impl Persistable for NhlRosterSpot {
+    type Id = (i32, i32);
+
+    fn id(&self) -> Self::Id {
+        (self.game_id, self.player_id)
+    }
+
+    #[tracing::instrument(skip(pool))]
+    async fn try_db(pool: &DbPool, id: Self::Id) -> Result<Option<Self>, LPError> {
+        sqlx_operation_with_retries!(
+            sqlx::query_as::<_, Self>(
+                r#"SELECT * FROM nhl_roster_spot WHERE game_id=$1 AND player_id=$2"#
+            )
+            .bind(id.0)
+            .bind(id.1)
+            .fetch_optional(pool)
+            .await
+        )
+        .await
+        .map_err(LPError::from)
+    }
+
+
+    fn create_upsert_query(
+        &self,
+    ) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
+        sqlx::query(r#"INSERT INTO nhl_roster_spot (
+                                        game_id,
+                                        player_id,
+                                        team_id,
+                                        first_name,
+                                        last_name,
+                                        sweater_number,
+                                        position_code,
+                                        headshot,
+                                        raw_json,
+                                        endpoint
+                                    ) VALUES (
+                                        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                                    ON CONFLICT (game_id, player_id) DO UPDATE SET 
+                                        game_id = EXCLUDED.game_id,
+                                        player_id = EXCLUDED.player_id,
+                                        team_id = EXCLUDED.team_id,
+                                        first_name = EXCLUDED.first_name,
+                                        last_name = EXCLUDED.last_name,
+                                        sweater_number = EXCLUDED.sweater_number,
+                                        position_code = EXCLUDED.position_code,
+                                        headshot = EXCLUDED.headshot,
+                                        raw_json = EXCLUDED.raw_json,
+                                        endpoint = EXCLUDED.endpoint,
+                                        last_updated = now()
+                                    "#)
+                                    .bind(&self.game_id)
+                                    .bind(&self.player_id)
+                                    .bind(&self.team_id)
+                                    .bind(&self.first_name)
+                                    .bind(&self.last_name)
+                                    .bind(&self.sweater_number)
+                                    .bind(&self.position_code)
+                                    .bind(&self.headshot)
+                                    .bind(&self.raw_json)
+                                    .bind(&self.endpoint)
+    }
+}
 
 impl_has_type_name!(NhlRosterSpotJson);
 impl_has_type_name!(NhlRosterSpot);

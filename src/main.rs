@@ -18,8 +18,7 @@ pub use lp_error::LPError;
 
 use db::init_db;
 use orchestrator::{
-    get_nhl_all_games_in_season, get_nhl_franchises, get_nhl_game, get_nhl_player, get_nhl_seasons,
-    get_nhl_team, get_nhl_teams,
+    get_nhl_all_games_in_season, get_nhl_franchises, get_nhl_seasons, get_nhl_teams,
 };
 
 #[tokio::main]
@@ -45,9 +44,6 @@ async fn main() -> Result<(), LPError> {
     let seasons = get_nhl_seasons(&pool, &nhl_stats_api).await?;
     _ = get_nhl_franchises(&pool, &nhl_stats_api).await?;
     _ = get_nhl_teams(&pool, &nhl_stats_api).await?;
-    _ = get_nhl_team(&pool, &nhl_stats_api, 7288).await?;
-    _ = get_nhl_player(&pool, &nhl_web_api, 8478402).await?;
-    _ = get_nhl_game(&pool, &nhl_web_api, 2023020204).await?;
 
     for season in seasons {
         let games = get_nhl_all_games_in_season(&pool, &nhl_web_api, &season).await?;

@@ -2,27 +2,6 @@ use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use sqlx::postgres::types::PgInterval;
 
-pub fn deserialize_mmss_to_pginterval<'de, D>(deserializer: D) -> Result<PgInterval, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    let parts: Vec<&str> = s.split(':').collect();
-    let (minutes, seconds) = match parts.as_slice() {
-        [mm, ss] => (
-            mm.parse::<i64>().unwrap_or(0),
-            ss.parse::<i64>().unwrap_or(0),
-        ),
-        _ => (0, 0),
-    };
-    let total_us = (minutes * 60 + seconds) * 1_000_000;
-    Ok(PgInterval {
-        months: 0,
-        days: 0,
-        microseconds: total_us,
-    })
-}
-
 #[macro_export]
 macro_rules! make_deserialize_to_type {
     ($func_name:ident, Option<$ty:ty>) => {
@@ -163,23 +142,6 @@ pub trait AsLogged: Sized {
             }
         }
     }
-    fn get_nested_key_as_logged(value: &serde_json::Value, keys: &[&str]) -> Option<Self> {
-        let current = keys.iter().try_fold(value, |current, &key| {
-            current.get(key).or_else(|| {
-                tracing::debug!("Key `{key}` not found in json object: {current:?}");
-                None
-            })
-        });
-        current.and_then(Self::as_logged)
-    }
-    fn as_logged_any<S, T>(source: S) -> Option<T>
-    where
-        S: Into<serde_json::Value>,
-        T: AsLogged,
-    {
-        let value = source.into();
-        T::as_logged(&value)
-    }
 }
 impl AsLogged for serde_json::Value {
     fn as_logged(value: &serde_json::Value) -> Option<Self> {
@@ -259,33 +221,9 @@ impl AsLogged for bool {
     }
 }
 
-// Extension trait for ergonomic method call
 pub trait JsonExt {
     fn as_logged<T: AsLogged>(&self) -> Option<T>;
     fn get_key_as_logged<T: AsLogged>(&self, key: &str) -> Option<T>;
-    fn get_nested_key_as_logged<T: AsLogged>(&self, keys: &[&str]) -> Option<T>;
-    fn get_key_as_string(&self, key: &str) -> Option<String> {
-        self.get_key_as_logged::<String>(key)
-    }
-    fn get_key_as_i32(&self, key: &str) -> Option<i32> {
-        self.get_key_as_logged::<i32>(key)
-    }
-    fn get_key_as_bool(&self, key: &str) -> Option<bool> {
-        self.get_key_as_logged::<bool>(key)
-    }
-    fn get_key_as_value(&self, key: &str) -> Option<serde_json::Value> {
-        self.get_key_as_logged::<serde_json::Value>(key)
-    }
-    fn get_nested_as_string(&self, keys: &[&str]) -> Option<String> {
-        self.get_nested_key_as_logged::<String>(keys)
-    }
-    fn as_logged_any<T: AsLogged>(&self) -> Option<T>
-    where
-        Self: Sized + Clone + Into<serde_json::Value>,
-    {
-        let value: serde_json::Value = self.clone().into();
-        T::as_logged(&value)
-    }
 }
 
 impl JsonExt for serde_json::Value {
@@ -294,9 +232,6 @@ impl JsonExt for serde_json::Value {
     }
     fn get_key_as_logged<T: AsLogged>(&self, key: &str) -> Option<T> {
         T::get_key_as_logged(self, key)
-    }
-    fn get_nested_key_as_logged<T: AsLogged>(&self, keys: &[&str]) -> Option<T> {
-        T::get_nested_key_as_logged(self, keys)
     }
 }
 

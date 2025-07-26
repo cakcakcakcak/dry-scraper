@@ -7,8 +7,8 @@ use sqlx::FromRow;
 use crate::LPError;
 use crate::db::{DbPool, Persistable};
 use crate::models::nhl::{
-    GameType, LocalizedNameJson, NhlPlayJson, NhlRosterSpotJson, PeriodDescriptorJson,
-    PeriodTypeJson, DefaultNhlContext
+    DefaultNhlContext, GameType, LocalizedNameJson, NhlPlay, NhlPlayJson, NhlRosterSpot,
+    NhlRosterSpotJson, PeriodDescriptorJson, PeriodTypeJson,
 };
 use crate::models::traits::{DbStruct, IntoDbStruct};
 
@@ -205,8 +205,7 @@ pub struct NhlGame {
     pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl DbStruct for NhlGame {
-}
+impl DbStruct for NhlGame {}
 #[async_trait]
 impl Persistable for NhlGame {
     type Id = i32;

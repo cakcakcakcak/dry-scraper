@@ -3,8 +3,6 @@ use tokio_retry::strategy::{ExponentialBackoff, jitter};
 
 use crate::config::CONFIG;
 use crate::lp_error::LPError;
-use crate::models::ItemParsedWithContext;
-use crate::models::nhl::NhlApiDataArrayResponse;
 
 #[macro_export]
 macro_rules! with_progress_bar {
