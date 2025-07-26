@@ -14,6 +14,10 @@ pub struct CliArgs {
     #[arg(long)]
     pub upsert_concurrency: Option<usize>,
     #[arg(long)]
+    pub db_query_batch_size: Option<usize>,
+    #[arg(long)]
+    pub db_query_batch_timeout_ms: Option<u64>,
+    #[arg(long)]
     pub reset_db: Option<bool>,
     #[arg(long)]
     pub retry_jitter_duration_ms: Option<u64>,

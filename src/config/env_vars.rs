@@ -11,6 +11,8 @@ pub struct EnvironmentVariables {
     pub pg_pass: Option<String>,
     pub max_db_connections: Option<u32>,
     pub upsert_concurrency: Option<usize>,
+    pub db_query_batch_size: Option<usize>,
+    pub db_query_batch_timeout_ms: Option<u64>,
     pub reset_db: Option<bool>,
     pub retry_jitter_duration_ms: Option<u64>,
     pub retries: Option<usize>,
@@ -23,6 +25,8 @@ impl EnvironmentVariables {
             pg_pass: Self::get_parsed_env_var_with_log("PG_PASS"),
             max_db_connections: Self::get_parsed_env_var_with_log("MAX_DB_CONNECTIONS"),
             upsert_concurrency: Self::get_parsed_env_var_with_log("UPSERT_CONCURRENCY"),
+            db_query_batch_size: Self::get_parsed_env_var_with_log("DB_QUERY_BATCH_SIZE"),
+            db_query_batch_timeout_ms: Self::get_parsed_env_var_with_log("DB_QUERY_BATCH_TIMOUT_MS"),
             reset_db: Self::get_parsed_env_var_with_log("RESET_DB"),
             retry_jitter_duration_ms: Self::get_parsed_env_var_with_log("RETRY_JITTER_DURATION_MS"),
             retries: Self::get_parsed_env_var_with_log("RETRIES"),
@@ -34,14 +38,6 @@ impl EnvironmentVariables {
         match std::env::var(key) {
             Ok(var) => Ok(var),
             Err(e) => Err(e),
-            // Err(std::env::VarError::NotPresent) => Err(LPError::Env(format!(
-            //     "Environment variable {} not set.",
-            //     key
-            // ))),
-            // Err(std::env::VarError::NotUnicode(val)) => Err(LPError::Env(format!(
-            //     "Environment variable {} not unicode.\nInstead found \"{:?}\"",
-            //     key, val
-            // ))),
         }
     }
 
