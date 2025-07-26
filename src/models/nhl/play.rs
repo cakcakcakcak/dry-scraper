@@ -4,7 +4,8 @@ use serde_json;
 use sqlx::FromRow;
 use sqlx::postgres::types::PgInterval;
 
-use crate::models::nhl::common::{DefendingSide, PeriodDescriptorJson, PeriodTypeJson};
+use crate::models::nhl::{DefendingSide, GameNhlContext, PeriodDescriptorJson, PeriodTypeJson};
+use crate::models::traits::{DbStruct, IntoDbStruct};
 use crate::serde_helpers::{JsonExt, parse_mmss_to_pginterval};
 
 use crate::impl_has_type_name;
@@ -25,8 +26,11 @@ pub struct NhlPlayJson {
     pub sort_order: i32,
     pub details: Option<serde_json::Value>,
 }
-impl NhlPlayJson {
-    pub fn to_db_struct(self) -> NhlPlay {
+impl IntoDbStruct for NhlPlayJson {
+    type DbStruct = NhlPlay;
+    type Context = GameNhlContext;
+
+    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlPlayJson {
             event_id,
             period_descriptor,
@@ -39,6 +43,11 @@ impl NhlPlayJson {
             sort_order,
             details,
         } = self;
+        let GameNhlContext {
+            endpoint,
+            game_id,
+            raw_json,
+        } = context;
         let PeriodDescriptorJson {
             number: period_descriptor_number,
             period_type: period_descriptor_type,
@@ -47,7 +56,7 @@ impl NhlPlayJson {
         let time_in_period = parse_mmss_to_pginterval(&time_in_period);
         let time_remaining = parse_mmss_to_pginterval(&time_remaining);
         NhlPlay {
-            game_id: 0,
+            game_id,
             event_id,
             period_descriptor_number,
             period_descriptor_type,
@@ -60,8 +69,8 @@ impl NhlPlayJson {
             type_desc_key,
             sort_order,
             details,
-            endpoint: String::new(),
-            raw_json: serde_json::Value::Null,
+            endpoint,
+            raw_json,
             last_updated: None,
         }
     }
@@ -86,6 +95,7 @@ pub struct NhlPlay {
     pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
+impl DbStruct for NhlPlay {}
 
 impl_has_type_name!(NhlPlayJson);
 impl_has_type_name!(NhlPlay);

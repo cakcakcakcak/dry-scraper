@@ -4,13 +4,12 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
+use crate::LPError;
 use crate::db::{DbPool, Persistable};
-use crate::lp_error::LPError;
-use crate::models::nhl::common::{
-    GameType, LocalizedNameJson, PeriodDescriptorJson, PeriodTypeJson,
+use crate::models::nhl::{
+    GameType, LocalizedNameJson, NhlPlayJson, NhlRosterSpotJson, PeriodDescriptorJson,
+    PeriodTypeJson, DefaultNhlContext
 };
-use crate::models::nhl::play::NhlPlayJson;
-use crate::models::nhl::roster_spot::NhlRosterSpotJson;
 use crate::models::traits::{DbStruct, IntoDbStruct};
 
 use crate::impl_has_type_name;
@@ -87,9 +86,10 @@ pub struct NhlGameJson {
     pub reg_periods: i32,
 }
 impl IntoDbStruct for NhlGameJson {
-    type U = NhlGame;
+    type DbStruct = NhlGame;
+    type Context = DefaultNhlContext;
 
-    fn to_db_struct(self) -> Self::U {
+    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlGameJson {
             id,
             season,
@@ -101,22 +101,23 @@ impl IntoDbStruct for NhlGameJson {
             start_time_utc,
             eastern_utc_offset,
             venue_utc_offset,
-            game_state,
-            game_schedule_state,
+            game_state: _,
+            game_schedule_state: _,
             period_descriptor,
             away_team,
             home_team,
-            tv_broadcasts,
+            tv_broadcasts: _,
             shootout_in_use,
             ot_in_use,
-            clock,
+            clock: _,
             display_period,
             max_periods,
             game_outcome,
-            plays,
-            roster_spots,
+            plays: _,
+            roster_spots: _,
             reg_periods,
         } = self;
+        let DefaultNhlContext { endpoint, raw_json } = context;
         NhlGame {
             id,
             season,
@@ -155,8 +156,8 @@ impl IntoDbStruct for NhlGameJson {
             max_periods,
             game_outcome_last_period_type: game_outcome.last_period_type,
             reg_periods,
-            endpoint: String::new(),
-            raw_json: serde_json::Value::Null,
+            endpoint,
+            raw_json,
             last_updated: None,
         }
     }
@@ -205,20 +206,6 @@ pub struct NhlGame {
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl DbStruct for NhlGame {
-    #[tracing::instrument]
-    fn fill_context(&mut self, endpoint: String, raw_data: String) {
-        self.raw_json = match serde_json::from_str(&raw_data) {
-            Ok(value) => value,
-            Err(e) => {
-                tracing::warn!(
-                    endpoint,
-                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
-                );
-                serde_json::Value::Null
-            }
-        };
-        self.endpoint = endpoint;
-    }
 }
 #[async_trait]
 impl Persistable for NhlGame {
@@ -240,7 +227,9 @@ impl Persistable for NhlGame {
         .map_err(LPError::from)
     }
 
-    fn create_query(&self) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    fn create_upsert_query(
+        &self,
+    ) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
         sqlx::query(r#"INSERT INTO nhl_game (
                                         id,
                                         season,

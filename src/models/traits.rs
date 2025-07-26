@@ -1,12 +1,13 @@
+use sqlx::FromRow;
+
 pub trait IntoDbStruct {
-    type U: DbStruct;
+    type DbStruct: DbStruct;
+    type Context;
 
-    fn to_db_struct(self) -> Self::U;
+    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct;
 }
 
-pub trait DbStruct {
-    fn fill_context(&mut self, endpoint: String, raw_data: String);
-}
+pub trait DbStruct: for<'a> FromRow<'a, sqlx::postgres::PgRow>{}
 
 pub trait HasTypeName {
     fn type_name() -> &'static str;

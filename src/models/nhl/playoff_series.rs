@@ -2,8 +2,9 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+use crate::LPError;
 use crate::db::{DbPool, Persistable};
-use crate::lp_error::LPError;
+use crate::models::nhl::DefaultNhlContext;
 use crate::models::traits::{DbStruct, IntoDbStruct};
 
 use crate::impl_has_type_name;
@@ -49,9 +50,10 @@ pub struct NhlPlayoffSeriesJson {
     pub bottom_seed_team: NhlSeedTeamJson,
 }
 impl IntoDbStruct for NhlPlayoffSeriesJson {
-    type U = NhlPlayoffSeries;
+    type DbStruct = NhlPlayoffSeries;
+    type Context = DefaultNhlContext;
 
-    fn to_db_struct(self) -> Self::U {
+    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlPlayoffSeriesJson {
             series_letter,
             series_url,
@@ -69,6 +71,7 @@ impl IntoDbStruct for NhlPlayoffSeriesJson {
             top_seed_team,
             bottom_seed_team,
         } = self;
+        let DefaultNhlContext { endpoint, raw_json } = context;
         let season_id = series_url.split("/").collect::<Vec<&str>>()[3]
             .parse::<i32>()
             .unwrap();
@@ -119,8 +122,8 @@ impl IntoDbStruct for NhlPlayoffSeriesJson {
             bottom_seed_team_place_name_with_preposition,
             bottom_seed_team_logo,
             bottom_seed_team_dark_logo,
-            endpoint: String::new(),
-            raw_json: serde_json::Value::Null,
+            endpoint,
+            raw_json,
             last_updated: None,
         }
     }
@@ -160,22 +163,7 @@ pub struct NhlPlayoffSeries {
     pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl DbStruct for NhlPlayoffSeries {
-    #[tracing::instrument]
-    fn fill_context(&mut self, endpoint: String, raw_data: String) {
-        self.raw_json = match serde_json::from_str(&raw_data) {
-            Ok(value) => value,
-            Err(e) => {
-                tracing::warn!(
-                    endpoint,
-                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
-                );
-                serde_json::Value::Null
-            }
-        };
-        self.endpoint = endpoint;
-    }
-}
+impl DbStruct for NhlPlayoffSeries {}
 #[async_trait]
 impl Persistable for NhlPlayoffSeries {
     type Id = (i32, String);
@@ -199,7 +187,9 @@ impl Persistable for NhlPlayoffSeries {
         .map_err(LPError::from)
     }
 
-    fn create_query(&self) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    fn create_upsert_query(
+        &self,
+    ) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
         sqlx::query(r#"INSERT INTO nhl_playoff_series (
                                         season_id,
                                         series_letter,

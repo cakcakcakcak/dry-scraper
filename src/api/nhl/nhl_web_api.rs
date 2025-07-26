@@ -3,8 +3,8 @@ use crate::api::cacheable_api::CacheableApi;
 use crate::db::DbPool;
 use crate::lp_error::LPError;
 use crate::models::ItemParsedWithContext;
-use crate::models::nhl::game::NhlGameJson;
-use crate::models::nhl::player::NhlPlayerJson;
+use crate::models::nhl::{DefaultNhlContext, NhlGameJson, NhlPlayerJson};
+use crate::models::traits::{HasTypeName, IntoDbStruct};
 
 pub struct NhlWebApi {
     pub client: reqwest::Client,
@@ -78,12 +78,15 @@ impl NhlWebApi {
         id: i32,
     ) -> Result<ItemParsedWithContext<T>, LPError>
     where
-        T: serde::de::DeserializeOwned + HasEndpoint,
+        T: serde::de::DeserializeOwned
+            + HasEndpoint
+            + IntoDbStruct<Context = DefaultNhlContext>
+            + HasTypeName,
         T::Params: FromId,
     {
         let endpoint: String = T::endpoint(self, T::Params::from_id(id));
         let raw_data: String = self.get_or_cache_endpoint(pool, &endpoint).await?;
-        let item: T = match serde_json::from_str(&raw_data) {
+        let raw_json: serde_json::Value = match serde_json::from_str(&raw_data) {
             Ok(value) => value,
             Err(e) => {
                 tracing::warn!(
@@ -94,11 +97,22 @@ impl NhlWebApi {
                 return Err(LPError::Serde(e));
             }
         };
+        let item: T = match serde_json::from_str(&raw_data) {
+            Ok(value) => value,
+            Err(e) => {
+                tracing::warn!(
+                    endpoint,
+                    "Failed to parse `raw_data` into `{}`: {e}",
+                    T::type_name()
+                );
+                tracing::debug!(raw_data);
+                return Err(LPError::Serde(e));
+            }
+        };
 
         Ok(ItemParsedWithContext {
-            raw_data,
             item,
-            endpoint: endpoint.to_string(),
+            context: DefaultNhlContext { endpoint, raw_json },
         })
     }
 }

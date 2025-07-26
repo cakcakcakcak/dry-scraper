@@ -3,8 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
+use crate::LPError;
 use crate::db::{DbPool, Persistable};
-use crate::lp_error::LPError;
+use crate::models::nhl::DefaultNhlContext;
 use crate::models::traits::{DbStruct, IntoDbStruct};
 use crate::serde_helpers::JsonExt;
 
@@ -69,9 +70,10 @@ pub struct NhlPlayerJson {
     pub in_hhof: bool,
 }
 impl IntoDbStruct for NhlPlayerJson {
-    type U = NhlPlayer;
+    type DbStruct = NhlPlayer;
+    type Context = DefaultNhlContext;
 
-    fn to_db_struct(self) -> Self::U {
+    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlPlayerJson {
             id,
             first_name,
@@ -101,6 +103,7 @@ impl IntoDbStruct for NhlPlayerJson {
             in_top100_all_time,
             in_hhof,
         } = self;
+        let DefaultNhlContext { endpoint, raw_json } = context;
         let (
             draft_year,
             draft_team_abbreviation,
@@ -149,8 +152,8 @@ impl IntoDbStruct for NhlPlayerJson {
             player_slug,
             in_top100_all_time,
             in_hhof,
-            endpoint: String::new(),
-            raw_json: serde_json::Value::Null,
+            endpoint,
+            raw_json,
             last_updated: None,
         }
     }
@@ -193,22 +196,7 @@ pub struct NhlPlayer {
     pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl DbStruct for NhlPlayer {
-    #[tracing::instrument]
-    fn fill_context(&mut self, endpoint: String, raw_data: String) {
-        self.raw_json = match serde_json::from_str(&raw_data) {
-            Ok(value) => value,
-            Err(e) => {
-                tracing::warn!(
-                    endpoint,
-                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
-                );
-                serde_json::Value::Null
-            }
-        };
-        self.endpoint = endpoint;
-    }
-}
+impl DbStruct for NhlPlayer {}
 #[async_trait]
 impl Persistable for NhlPlayer {
     type Id = i32;
@@ -229,7 +217,9 @@ impl Persistable for NhlPlayer {
         .map_err(LPError::from)
     }
 
-    fn create_query(&self) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    fn create_upsert_query(
+        &self,
+    ) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
         sqlx::query(r#"INSERT INTO nhl_player (
                                         id,
                                         first_name,

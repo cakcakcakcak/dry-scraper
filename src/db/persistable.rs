@@ -13,7 +13,9 @@ pub trait Persistable: std::fmt::Debug + Sized {
 
     fn id(&self) -> Self::Id;
 
-    fn create_query(&self) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments>;
+    fn create_upsert_query(
+        &self,
+    ) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments>;
 
     async fn try_db(pool: &DbPool, id: Self::Id) -> Result<Option<Self>, LPError>;
 
@@ -23,12 +25,12 @@ pub trait Persistable: std::fmt::Debug + Sized {
 
     #[tracing::instrument(skip(pool))]
     async fn upsert(&self, pool: &DbPool) -> Result<(), LPError> {
-        sqlx_operation_with_retries!(self.create_query().execute(pool).await).await?;
+        sqlx_operation_with_retries!(self.create_upsert_query().execute(pool).await).await?;
         Ok(())
     }
 
-    #[tracing::instrument(skip(pool))]
-    async fn upsert_all<T: Send + Persistable>(
+    #[tracing::instrument(skip(pool, records))]
+    async fn upsert_all<T: Send + Sync + Persistable>(
         records: Vec<T>,
         pool: &DbPool,
     ) -> Result<usize, LPError> {
@@ -38,7 +40,15 @@ pub trait Persistable: std::fmt::Debug + Sized {
 
         let mut successes: usize = records.len();
         for record in records {
-            if let Err(e) = record.create_query().execute(&mut *tx).await {
+            let integrity = record.verify_relationships(pool).await?;
+            match integrity {
+                RelationshipIntegrity::AllValid => (),
+                RelationshipIntegrity::Missing(missing_records) => {
+                    // TODO: fetch each missing record
+                    ()
+                }
+            }
+            if let Err(e) = record.create_upsert_query().execute(&mut *tx).await {
                 tracing::warn!("Upsert failed for record {record:?}: {e}");
                 successes -= 1;
             }

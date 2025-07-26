@@ -33,7 +33,9 @@ impl Persistable for ApiCache {
         .map_err(LPError::from)
     }
 
-    fn create_query(&self) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    fn create_upsert_query(
+        &self,
+    ) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
         sqlx::query(
             r#"INSERT INTO api_cache (endpoint, raw_data)
                                     VALUES ($1,$2)

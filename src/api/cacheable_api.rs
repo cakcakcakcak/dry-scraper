@@ -4,7 +4,7 @@ use tracing::instrument;
 
 use crate::db::{DbPool, Persistable};
 use crate::lp_error;
-use crate::models::api_cache::ApiCache;
+use crate::models::ApiCache;
 
 use crate::reqwest_with_retries;
 use crate::sqlx_operation_with_retries;

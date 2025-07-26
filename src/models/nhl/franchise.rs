@@ -3,10 +3,11 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
-use crate::api::cacheable_api::CacheableApi;
-use crate::api::nhl::nhl_stats_api::NhlStatsApi;
+use crate::LPError;
+use crate::api::CacheableApi;
+use crate::api::nhl::NhlStatsApi;
 use crate::db::{DbPool, Persistable};
-use crate::lp_error::LPError;
+use crate::models::nhl::DefaultNhlContext;
 use crate::models::traits::{DbStruct, IntoDbStruct};
 
 use crate::impl_has_type_name;
@@ -21,22 +22,24 @@ pub struct NhlFranchiseJson {
     pub team_place_name: String,
 }
 impl IntoDbStruct for NhlFranchiseJson {
-    type U = NhlFranchise;
+    type DbStruct = NhlFranchise;
+    type Context = DefaultNhlContext;
 
-    fn to_db_struct(self) -> Self::U {
+    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlFranchiseJson {
             id,
             full_name,
             team_common_name,
             team_place_name,
         } = self;
+        let DefaultNhlContext { endpoint, raw_json } = context;
         NhlFranchise {
             id,
             full_name,
             team_common_name,
             team_place_name,
-            endpoint: String::new(),
-            raw_json: serde_json::Value::Null,
+            endpoint,
+            raw_json,
             last_updated: None,
         }
     }
@@ -52,22 +55,7 @@ pub struct NhlFranchise {
     pub endpoint: String,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl DbStruct for NhlFranchise {
-    #[tracing::instrument]
-    fn fill_context(&mut self, endpoint: String, raw_data: String) {
-        self.raw_json = match serde_json::from_str(&raw_data) {
-            Ok(value) => value,
-            Err(e) => {
-                tracing::warn!(
-                    endpoint,
-                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
-                );
-                serde_json::Value::Null
-            }
-        };
-        self.endpoint = endpoint;
-    }
-}
+impl DbStruct for NhlFranchise {}
 impl NhlFranchise {
     pub async fn verify_relationships(
         &self,
@@ -101,7 +89,9 @@ impl Persistable for NhlFranchise {
         .map_err(LPError::from)
     }
 
-    fn create_query(&self) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    fn create_upsert_query(
+        &self,
+    ) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
         sqlx::query(
             r#"INSERT INTO nhl_franchise (
                                         id, 

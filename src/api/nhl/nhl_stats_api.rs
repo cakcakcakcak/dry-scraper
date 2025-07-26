@@ -3,11 +3,8 @@ use crate::api::cacheable_api::CacheableApi;
 use crate::db::DbPool;
 use crate::lp_error::LPError;
 use crate::models::ItemParsedWithContext;
-use crate::models::nhl::common::NhlApiDataArrayResponse;
-use crate::models::nhl::franchise::NhlFranchiseJson;
-use crate::models::nhl::season::NhlSeasonJson;
-use crate::models::nhl::team::NhlTeamJson;
-use crate::models::traits::HasTypeName;
+use crate::models::nhl::{NhlFranchiseJson, NhlSeasonJson, NhlTeamJson, DefaultNhlContext, NhlApiDataArrayResponse};
+use crate::models::traits::{HasTypeName, IntoDbStruct};
 use crate::util::filter_results;
 
 pub struct NhlStatsApi {
@@ -74,7 +71,11 @@ impl NhlStatsApi {
         pool: &DbPool,
     ) -> Result<Vec<ItemParsedWithContext<T>>, LPError>
     where
-        T: serde::de::DeserializeOwned + HasEndpoint + HasTypeName + std::fmt::Debug,
+        T: serde::de::DeserializeOwned
+            + HasEndpoint
+            + HasTypeName
+            + std::fmt::Debug
+            + IntoDbStruct<Context = DefaultNhlContext>,
     {
         let endpoint: String = T::endpoint(self, T::Params::default());
         let raw_data: String = self.get_or_cache_endpoint(pool, &endpoint).await?;

@@ -9,7 +9,7 @@ use crate::lp_error::LPError;
 use crate::models::ItemParsedWithContext;
 use crate::models::nhl::{
     NhlFranchise, NhlFranchiseJson, NhlGame, NhlGameJson, NhlPlayer, NhlPlayerJson, NhlSeason,
-    NhlSeasonJson, NhlTeam, NhlTeamJson,
+    NhlSeasonJson, NhlTeam, NhlTeamJson, DefaultNhlContext
 };
 use crate::models::traits::{DbStruct, HasTypeName, IntoDbStruct};
 use crate::util::filter_results;
@@ -20,15 +20,19 @@ use crate::with_progress_bar;
 async fn get_nhl_api_data_array<T>(
     pool: &DbPool,
     nhl_stats_api: &NhlStatsApi,
-) -> Result<Vec<T::U>, LPError>
+) -> Result<Vec<T::DbStruct>, LPError>
 where
-    T: serde::de::DeserializeOwned + HasEndpoint + IntoDbStruct + std::fmt::Debug + HasTypeName,
-    T::U: std::fmt::Debug + DbStruct + Persistable + HasTypeName + Clone + Send + Sync,
+    T: serde::de::DeserializeOwned
+        + HasEndpoint
+        + IntoDbStruct<Context = DefaultNhlContext>
+        + std::fmt::Debug
+        + HasTypeName,
+    T::DbStruct: std::fmt::Debug + DbStruct + Persistable + HasTypeName + Clone + Send + Sync,
 {
     let data_array: Vec<ItemParsedWithContext<T>> =
         nhl_stats_api.fetch_nhl_api_data_array::<T>(&pool).await?;
 
-    let db_records: Vec<T::U> = data_array
+    let db_records: Vec<T::DbStruct> = data_array
         .into_iter()
         .map(|record: ItemParsedWithContext<T>| record.to_db_struct())
         .collect();
@@ -38,12 +42,12 @@ where
     // CORRECT ANY MISSING PIECES
     tracing::info!(
         "Upserting {count} `{}`s into lp database.",
-        T::U::type_name()
+        T::DbStruct::type_name()
     );
-    T::U::upsert_all(db_records.clone(), pool).await?;
+    T::DbStruct::upsert_all(db_records.clone(), pool).await?;
     tracing::info!(
         "Upserted {count} `{}`s into lp database.",
-        T::U::type_name()
+        T::DbStruct::type_name()
     );
 
     Ok(db_records)

@@ -3,9 +3,10 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
+use crate::LPError;
 use crate::db::{DbPool, Persistable};
-use crate::lp_error::LPError;
 use crate::models::traits::{DbStruct, IntoDbStruct};
+use crate::models::nhl::DefaultNhlContext;
 
 use crate::impl_has_type_name;
 use crate::sqlx_operation_with_retries;
@@ -22,9 +23,10 @@ pub struct NhlTeamJson {
     pub tricode: String,
 }
 impl IntoDbStruct for NhlTeamJson {
-    type U = NhlTeam;
+    type DbStruct = NhlTeam;
+    type Context = DefaultNhlContext;
 
-    fn to_db_struct(self) -> Self::U {
+    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct{ 
         let NhlTeamJson {
             id,
             franchise_id,
@@ -33,6 +35,7 @@ impl IntoDbStruct for NhlTeamJson {
             raw_tricode,
             tricode,
         } = self;
+        let DefaultNhlContext { endpoint, raw_json } = context;
         NhlTeam {
             id,
             franchise_id,
@@ -40,8 +43,8 @@ impl IntoDbStruct for NhlTeamJson {
             league_id,
             raw_tricode,
             tricode,
-            endpoint: String::new(),
-            raw_json: serde_json::Value::Null,
+            endpoint,
+            raw_json,
             last_updated: None,
         }
     }
@@ -59,20 +62,6 @@ pub struct NhlTeam {
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl DbStruct for NhlTeam {
-    #[tracing::instrument]
-    fn fill_context(&mut self, endpoint: String, raw_data: String) {
-        self.raw_json = match serde_json::from_str(&raw_data) {
-            Ok(value) => value,
-            Err(e) => {
-                tracing::warn!(
-                    endpoint,
-                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
-                );
-                serde_json::Value::Null
-            }
-        };
-        self.endpoint = endpoint;
-    }
 }
 #[async_trait]
 impl Persistable for NhlTeam {
@@ -94,7 +83,7 @@ impl Persistable for NhlTeam {
         .map_err(LPError::from)
     }
 
-    fn create_query(&self) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    fn create_upsert_query(&self) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
         sqlx::query(
             r#"INSERT INTO nhl_team (
                                         id, 

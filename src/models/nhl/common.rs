@@ -1,9 +1,9 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use sqlx::Type;
 
-use crate::lp_error::LPError;
+use crate::LPError;
 use crate::models::ItemParsedWithContext;
-use crate::models::traits::HasTypeName;
+use crate::models::traits::{HasTypeName, IntoDbStruct};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Type, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -11,6 +11,16 @@ use crate::models::traits::HasTypeName;
 pub enum DefendingSide {
     Left,
     Right,
+}
+
+pub struct DefaultNhlContext {
+    pub endpoint: String,
+    pub raw_json: serde_json::Value,
+}
+pub struct GameNhlContext {
+    pub game_id: i32,
+    pub endpoint: String,
+    pub raw_json: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Type, Serialize)]
@@ -80,22 +90,22 @@ impl NhlApiDataArrayResponse {
         endpoint: &str,
     ) -> Vec<Result<ItemParsedWithContext<T>, LPError>>
     where
-        T: serde::de::DeserializeOwned + HasTypeName,
+        T: serde::de::DeserializeOwned + HasTypeName + IntoDbStruct<Context = DefaultNhlContext>,
     {
         self.data
             .iter()
-            .map(|item| {
-                let raw_data: String = item.to_string();
+            .map(|json_value| {
+                let raw_data: String = json_value.to_string();
                 let parsed: Result<T, LPError> =
-                    serde_json::from_value(item.clone()).map_err(LPError::from);
+                    serde_json::from_value(json_value.clone()).map_err(LPError::from);
                 match parsed {
                     Ok(item) => Ok(ItemParsedWithContext {
-                        raw_data,
                         item,
-                        endpoint: endpoint.to_string(),
+                        context: DefaultNhlContext{raw_json: json_value.clone(), endpoint: endpoint.to_string()}
                     }),
                     Err(e) => {
-                        tracing::warn!(item=%item, error=%e, "Failed to parse item to `{}`.", T::type_name());
+                        tracing::warn!(endpoint=%endpoint, error=%e, "Failed to parse item to `{}`.", T::type_name());
+                        tracing::debug!(raw_data);
                         Err(e)
                     }
                 }

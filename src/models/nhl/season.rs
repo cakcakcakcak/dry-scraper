@@ -3,8 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
+use crate::LPError;
 use crate::db::{DbPool, Persistable};
-use crate::lp_error::LPError;
+use crate::models::nhl::DefaultNhlContext;
 use crate::models::traits::{DbStruct, IntoDbStruct};
 use crate::serde_helpers::JsonExt;
 
@@ -51,9 +52,10 @@ pub struct NhlSeasonJson {
     pub wildcard_in_use: bool,
 }
 impl IntoDbStruct for NhlSeasonJson {
-    type U = NhlSeason;
+    type DbStruct = NhlSeason;
+    type Context = DefaultNhlContext;
 
-    fn to_db_struct(self) -> Self::U {
+    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlSeasonJson {
             id,
             all_star_game_in_use,
@@ -79,6 +81,7 @@ impl IntoDbStruct for NhlSeasonJson {
             total_regular_season_games,
             wildcard_in_use,
         } = self;
+        let DefaultNhlContext { endpoint, raw_json } = context;
         NhlSeason {
             id,
             all_star_game_in_use,
@@ -103,8 +106,8 @@ impl IntoDbStruct for NhlSeasonJson {
             total_playoff_games,
             total_regular_season_games,
             wildcard_in_use,
-            endpoint: String::new(),
-            raw_json: serde_json::Value::Null,
+            endpoint,
+            raw_json,
             last_updated: None,
         }
     }
@@ -151,22 +154,7 @@ impl std::fmt::Debug for NhlSeason {
             .finish()
     }
 }
-impl DbStruct for NhlSeason {
-    #[tracing::instrument]
-    fn fill_context(&mut self, endpoint: String, raw_data: String) {
-        self.raw_json = match serde_json::from_str(&raw_data) {
-            Ok(value) => value,
-            Err(e) => {
-                tracing::warn!(
-                    endpoint,
-                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
-                );
-                serde_json::Value::Null
-            }
-        };
-        self.endpoint = endpoint;
-    }
-}
+impl DbStruct for NhlSeason {}
 
 #[async_trait]
 impl Persistable for NhlSeason {
@@ -188,7 +176,9 @@ impl Persistable for NhlSeason {
         .map_err(LPError::from)
     }
 
-    fn create_query(&self) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    fn create_upsert_query(
+        &self,
+    ) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
         sqlx::query(r#"INSERT INTO nhl_season (
                                         id, 
                                         all_star_game_in_use, 
