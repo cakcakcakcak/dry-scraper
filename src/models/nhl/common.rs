@@ -23,7 +23,7 @@ pub struct GameNhlContext {
     pub raw_json: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Type, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Type, Serialize, Deserialize)]
 #[sqlx(type_name = "game_type", rename_all = "snake_case")]
 pub enum GameType {
     Preseason = 1,
@@ -42,15 +42,15 @@ impl TryFrom<i32> for GameType {
     }
 }
 
-impl<'de> Deserialize<'de> for GameType {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let v = i32::deserialize(deserializer)?;
-        GameType::try_from(v).map_err(serde::de::Error::custom)
-    }
-}
+// impl<'de> deserialize<'de> for gametype {
+//     fn deserialize<d>(deserializer: d) -> result<self, d::error>
+//     where
+//         d: deserializer<'de>,
+//     {
+//         let v = i32::deserialize(deserializer)?;
+//         gametype::try_from(v).map_err(serde::de::error::custom)
+//     }
+// }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Type, Serialize, Deserialize)]
 #[sqlx(type_name = "period_type", rename_all = "snake_case")]

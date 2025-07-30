@@ -1,11 +1,12 @@
 use crate::api::api_common::{ApiContext, FromId, HasEndpoint};
 use crate::api::cacheable_api::CacheableApi;
-use crate::db::DbPool;
+use crate::db::DbContext;
 use crate::lp_error::LPError;
 use crate::models::ItemParsedWithContext;
 use crate::models::nhl::{DefaultNhlContext, NhlGameJson, NhlPlayerJson};
 use crate::models::traits::{HasTypeName, IntoDbStruct};
 
+#[derive(Clone)]
 pub struct NhlWebApi {
     pub client: reqwest::Client,
     pub base_url: String,
@@ -44,9 +45,10 @@ impl FromId for NhlPlayerParams {
     }
 }
 impl HasEndpoint for NhlPlayerJson {
+    type Api = NhlWebApi;
     type Params = NhlPlayerParams;
 
-    fn endpoint<A: ApiContext>(api: &A, params: Self::Params) -> String {
+    fn endpoint(api: &Self::Api, params: Self::Params) -> String {
         format!("{}/player/{}/landing", api.base_url(), params.player_id)
     }
 }
@@ -60,9 +62,10 @@ impl FromId for NhlGameParams {
     }
 }
 impl HasEndpoint for NhlGameJson {
+    type Api = NhlWebApi;
     type Params = NhlGameParams;
 
-    fn endpoint<A: ApiContext>(api: &A, params: Self::Params) -> String {
+    fn endpoint(api: &Self::Api, params: Self::Params) -> String {
         format!(
             "{}/gamecenter/{}/play-by-play",
             api.base_url(),
@@ -71,21 +74,21 @@ impl HasEndpoint for NhlGameJson {
     }
 }
 impl NhlWebApi {
-    #[tracing::instrument(skip(pool))]
+    #[tracing::instrument(skip(db_context))]
     pub async fn fetch_from_id<T>(
         &self,
-        pool: &DbPool,
+        db_context: &DbContext,
         id: i32,
     ) -> Result<ItemParsedWithContext<T>, LPError>
     where
         T: serde::de::DeserializeOwned
-            + HasEndpoint
+            + HasEndpoint<Api = NhlWebApi>
             + IntoDbStruct<Context = DefaultNhlContext>
             + HasTypeName,
         T::Params: FromId,
     {
         let endpoint: String = T::endpoint(self, T::Params::from_id(id));
-        let raw_data: String = self.get_or_cache_endpoint(pool, &endpoint).await?;
+        let raw_data: String = self.get_or_cache_endpoint(&db_context, &endpoint).await?;
         let raw_json: serde_json::Value = match serde_json::from_str(&raw_data) {
             Ok(value) => value,
             Err(e) => {

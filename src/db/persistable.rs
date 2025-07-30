@@ -1,80 +1,92 @@
 use async_trait::async_trait;
-use indicatif::ProgressBar;
 
-use crate::config::CONFIG;
-use crate::db::DbPool;
+use super::{DbContext, DbPool, StaticPgQuery};
 use crate::lp_error::LPError;
 
-use crate::sqlx_operation_with_retries;
-
 #[async_trait]
-pub trait Persistable: std::fmt::Debug + Sized {
+pub trait Persistable: std::fmt::Debug + Sized + Clone + Send + Sync + 'static {
     type Id: Send + Sync;
 
     fn id(&self) -> Self::Id;
 
-    fn create_upsert_query(
+    fn create_upsert_query(&self) -> StaticPgQuery;
+
+    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError>;
+
+    async fn verify_relationships(
         &self,
-    ) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments>;
-
-    async fn try_db(pool: &DbPool, id: Self::Id) -> Result<Option<Self>, LPError>;
-
-    async fn verify_relationships(&self, _pool: &DbPool) -> Result<RelationshipIntegrity, LPError> {
+        _context: &DbContext,
+    ) -> Result<RelationshipIntegrity, LPError> {
         Ok(RelationshipIntegrity::AllValid)
     }
 
-    #[tracing::instrument(skip(pool))]
-    async fn upsert(&self, pool: &DbPool) -> Result<(), LPError> {
-        sqlx_operation_with_retries!(self.create_upsert_query().execute(pool).await).await?;
-        Ok(())
-    }
+    #[tracing::instrument(skip(db_context))]
+    async fn upsert(&self, db_context: &DbContext) -> Result<(), LPError> {
+        let pool = db_context.pool.clone();
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
 
-    #[tracing::instrument(skip(pool, records))]
-    async fn upsert_all<T: Send + Sync + Persistable>(
-        records: Vec<T>,
-        pool: &DbPool,
-    ) -> Result<usize, LPError> {
-        let mut tx: sqlx::Transaction<'static, sqlx::Postgres> = pool.begin().await?;
-        let pb: ProgressBar = ProgressBar::new(records.len() as u64);
-        pb.set_style(CONFIG.progress_bar_style.clone());
+        // Clone self for the closure
+        let self_clone = self.clone();
 
-        let mut successes: usize = records.len();
-        for record in records {
-            let integrity = record.verify_relationships(pool).await?;
-            match integrity {
-                RelationshipIntegrity::AllValid => (),
-                RelationshipIntegrity::Missing(missing_records) => {
-                    // TODO: fetch each missing record
-                    ()
-                }
-            }
-            if let Err(e) = record.create_upsert_query().execute(&mut *tx).await {
-                tracing::warn!("Upsert failed for record {record:?}: {e}");
-                successes -= 1;
-            }
-            pb.inc(1);
+        let job = Box::pin(async move {
+            crate::util::sqlx_operation_with_retries(|| async {
+                // Create a fresh query for each retry
+                let query = self_clone.create_upsert_query();
+                query.execute(&pool).await.map(|_| ())
+            })
+            .await
+        });
+
+        db_context
+            .sqlx_tx
+            .send((job, result_tx))
+            .await
+            .map_err(|e| LPError::DatabaseCustom(format!("Worker channel send failed: {e}")))?;
+
+        match result_rx.await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => Err(LPError::DatabaseCustom(format!("Upsert failed: {e}"))),
+            Err(_) => Err(LPError::DatabaseCustom("Worker dropped".to_string())),
         }
-        pb.finish_using_style();
-
-        tx.commit().await?;
-        Ok(successes)
     }
 }
 
 #[derive(Debug)]
 pub enum RelationshipIntegrity {
     AllValid,
-    Missing(Vec<MissingRelationship>),
+    Missing(Vec<PrimaryKey>),
 }
 
 #[derive(Debug)]
-pub enum MissingRelationship {
-    ApiCache(String),
-    NhlSeason(i32),
-    NhlFranchise(i32),
-    NhlTeam(i32),
-    NhlPlayer(i32),
-    NhlGame(i32),
-    NhlPlayoffSeries(i32, String),
-    NhlPlay(i32, i32),
+pub enum PrimaryKey {
+    ApiCache {
+        endpoint: String,
+    },
+    NhlSeason {
+        id: i32,
+    },
+    NhlFranchise {
+        id: i32,
+    },
+    NhlTeam {
+        id: i32,
+    },
+    NhlPlayer {
+        id: i32,
+    },
+    NhlGame {
+        id: i32,
+    },
+    NhlPlayoffSeries {
+        season_id: i32,
+        series_letter: String,
+    },
+    NhlPlay {
+        game_id: i32,
+        event_id: i32,
+    },
+    NhlRosterSpot {
+        game_id: i32,
+        player_id: i32,
+    },
 }

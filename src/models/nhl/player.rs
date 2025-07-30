@@ -4,19 +4,20 @@ use serde_json;
 use sqlx::FromRow;
 
 use crate::LPError;
-use crate::db::{DbPool, Persistable};
+use crate::db::{DbContext, DbPool, Persistable, PrimaryKey, StaticPgQuery};
 use crate::models::nhl::DefaultNhlContext;
 use crate::models::traits::{DbStruct, IntoDbStruct};
 use crate::serde_helpers::JsonExt;
 
+use crate::bind;
 use crate::impl_has_type_name;
 use crate::make_deserialize_key_to_type;
 use crate::make_deserialize_to_type;
 use crate::sqlx_operation_with_retries;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DraftDetails {
+pub struct DraftDetailsJson {
     pub year: Option<i32>,
     pub team_abbrev: Option<String>,
     pub round: Option<i32>,
@@ -24,7 +25,7 @@ pub struct DraftDetails {
     pub overall_pick: Option<i32>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NhlPlayerJson {
     #[serde(rename = "playerId")]
@@ -60,7 +61,7 @@ pub struct NhlPlayerJson {
     pub birth_state_province: String,
     pub birth_country: String,
     pub shoots_catches: String,
-    pub draft_details: Option<DraftDetails>,
+    pub draft_details: Option<DraftDetailsJson>,
     pub player_slug: String,
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_to_bool")]
@@ -159,7 +160,7 @@ impl IntoDbStruct for NhlPlayerJson {
     }
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Clone, Debug, FromRow)]
 pub struct NhlPlayer {
     pub id: i32,
     pub first_name: String,
@@ -196,31 +197,36 @@ pub struct NhlPlayer {
     pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl DbStruct for NhlPlayer {}
+impl DbStruct for NhlPlayer {
+    type IntoDbStruct = NhlPlayerJson;
+}
 #[async_trait]
 impl Persistable for NhlPlayer {
-    type Id = i32;
+    type Id = PrimaryKey;
 
     fn id(&self) -> Self::Id {
-        self.id
+        PrimaryKey::NhlPlayer { id: self.id }
     }
 
-    #[tracing::instrument(skip(pool))]
-    async fn try_db(pool: &DbPool, id: Self::Id) -> Result<Option<Self>, LPError> {
-        sqlx_operation_with_retries!(
-            sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_player WHERE id=$1"#)
-                .bind(id)
-                .fetch_optional(pool)
-                .await
-        )
-        .await
-        .map_err(LPError::from)
+    #[tracing::instrument(skip(db_context))]
+    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError> {
+        match id {
+            PrimaryKey::NhlPlayer { id } => sqlx_operation_with_retries!(
+                sqlx::query_as::<_, NhlPlayer>(r#"SELECT * FROM nhl_player WHERE id=$1"#)
+                    .bind(id.clone())
+                    .fetch_optional(&db_context.pool)
+                    .await
+            )
+            .await
+            .map_err(LPError::from),
+            _ => Err(LPError::DatabaseCustom("Wrong ID variant".to_string())),
+        }
     }
 
-    fn create_upsert_query(
-        &self,
-    ) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
-        sqlx::query(r#"INSERT INTO nhl_player (
+    fn create_upsert_query(&self) -> StaticPgQuery {
+        bind!(
+            sqlx::query(
+                r#"INSERT INTO nhl_player (
                                         id,
                                         first_name,
                                         last_name,
@@ -294,40 +300,41 @@ impl Persistable for NhlPlayer {
                                         raw_json = EXCLUDED.raw_json,
                                         last_updated = now()
                                     "#
-            )
-            .bind(&self.id)
-            .bind(&self.first_name)
-            .bind(&self.last_name)
-            .bind(&self.is_active)
-            .bind(&self.current_team_id)
-            .bind(&self.current_team_abbrev)
-            .bind(&self.full_team_name)
-            .bind(&self.team_common_name)
-            .bind(&self.team_place_name_with_preposition)
-            .bind(&self.team_logo)
-            .bind(&self.sweater_number)
-            .bind(&self.position)
-            .bind(&self.headshot)
-            .bind(&self.hero_image)
-            .bind(&self.height_in_inches)
-            .bind(&self.height_in_centimeters)
-            .bind(&self.weight_in_pounds)
-            .bind(&self.weight_in_kilograms)
-            .bind(&self.birth_date)
-            .bind(&self.birth_city)
-            .bind(&self.birth_state_province)
-            .bind(&self.birth_country)
-            .bind(&self.shoots_catches)
-            .bind(&self.draft_year)
-            .bind(&self.draft_team_abbreviation)
-            .bind(&self.draft_round)
-            .bind(&self.draft_pick_in_round)
-            .bind(&self.draft_overall_pick)
-            .bind(&self.player_slug)
-            .bind(&self.in_top100_all_time)
-            .bind(&self.in_hhof)
-            .bind(&self.endpoint)
-            .bind(&self.raw_json)
+            ),
+            self.id,
+            self.first_name,
+            self.last_name,
+            self.is_active,
+            self.current_team_id,
+            self.current_team_abbrev,
+            self.full_team_name,
+            self.team_common_name,
+            self.team_place_name_with_preposition,
+            self.team_logo,
+            self.sweater_number,
+            self.position,
+            self.headshot,
+            self.hero_image,
+            self.height_in_inches,
+            self.height_in_centimeters,
+            self.weight_in_pounds,
+            self.weight_in_kilograms,
+            self.birth_date,
+            self.birth_city,
+            self.birth_state_province,
+            self.birth_country,
+            self.shoots_catches,
+            self.draft_year,
+            self.draft_team_abbreviation,
+            self.draft_round,
+            self.draft_pick_in_round,
+            self.draft_overall_pick,
+            self.player_slug,
+            self.in_top100_all_time,
+            self.in_hhof,
+            self.endpoint,
+            self.raw_json,
+        )
     }
 }
 

@@ -3,9 +3,10 @@ pub trait ApiContext {
 }
 
 pub trait HasEndpoint {
+    type Api: ApiContext;
     type Params: Default + std::fmt::Debug;
 
-    fn endpoint<A: ApiContext>(api: &A, params: Self::Params) -> String;
+    fn endpoint(api: &Self::Api, params: Self::Params) -> String;
 }
 
 pub trait FromId {

@@ -2,12 +2,16 @@ use std::{env::VarError, num::ParseIntError};
 
 use thiserror::Error;
 
+use crate::SqlxJob;
+
 #[derive(Error, Debug)]
 pub enum LPError {
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
     #[error("Database error: {0}")]
     DatabaseCustom(String),
+    #[error("Failed to send SQLx Job: {0}")]
+    SqlxJobSend(#[from] tokio::sync::mpsc::error::SendError<SqlxJob>),
     #[error("Database migration error: {0}")]
     Migration(#[from] sqlx::migrate::MigrateError),
     #[error("API error: {0}")]

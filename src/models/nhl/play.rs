@@ -4,10 +4,12 @@ use serde_json;
 use sqlx::FromRow;
 use sqlx::postgres::types::PgInterval;
 
+use crate::db::DbContext;
 use crate::models::nhl::{DefendingSide, GameNhlContext, PeriodDescriptorJson, PeriodTypeJson};
 use crate::models::traits::{DbStruct, IntoDbStruct};
 use crate::serde_helpers::{JsonExt, parse_mmss_to_pginterval};
 
+use crate::bind;
 use crate::impl_has_type_name;
 use crate::make_deserialize_to_type;
 
@@ -76,7 +78,7 @@ impl IntoDbStruct for NhlPlayJson {
     }
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Clone, Debug, FromRow)]
 pub struct NhlPlay {
     pub game_id: i32,
     pub event_id: i32,
@@ -95,7 +97,9 @@ pub struct NhlPlay {
     pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl DbStruct for NhlPlay {}
+impl DbStruct for NhlPlay {
+    type IntoDbStruct = NhlPlayJson;
+}
 
 impl_has_type_name!(NhlPlayJson);
 impl_has_type_name!(NhlPlay);

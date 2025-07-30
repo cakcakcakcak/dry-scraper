@@ -3,10 +3,11 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 use crate::LPError;
-use crate::db::{DbPool, Persistable};
+use crate::db::{DbContext, Persistable, PrimaryKey, StaticPgQuery};
 use crate::models::nhl::DefaultNhlContext;
 use crate::models::traits::{DbStruct, IntoDbStruct};
 
+use crate::bind;
 use crate::impl_has_type_name;
 use crate::sqlx_operation_with_retries;
 
@@ -128,8 +129,7 @@ impl IntoDbStruct for NhlPlayoffSeriesJson {
         }
     }
 }
-#[derive(Debug, Serialize, Deserialize, FromRow)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, FromRow)]
 pub struct NhlPlayoffSeries {
     pub season_id: i32,
     pub series_letter: String,
@@ -163,34 +163,45 @@ pub struct NhlPlayoffSeries {
     pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl DbStruct for NhlPlayoffSeries {}
+impl DbStruct for NhlPlayoffSeries {
+    type IntoDbStruct = NhlPlayoffSeriesJson;
+}
 #[async_trait]
 impl Persistable for NhlPlayoffSeries {
-    type Id = (i32, String);
+    type Id = PrimaryKey;
 
     fn id(&self) -> Self::Id {
-        (self.season_id, self.series_letter.clone())
+        PrimaryKey::NhlPlayoffSeries {
+            season_id: self.season_id,
+            series_letter: self.series_letter.clone(),
+        }
     }
 
-    #[tracing::instrument(skip(pool))]
-    async fn try_db(pool: &DbPool, id: Self::Id) -> Result<Option<Self>, LPError> {
-        sqlx_operation_with_retries!(
-            sqlx::query_as::<_, Self>(
-                r#"SELECT * FROM nhl_playoff_series WHERE season_id=$1 AND series_letter=$2"#
+    #[tracing::instrument(skip(db_context))]
+    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError> {
+        match id {
+            PrimaryKey::NhlPlayoffSeries {
+                season_id,
+                series_letter,
+            } => sqlx_operation_with_retries!(
+                sqlx::query_as::<_, Self>(
+                    r#"SELECT * FROM nhl_playoff_series WHERE season_id=$1 AND series_letter=$2"#
+                )
+                .bind(&season_id.clone())
+                .bind(&series_letter.clone())
+                .fetch_optional(&db_context.pool)
+                .await
             )
-            .bind(id.0.clone())
-            .bind(id.1.clone())
-            .fetch_optional(pool)
             .await
-        )
-        .await
-        .map_err(LPError::from)
+            .map_err(LPError::from),
+            _ => Err(LPError::DatabaseCustom("Wrong ID variant".to_string())),
+        }
     }
 
-    fn create_upsert_query(
-        &self,
-    ) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
-        sqlx::query(r#"INSERT INTO nhl_playoff_series (
+    fn create_upsert_query(&self) -> StaticPgQuery {
+        bind!(
+            sqlx::query(
+                r#"INSERT INTO nhl_playoff_series (
                                         season_id,
                                         series_letter,
                                         series_url,
@@ -256,37 +267,38 @@ impl Persistable for NhlPlayoffSeries {
                                         raw_json = EXCLUDED.raw_json,
                                         last_updated = now()
                                     "#
-            )
-            .bind(&self.season_id)
-            .bind(&self.series_letter)
-            .bind(&self.series_url)
-            .bind(&self.series_title)
-            .bind(&self.series_abbrev)
-            .bind(&self.playoff_round)
-            .bind(&self.top_seed_rank)
-            .bind(&self.top_seed_rank_abbrev)
-            .bind(&self.top_seed_wins)
-            .bind(&self.bottom_seed_rank)
-            .bind(&self.bottom_seed_rank_abbrev)
-            .bind(&self.bottom_seed_wins)
-            .bind(&self.winning_team_id)
-            .bind(&self.losing_team_id)
-            .bind(&self.top_seed_team_id)
-            .bind(&self.top_seed_team_abbrev)
-            .bind(&self.top_seed_team_name)
-            .bind(&self.top_seed_team_common_name)
-            .bind(&self.top_seed_team_place_name_with_preposition)
-            .bind(&self.top_seed_team_logo)
-            .bind(&self.top_seed_team_dark_logo)
-            .bind(&self.bottom_seed_team_id)
-            .bind(&self.bottom_seed_team_abbrev)
-            .bind(&self.bottom_seed_team_name)
-            .bind(&self.bottom_seed_team_common_name)
-            .bind(&self.bottom_seed_team_place_name_with_preposition)
-            .bind(&self.bottom_seed_team_logo)
-            .bind(&self.bottom_seed_team_dark_logo)
-            .bind(&self.endpoint)
-            .bind(&self.raw_json)
+            ),
+            self.season_id,
+            self.series_letter,
+            self.series_url,
+            self.series_title,
+            self.series_abbrev,
+            self.playoff_round,
+            self.top_seed_rank,
+            self.top_seed_rank_abbrev,
+            self.top_seed_wins,
+            self.bottom_seed_rank,
+            self.bottom_seed_rank_abbrev,
+            self.bottom_seed_wins,
+            self.winning_team_id,
+            self.losing_team_id,
+            self.top_seed_team_id,
+            self.top_seed_team_abbrev,
+            self.top_seed_team_name,
+            self.top_seed_team_common_name,
+            self.top_seed_team_place_name_with_preposition,
+            self.top_seed_team_logo,
+            self.top_seed_team_dark_logo,
+            self.bottom_seed_team_id,
+            self.bottom_seed_team_abbrev,
+            self.bottom_seed_team_name,
+            self.bottom_seed_team_common_name,
+            self.bottom_seed_team_place_name_with_preposition,
+            self.bottom_seed_team_logo,
+            self.bottom_seed_team_dark_logo,
+            self.endpoint,
+            self.raw_json,
+        )
     }
 }
 

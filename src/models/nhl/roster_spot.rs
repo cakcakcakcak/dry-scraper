@@ -5,11 +5,12 @@ use serde_json;
 use sqlx::FromRow;
 
 use crate::LPError;
-use crate::db::{DbPool, Persistable};
+use crate::db::{DbContext, Persistable, PrimaryKey, StaticPgQuery};
 use crate::models::nhl::GameNhlContext;
 use crate::models::nhl::LocalizedNameJson;
 use crate::models::traits::{DbStruct, IntoDbStruct};
 
+use crate::bind;
 use crate::impl_has_type_name;
 use crate::sqlx_operation_with_retries;
 
@@ -60,7 +61,7 @@ impl IntoDbStruct for NhlRosterSpotJson {
     }
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Debug, FromRow, Clone)]
 pub struct NhlRosterSpot {
     pub game_id: i32,
     pub player_id: i32,
@@ -74,36 +75,43 @@ pub struct NhlRosterSpot {
     pub endpoint: String,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl DbStruct for NhlRosterSpot {}
+impl DbStruct for NhlRosterSpot {
+    type IntoDbStruct = NhlRosterSpotJson;
+}
 
 #[async_trait]
 impl Persistable for NhlRosterSpot {
-    type Id = (i32, i32);
+    type Id = PrimaryKey;
 
     fn id(&self) -> Self::Id {
-        (self.game_id, self.player_id)
+        PrimaryKey::NhlRosterSpot {
+            game_id: self.game_id,
+            player_id: self.player_id,
+        }
     }
 
-    #[tracing::instrument(skip(pool))]
-    async fn try_db(pool: &DbPool, id: Self::Id) -> Result<Option<Self>, LPError> {
-        sqlx_operation_with_retries!(
-            sqlx::query_as::<_, Self>(
-                r#"SELECT * FROM nhl_roster_spot WHERE game_id=$1 AND player_id=$2"#
+    #[tracing::instrument(skip(db_context))]
+    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError> {
+        match id {
+            PrimaryKey::NhlRosterSpot { game_id, player_id } => sqlx_operation_with_retries!(
+                sqlx::query_as::<_, Self>(
+                    r#"SELECT * FROM nhl_roster_spot WHERE game_id=$1 AND player_id=$2"#
+                )
+                .bind(game_id.clone())
+                .bind(player_id.clone())
+                .fetch_optional(&db_context.pool)
+                .await
             )
-            .bind(id.0)
-            .bind(id.1)
-            .fetch_optional(pool)
             .await
-        )
-        .await
-        .map_err(LPError::from)
+            .map_err(LPError::from),
+            _ => Err(LPError::DatabaseCustom("Wrong ID variant".to_string())),
+        }
     }
 
-
-    fn create_upsert_query(
-        &self,
-    ) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
-        sqlx::query(r#"INSERT INTO nhl_roster_spot (
+    fn create_upsert_query(&self) -> StaticPgQuery {
+        bind!(
+            sqlx::query(
+                r#"INSERT INTO nhl_roster_spot (
                                         game_id,
                                         player_id,
                                         team_id,
@@ -128,17 +136,19 @@ impl Persistable for NhlRosterSpot {
                                         raw_json = EXCLUDED.raw_json,
                                         endpoint = EXCLUDED.endpoint,
                                         last_updated = now()
-                                    "#)
-                                    .bind(&self.game_id)
-                                    .bind(&self.player_id)
-                                    .bind(&self.team_id)
-                                    .bind(&self.first_name)
-                                    .bind(&self.last_name)
-                                    .bind(&self.sweater_number)
-                                    .bind(&self.position_code)
-                                    .bind(&self.headshot)
-                                    .bind(&self.raw_json)
-                                    .bind(&self.endpoint)
+                                    "#,
+            ),
+            self.game_id,
+            self.player_id,
+            self.team_id,
+            self.first_name,
+            self.last_name,
+            self.sweater_number,
+            self.position_code,
+            self.headshot,
+            self.raw_json,
+            self.endpoint,
+        )
     }
 }
 

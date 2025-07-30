@@ -1,36 +1,37 @@
+use futures::future::join_all;
 use futures::stream::{self, StreamExt};
 
 use crate::api::api_common::HasEndpoint;
-use crate::api::nhl::nhl_stats_api::NhlStatsApi;
-use crate::api::nhl::nhl_web_api::NhlWebApi;
+use crate::api::nhl::{NhlApi, NhlStatsApi, NhlWebApi};
 use crate::config::CONFIG;
-use crate::db::{DbPool, Persistable};
+use crate::db::{DbContext, DbPool, Persistable, PrimaryKey};
 use crate::lp_error::LPError;
 use crate::models::ItemParsedWithContext;
 use crate::models::nhl::{
-    NhlFranchise, NhlFranchiseJson, NhlGame, NhlGameJson, NhlPlayer, NhlPlayerJson, NhlSeason,
-    NhlSeasonJson, NhlTeam, NhlTeamJson, DefaultNhlContext
+    DefaultNhlContext, GameNhlContext, NhlFranchise, NhlFranchiseJson, NhlGame, NhlGameJson,
+    NhlPlayer, NhlPlayerJson, NhlRosterSpot, NhlRosterSpotJson, NhlSeason, NhlSeasonJson, NhlTeam,
+    NhlTeamJson,
 };
 use crate::models::traits::{DbStruct, HasTypeName, IntoDbStruct};
 use crate::util::filter_results;
 
 use crate::with_progress_bar;
 
-#[tracing::instrument(skip(pool, nhl_stats_api))]
+#[tracing::instrument(skip(db_context, nhl_api))]
 async fn get_nhl_api_data_array<T>(
-    pool: &DbPool,
-    nhl_stats_api: &NhlStatsApi,
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
 ) -> Result<Vec<T::DbStruct>, LPError>
 where
     T: serde::de::DeserializeOwned
-        + HasEndpoint
+        + HasEndpoint<Api = NhlStatsApi>
         + IntoDbStruct<Context = DefaultNhlContext>
         + std::fmt::Debug
         + HasTypeName,
     T::DbStruct: std::fmt::Debug + DbStruct + Persistable + HasTypeName + Clone + Send + Sync,
 {
     let data_array: Vec<ItemParsedWithContext<T>> =
-        nhl_stats_api.fetch_nhl_api_data_array::<T>(&pool).await?;
+        nhl_api.fetch_nhl_api_data_array::<T>(db_context).await?;
 
     let db_records: Vec<T::DbStruct> = data_array
         .into_iter()
@@ -44,7 +45,7 @@ where
         "Upserting {count} `{}`s into lp database.",
         T::DbStruct::type_name()
     );
-    T::DbStruct::upsert_all(db_records.clone(), pool).await?;
+    join_all(db_records.iter().map(|record| record.upsert(db_context))).await;
     tracing::info!(
         "Upserted {count} `{}`s into lp database.",
         T::DbStruct::type_name()
@@ -53,98 +54,109 @@ where
     Ok(db_records)
 }
 
-#[tracing::instrument(skip(pool, nhl_stats_api))]
+#[tracing::instrument(skip(db_context, nhl_api))]
 pub async fn get_nhl_seasons(
-    pool: &DbPool,
-    nhl_stats_api: &NhlStatsApi,
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
 ) -> Result<Vec<NhlSeason>, LPError> {
-    let db_seasons = get_nhl_api_data_array::<NhlSeasonJson>(&pool, &nhl_stats_api).await?;
+    let db_seasons = get_nhl_api_data_array::<NhlSeasonJson>(db_context, &nhl_api).await?;
 
     Ok(db_seasons)
 }
 
-#[tracing::instrument(skip(pool, nhl_stats_api))]
+#[tracing::instrument(skip(db_context, nhl_api))]
 pub async fn get_nhl_franchises(
-    pool: &DbPool,
-    nhl_stats_api: &NhlStatsApi,
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
 ) -> Result<Vec<NhlFranchise>, LPError> {
-    let db_franchises = get_nhl_api_data_array::<NhlFranchiseJson>(&pool, &nhl_stats_api).await?;
+    let db_franchises = get_nhl_api_data_array::<NhlFranchiseJson>(&db_context, &nhl_api).await?;
 
     Ok(db_franchises)
 }
 
-#[tracing::instrument(skip(pool, nhl_stats_api))]
+#[tracing::instrument(skip(db_context, nhl_api))]
 pub async fn get_nhl_teams(
-    pool: &DbPool,
-    nhl_stats_api: &NhlStatsApi,
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
 ) -> Result<Vec<NhlTeam>, LPError> {
-    let db_teams = get_nhl_api_data_array::<NhlTeamJson>(&pool, &nhl_stats_api).await?;
+    let db_teams = get_nhl_api_data_array::<NhlTeamJson>(&db_context, &nhl_api).await?;
 
     Ok(db_teams)
 }
 
-#[tracing::instrument(skip(pool, nhl_stats_api))]
+#[tracing::instrument(skip(db_context, nhl_api))]
 pub async fn get_nhl_team(
-    pool: &DbPool,
-    nhl_stats_api: &NhlStatsApi,
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
     team_id: i32,
 ) -> Result<NhlTeam, LPError> {
     let team_json_with_context: ItemParsedWithContext<NhlTeamJson> =
-        nhl_stats_api.get_nhl_team(pool, team_id).await?;
+        nhl_api.get_nhl_team(db_context, team_id).await?;
     let team = team_json_with_context.to_db_struct();
 
     tracing::debug!("Upserting team with id {team_id} into lp database.");
-    team.upsert(pool).await?;
+    team.upsert(db_context).await?;
     tracing::debug!("Upserted team with id {team_id} into lp database.");
 
     Ok(team)
 }
 
-#[tracing::instrument(skip(pool, nhl_web_api))]
+#[tracing::instrument(skip(db_context, nhl_api))]
 pub async fn get_nhl_player(
-    pool: &DbPool,
-    nhl_web_api: &NhlWebApi,
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
     player_id: i32,
 ) -> Result<NhlPlayer, LPError> {
-    let player_json_with_context: ItemParsedWithContext<NhlPlayerJson> = nhl_web_api
-        .fetch_from_id::<NhlPlayerJson>(pool, player_id)
+    let player_json_with_context: ItemParsedWithContext<NhlPlayerJson> = nhl_api
+        .fetch_from_id::<NhlPlayerJson>(db_context, player_id)
         .await?;
     let player: NhlPlayer = player_json_with_context.to_db_struct();
-    player.upsert(pool).await?;
+    player.upsert(db_context).await?;
     Ok(player)
 }
 
-#[tracing::instrument(skip(pool, nhl_web_api))]
+#[tracing::instrument(skip(db_context, nhl_api))]
 pub async fn get_nhl_game(
-    pool: &DbPool,
-    nhl_web_api: &NhlWebApi,
-    game_id: i32,
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
+    id: i32,
 ) -> Result<NhlGame, LPError> {
-    let game_json_with_context: ItemParsedWithContext<NhlGameJson> = nhl_web_api
-        .fetch_from_id::<NhlGameJson>(pool, game_id)
-        .await?;
+    tracing::debug!("Checking lp database for NhlGame with id `{id}`");
+    match NhlGame::try_db(db_context, PrimaryKey::NhlGame { id }).await {
+        Ok(Some(game)) => {
+            return Ok(game);
+        }
+        Ok(None) => (),
+        Err(e) => {
+            tracing::warn!(error=%e, "Encountered an error while trying lp database.");
+        }
+    }
+    let game_json_with_context: ItemParsedWithContext<NhlGameJson> =
+        nhl_api.fetch_from_id::<NhlGameJson>(db_context, id).await?;
     let game: NhlGame = game_json_with_context.to_db_struct();
-    game.upsert(pool).await?;
+    game.upsert(db_context).await?;
     Ok(game)
 }
 
 pub async fn get_nhl_all_games_in_season_by_id(
-    pool: &DbPool,
+    db_context: &DbContext,
     nhl_web_api: &NhlWebApi,
-    season_id: i32,
+    id: i32,
 ) -> Result<Vec<NhlGame>, LPError> {
-    let season = NhlSeason::try_db(pool, season_id).await?.ok_or_else(|| {
-        LPError::DatabaseCustom(format!(
-            "Season {season_id} not found in database. Please fetch seasons first."
-        ))
-    })?;
+    let season: NhlSeason = NhlSeason::try_db(db_context, PrimaryKey::NhlSeason { id })
+        .await?
+        .ok_or_else(|| {
+            LPError::DatabaseCustom(format!(
+                "Season {id} not found in database. Please fetch seasons first."
+            ))
+        })?;
 
-    get_nhl_all_games_in_season(pool, nhl_web_api, &season).await
+    get_nhl_all_games_in_season(db_context, nhl_web_api, &season).await
 }
 
-#[tracing::instrument(skip(pool, nhl_web_api))]
+#[tracing::instrument(skip(db_context, nhl_web_api))]
 pub async fn get_nhl_all_games_in_season(
-    pool: &DbPool,
+    db_context: &DbContext,
     nhl_web_api: &NhlWebApi,
     season: &NhlSeason,
 ) -> Result<Vec<NhlGame>, LPError> {
@@ -159,7 +171,6 @@ pub async fn get_nhl_all_games_in_season(
     let json_results: Vec<Result<ItemParsedWithContext<NhlGameJson>, LPError>> =
         with_progress_bar!(number_of_games, |pb| {
             let fetches = stream::iter(1..=number_of_games).map(|game_number| {
-                let pool: sqlx::Pool<sqlx::Postgres> = pool.clone();
                 let nhl_web_api: &NhlWebApi = nhl_web_api;
                 let id_string: String = format!("{prefix}{game_number:04}");
                 async move {
@@ -167,7 +178,9 @@ pub async fn get_nhl_all_games_in_season(
                         tracing::warn!("Failed to parse {id_string} into `i32`: {e:?}");
                         LPError::Parse(e)
                     })?;
-                    nhl_web_api.fetch_from_id::<NhlGameJson>(&pool, id).await
+                    nhl_web_api
+                        .fetch_from_id::<NhlGameJson>(db_context, id)
+                        .await
                 }
             });
             fetches
@@ -194,16 +207,16 @@ pub async fn get_nhl_all_games_in_season(
     });
     let game_count = games.len();
     tracing::info!(
-        "Successfully parsed {game_count}/{number_of_games} games from {season_id} NHL season into lp database."
+        "Successfully parsed {game_count}/{number_of_games} games from {season_id} NHL season into lp database structs."
     );
 
     tracing::info!(
         "Upserting {number_of_games} games from {season_id} NHL season into lp database."
     );
-    let successes = NhlGame::upsert_all(games.clone(), pool).await?;
-    tracing::info!(
-        "Successfully upserted {successes}/{number_of_games} games from {season_id} NHL season into lp database."
-    );
+    join_all(games.iter().map(|game| game.upsert(db_context))).await;
+    // tracing::info!(
+    //     "Successfully upserted {successes}/{number_of_games} games from {season_id} NHL season into lp database."
+    // );
 
     Ok(games)
 }

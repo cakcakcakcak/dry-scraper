@@ -5,20 +5,21 @@ use serde_json;
 use sqlx::FromRow;
 
 use crate::LPError;
-use crate::db::{DbPool, Persistable};
+use crate::db::{DbContext, Persistable, PrimaryKey, StaticPgQuery};
 use crate::models::nhl::{
     DefaultNhlContext, GameType, LocalizedNameJson, NhlPlay, NhlPlayJson, NhlRosterSpot,
     NhlRosterSpotJson, PeriodDescriptorJson, PeriodTypeJson,
 };
 use crate::models::traits::{DbStruct, IntoDbStruct};
 
+use crate::bind;
 use crate::impl_has_type_name;
 use crate::sqlx_operation_with_retries;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClockJson {
-    pub time_remaining: String,
+    pub time_remaining: Option<String>,
     pub seconds_remaining: i32,
     pub running: bool,
     pub in_intermission: bool,
@@ -205,31 +206,36 @@ pub struct NhlGame {
     pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl DbStruct for NhlGame {}
+impl DbStruct for NhlGame {
+    type IntoDbStruct = NhlGameJson;
+}
 #[async_trait]
 impl Persistable for NhlGame {
-    type Id = i32;
+    type Id = PrimaryKey;
 
     fn id(&self) -> Self::Id {
-        self.id
+        PrimaryKey::NhlGame { id: self.id }
     }
 
-    #[tracing::instrument(skip(pool))]
-    async fn try_db(pool: &DbPool, id: Self::Id) -> Result<Option<Self>, LPError> {
-        sqlx_operation_with_retries!(
-            sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_game WHERE id=$1"#)
-                .bind(id)
-                .fetch_optional(pool)
-                .await
-        )
-        .await
-        .map_err(LPError::from)
+    #[tracing::instrument(skip(db_context))]
+    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError> {
+        match id {
+            PrimaryKey::NhlGame { id } => sqlx_operation_with_retries!(
+                sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_game WHERE id=$1"#)
+                    .bind(id.clone())
+                    .fetch_optional(&db_context.pool)
+                    .await
+            )
+            .await
+            .map_err(LPError::from),
+            _ => Err(LPError::DatabaseCustom("Wrong ID variant".to_string())),
+        }
     }
 
-    fn create_upsert_query(
-        &self,
-    ) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
-        sqlx::query(r#"INSERT INTO nhl_game (
+    fn create_upsert_query(&self) -> StaticPgQuery {
+        bind!(
+            sqlx::query(
+                r#"INSERT INTO nhl_game (
                                         id,
                                         season,
                                         game_type,
@@ -315,46 +321,47 @@ impl Persistable for NhlGame {
                                         raw_json = EXCLUDED.raw_json,
                                         last_updated = now()
                                     "#
-            )
-            .bind(&self.id)
-            .bind(&self.season)
-            .bind(&self.game_type)
-            .bind(&self.limited_scoring)
-            .bind(&self.game_date)
-            .bind(&self.venue)
-            .bind(&self.venue_location)
-            .bind(&self.start_time_utc)
-            .bind(&self.eastern_utc_offset)
-            .bind(&self.venue_utc_offset)
-            .bind(&self.period_descriptor_number)
-            .bind(&self.period_descriptor_type)
-            .bind(&self.period_descriptor_max_regulation_periods)
-            .bind(&self.away_team_id)
-            .bind(&self.away_team_name)
-            .bind(&self.away_team_abbrev)
-            .bind(&self.away_team_score)
-            .bind(&self.away_team_sog)
-            .bind(&self.away_team_logo)
-            .bind(&self.away_team_dark_logo)
-            .bind(&self.away_team_place_name)
-            .bind(&self.away_team_place_name_with_preposition)
-            .bind(&self.home_team_id)
-            .bind(&self.home_team_name)
-            .bind(&self.home_team_abbrev)
-            .bind(&self.home_team_score)
-            .bind(&self.home_team_sog)
-            .bind(&self.home_team_logo)
-            .bind(&self.home_team_dark_logo)
-            .bind(&self.home_team_place_name)
-            .bind(&self.home_team_place_name_with_preposition)
-            .bind(&self.shootout_in_use)
-            .bind(&self.ot_in_use)
-            .bind(&self.display_period)
-            .bind(&self.max_periods)
-            .bind(&self.game_outcome_last_period_type)
-            .bind(&self.reg_periods)
-            .bind(&self.endpoint)
-            .bind(&self.raw_json)
+            ),
+            self.id,
+            self.season,
+            self.game_type,
+            self.limited_scoring,
+            self.game_date,
+            self.venue,
+            self.venue_location,
+            self.start_time_utc,
+            self.eastern_utc_offset,
+            self.venue_utc_offset,
+            self.period_descriptor_number,
+            self.period_descriptor_type,
+            self.period_descriptor_max_regulation_periods,
+            self.away_team_id,
+            self.away_team_name,
+            self.away_team_abbrev,
+            self.away_team_score,
+            self.away_team_sog,
+            self.away_team_logo,
+            self.away_team_dark_logo,
+            self.away_team_place_name,
+            self.away_team_place_name_with_preposition,
+            self.home_team_id,
+            self.home_team_name,
+            self.home_team_abbrev,
+            self.home_team_score,
+            self.home_team_sog,
+            self.home_team_logo,
+            self.home_team_dark_logo,
+            self.home_team_place_name,
+            self.home_team_place_name_with_preposition,
+            self.shootout_in_use,
+            self.ot_in_use,
+            self.display_period,
+            self.max_periods,
+            self.game_outcome_last_period_type,
+            self.reg_periods,
+            self.endpoint,
+            self.raw_json,
+        )
     }
 }
 

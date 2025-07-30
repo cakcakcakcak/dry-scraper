@@ -4,10 +4,11 @@ use serde_json;
 use sqlx::FromRow;
 
 use crate::LPError;
-use crate::db::{DbPool, Persistable};
-use crate::models::traits::{DbStruct, IntoDbStruct};
+use crate::db::{DbContext, Persistable, PrimaryKey, StaticPgQuery};
 use crate::models::nhl::DefaultNhlContext;
+use crate::models::traits::{DbStruct, IntoDbStruct};
 
+use crate::bind;
 use crate::impl_has_type_name;
 use crate::sqlx_operation_with_retries;
 
@@ -26,7 +27,7 @@ impl IntoDbStruct for NhlTeamJson {
     type DbStruct = NhlTeam;
     type Context = DefaultNhlContext;
 
-    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct{ 
+    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlTeamJson {
             id,
             franchise_id,
@@ -62,30 +63,36 @@ pub struct NhlTeam {
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl DbStruct for NhlTeam {
+    type IntoDbStruct = NhlTeamJson;
 }
 #[async_trait]
 impl Persistable for NhlTeam {
-    type Id = i32;
+    type Id = PrimaryKey;
 
     fn id(&self) -> Self::Id {
-        self.id
+        PrimaryKey::NhlTeam { id: self.id }
     }
 
-    #[tracing::instrument(skip(pool))]
-    async fn try_db(pool: &DbPool, id: Self::Id) -> Result<Option<Self>, LPError> {
-        sqlx_operation_with_retries!(
-            sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_season WHERE id=$1"#)
-                .bind(id)
-                .fetch_optional(pool)
-                .await
-        )
-        .await
-        .map_err(LPError::from)
+    #[tracing::instrument(skip(db_context))]
+    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError> {
+        match id {
+            PrimaryKey::NhlTeam { id } => sqlx_operation_with_retries!(
+                sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_season WHERE id=$1"#)
+                    .bind(id.clone())
+                    .fetch_optional(&db_context.pool)
+                    .await
+            )
+            .await
+            .map_err(LPError::from),
+
+            _ => Err(LPError::DatabaseCustom("Wrong ID variant".to_string())),
+        }
     }
 
-    fn create_upsert_query(&self) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
-        sqlx::query(
-            r#"INSERT INTO nhl_team (
+    fn create_upsert_query(&self) -> StaticPgQuery {
+        bind!(
+            sqlx::query(
+                r#"INSERT INTO nhl_team (
                                         id, 
                                         franchise_id, 
                                         full_name, 
@@ -106,15 +113,16 @@ impl Persistable for NhlTeam {
                                         endpoint = EXCLUDED.endpoint,
                                         last_updated = now()
                                     "#,
+            ),
+            self.id,
+            self.franchise_id,
+            self.full_name,
+            self.league_id,
+            self.raw_tricode,
+            self.tricode,
+            self.raw_json,
+            self.endpoint,
         )
-        .bind(&self.id)
-        .bind(&self.franchise_id)
-        .bind(&self.full_name)
-        .bind(&self.league_id)
-        .bind(&self.raw_tricode)
-        .bind(&self.tricode)
-        .bind(&self.raw_json)
-        .bind(&self.endpoint)
     }
 }
 

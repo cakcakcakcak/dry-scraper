@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use sqlx::Row;
 use tracing::instrument;
 
-use crate::db::{DbPool, Persistable};
+use crate::db::{DbContext, Persistable};
 use crate::lp_error;
 use crate::models::ApiCache;
 
@@ -10,21 +10,21 @@ use crate::reqwest_with_retries;
 use crate::sqlx_operation_with_retries;
 
 #[async_trait]
-pub trait CacheableApi: std::fmt::Debug {
+pub trait CacheableApi: std::fmt::Debug + Sized + Clone + Send + Sync + 'static {
     fn client(&self) -> &reqwest::Client;
 
-    #[instrument(skip(pool))]
+    #[instrument(skip(db_context))]
     async fn get_or_cache_endpoint(
         &self,
-        pool: &DbPool,
+        db_context: &DbContext,
         endpoint: &str,
     ) -> Result<String, lp_error::LPError> {
         // query our api_cache for the endpoint we seek
         tracing::debug!("Querying api_cache for the endpoint we seek...");
         match sqlx_operation_with_retries!(
             sqlx::query("SELECT raw_data from api_cache WHERE endpoint = $1")
-                .bind(&endpoint)
-                .fetch_optional(pool)
+                .bind(&endpoint.clone())
+                .fetch_optional(&db_context.pool)
                 .await
         )
         .await?
@@ -79,7 +79,7 @@ pub trait CacheableApi: std::fmt::Debug {
         };
 
         tracing::debug!("Upserting cache record with endpoint {endpoint} into lp database.");
-        cache_record.upsert(&pool).await?;
+        cache_record.upsert(&db_context).await?;
         Ok(cache_record.raw_data)
     }
 }

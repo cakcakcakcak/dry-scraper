@@ -5,6 +5,17 @@ use crate::config::CONFIG;
 use crate::lp_error::LPError;
 
 #[macro_export]
+macro_rules! bind {
+    ($query:expr, $($val:expr),+ $(,)?) => {{
+        let mut q = $query;
+        $(
+            q = q.bind($val.clone());
+        )+
+        q
+    }};
+}
+
+#[macro_export]
 macro_rules! with_progress_bar {
     ($count:expr, |$pb:ident| $body:block) => {{
         let $pb = indicatif::ProgressBar::new($count as u64);

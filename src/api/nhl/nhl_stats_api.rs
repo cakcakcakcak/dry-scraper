@@ -1,12 +1,15 @@
 use crate::api::api_common::{ApiContext, HasEndpoint};
 use crate::api::cacheable_api::CacheableApi;
-use crate::db::DbPool;
+use crate::db::DbContext;
 use crate::lp_error::LPError;
 use crate::models::ItemParsedWithContext;
-use crate::models::nhl::{NhlFranchiseJson, NhlSeasonJson, NhlTeamJson, DefaultNhlContext, NhlApiDataArrayResponse};
+use crate::models::nhl::{
+    DefaultNhlContext, NhlApiDataArrayResponse, NhlFranchiseJson, NhlSeasonJson, NhlTeamJson,
+};
 use crate::models::traits::{HasTypeName, IntoDbStruct};
 use crate::util::filter_results;
 
+#[derive(Clone)]
 pub struct NhlStatsApi {
     pub client: reqwest::Client,
     pub base_url: String,
@@ -29,9 +32,10 @@ impl ApiContext for NhlStatsApi {
     }
 }
 impl HasEndpoint for NhlSeasonJson {
+    type Api = NhlStatsApi;
     type Params = ();
 
-    fn endpoint<A: ApiContext>(api: &A, _params: Self::Params) -> String {
+    fn endpoint(api: &Self::Api, _params: Self::Params) -> String {
         format!("{}/season", api.base_url())
     }
 }
@@ -40,16 +44,21 @@ pub struct NhlTeamParams {
     pub team_id: Option<i32>,
 }
 impl HasEndpoint for NhlTeamJson {
+    type Api = NhlStatsApi;
     type Params = NhlTeamParams;
 
-    fn endpoint<A: ApiContext>(api: &A, _params: Self::Params) -> String {
-        format!("{}/team", api.base_url())
+    fn endpoint(api: &Self::Api, params: Self::Params) -> String {
+        match params.team_id {
+            Some(team_id) => format!("{}/team/id/{team_id}", api.base_url()),
+            None => format!("{}/team", api.base_url()),
+        }
     }
 }
 impl HasEndpoint for NhlFranchiseJson {
+    type Api = NhlStatsApi;
     type Params = ();
 
-    fn endpoint<A: ApiContext>(api: &A, _params: Self::Params) -> String {
+    fn endpoint(api: &Self::Api, _params: Self::Params) -> String {
         format!("{}/franchise", api.base_url())
     }
 }
@@ -61,24 +70,21 @@ impl NhlStatsApi {
             base_url: "https://api.nhle.com/stats/rest/en".to_string(),
         }
     }
-    pub fn nhl_team_endpoint(&self, team_id: i32) -> String {
-        format!("{}/team/id/{team_id}", self.base_url)
-    }
 
-    #[tracing::instrument(skip(pool))]
+    #[tracing::instrument(skip(db_context))]
     pub async fn fetch_nhl_api_data_array<T>(
         &self,
-        pool: &DbPool,
+        db_context: &DbContext,
     ) -> Result<Vec<ItemParsedWithContext<T>>, LPError>
     where
         T: serde::de::DeserializeOwned
-            + HasEndpoint
+            + HasEndpoint<Api = NhlStatsApi>
             + HasTypeName
             + std::fmt::Debug
             + IntoDbStruct<Context = DefaultNhlContext>,
     {
         let endpoint: String = T::endpoint(self, T::Params::default());
-        let raw_data: String = self.get_or_cache_endpoint(pool, &endpoint).await?;
+        let raw_data: String = self.get_or_cache_endpoint(&db_context, &endpoint).await?;
 
         let data_array_response: NhlApiDataArrayResponse = match serde_json::from_str(&raw_data) {
             Ok(value) => value,
@@ -98,14 +104,19 @@ impl NhlStatsApi {
         Ok(filter_results::<ItemParsedWithContext<T>>(results))
     }
 
-    #[tracing::instrument(skip(pool))]
+    #[tracing::instrument(skip(db_context))]
     pub async fn get_nhl_team(
         &self,
-        pool: &DbPool,
+        db_context: &DbContext,
         team_id: i32,
     ) -> Result<ItemParsedWithContext<NhlTeamJson>, LPError> {
-        let endpoint: String = self.nhl_team_endpoint(team_id);
-        let raw_data: String = self.get_or_cache_endpoint(pool, &endpoint).await?;
+        let endpoint: String = NhlTeamJson::endpoint(
+            self,
+            NhlTeamParams {
+                team_id: Some(team_id),
+            },
+        );
+        let raw_data: String = self.get_or_cache_endpoint(&db_context, &endpoint).await?;
 
         let data_array_response: NhlApiDataArrayResponse = match serde_json::from_str(&raw_data) {
             Ok(value) => value,

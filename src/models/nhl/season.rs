@@ -4,13 +4,16 @@ use serde_json;
 use sqlx::FromRow;
 
 use crate::LPError;
-use crate::db::{DbPool, Persistable};
+use crate::db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery};
+use crate::models::ApiCache;
 use crate::models::nhl::DefaultNhlContext;
 use crate::models::traits::{DbStruct, IntoDbStruct};
 use crate::serde_helpers::JsonExt;
 
+use crate::bind;
+use crate::impl_has_type_name;
+use crate::make_deserialize_to_type;
 use crate::sqlx_operation_with_retries;
-use crate::{impl_has_type_name, make_deserialize_to_type};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -154,32 +157,64 @@ impl std::fmt::Debug for NhlSeason {
             .finish()
     }
 }
-impl DbStruct for NhlSeason {}
+impl DbStruct for NhlSeason {
+    type IntoDbStruct = NhlSeasonJson;
+}
 
 #[async_trait]
 impl Persistable for NhlSeason {
-    type Id = i32;
+    type Id = PrimaryKey;
 
     fn id(&self) -> Self::Id {
-        self.id
+        PrimaryKey::NhlSeason { id: self.id }
     }
 
-    #[tracing::instrument(skip(pool))]
-    async fn try_db(pool: &DbPool, id: Self::Id) -> Result<Option<Self>, LPError> {
-        sqlx_operation_with_retries!(
-            sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_season WHERE id=$1"#)
-                .bind(id)
-                .fetch_optional(pool)
-                .await
-        )
-        .await
-        .map_err(LPError::from)
-    }
-
-    fn create_upsert_query(
+    async fn verify_relationships(
         &self,
-    ) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
-        sqlx::query(r#"INSERT INTO nhl_season (
+        db_context: &DbContext,
+    ) -> Result<RelationshipIntegrity, LPError> {
+        let mut missing_vec: Vec<PrimaryKey> = vec![];
+
+        match ApiCache::try_db(
+            &db_context,
+            PrimaryKey::ApiCache {
+                endpoint: self.endpoint.clone(),
+            },
+        )
+        .await?
+        {
+            Some(_) => (),
+            None => missing_vec.push(PrimaryKey::ApiCache {
+                endpoint: self.endpoint.clone(),
+            }),
+        }
+
+        if missing_vec.is_empty() {
+            Ok(RelationshipIntegrity::AllValid)
+        } else {
+            Ok(RelationshipIntegrity::Missing(missing_vec))
+        }
+    }
+
+    #[tracing::instrument(skip(db_context))]
+    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError> {
+        match id {
+            PrimaryKey::NhlSeason { id } => sqlx_operation_with_retries!(
+                sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_season WHERE id=$1"#)
+                    .bind(id.clone())
+                    .fetch_optional(&db_context.pool)
+                    .await
+            )
+            .await
+            .map_err(LPError::from),
+            _ => Err(LPError::DatabaseCustom("Wrong ID variant".to_string())),
+        }
+    }
+
+    fn create_upsert_query(&self) -> StaticPgQuery {
+        bind!(
+            sqlx::query(
+                r#"INSERT INTO nhl_season (
                                         id, 
                                         all_star_game_in_use, 
                                         conferences_in_use, 
@@ -234,32 +269,34 @@ impl Persistable for NhlSeason {
                                         raw_json = EXCLUDED.raw_json,
                                         endpoint = EXCLUDED.endpoint,
                                         last_updated = now()
-                                    "#)
-                                    .bind(&self.id)
-                                    .bind(&self.all_star_game_in_use)
-                                    .bind(&self.conferences_in_use)
-                                    .bind(&self.divisions_in_use)
-                                    .bind(&self.end_date)
-                                    .bind(&self.entry_draft_in_use)
-                                    .bind(&self.formatted_season_id)
-                                    .bind(&self.minimum_playoff_minutes_for_goalie_stats_leaders)
-                                    .bind(&self.minimum_regular_games_for_goalie_stats_leaders)
-                                    .bind(&self.nhl_stanley_cup_owner)
-                                    .bind(&self.number_of_games)
-                                    .bind(&self.olympics_participation)
-                                    .bind(&self.point_for_ot_loss_in_use)
-                                    .bind(&self.preseason_startdate)
-                                    .bind(&self.regular_season_end_date)
-                                    .bind(&self.row_in_use)
-                                    .bind(&self.season_ordinal)
-                                    .bind(&self.start_date)
-                                    .bind(&self.supplemental_draft_in_use)
-                                    .bind(&self.ties_in_use)
-                                    .bind(&self.total_playoff_games)
-                                    .bind(&self.total_regular_season_games)
-                                    .bind(&self.wildcard_in_use)
-                                    .bind(&self.raw_json)
-                                    .bind(&self.endpoint)
+                                    "#
+            ),
+            self.id,
+            self.all_star_game_in_use,
+            self.conferences_in_use,
+            self.divisions_in_use,
+            self.end_date,
+            self.entry_draft_in_use,
+            self.formatted_season_id,
+            self.minimum_playoff_minutes_for_goalie_stats_leaders,
+            self.minimum_regular_games_for_goalie_stats_leaders,
+            self.nhl_stanley_cup_owner,
+            self.number_of_games,
+            self.olympics_participation,
+            self.point_for_ot_loss_in_use,
+            self.preseason_startdate,
+            self.regular_season_end_date,
+            self.row_in_use,
+            self.season_ordinal,
+            self.start_date,
+            self.supplemental_draft_in_use,
+            self.ties_in_use,
+            self.total_playoff_games,
+            self.total_regular_season_games,
+            self.wildcard_in_use,
+            self.raw_json,
+            self.endpoint,
+        )
     }
 }
 

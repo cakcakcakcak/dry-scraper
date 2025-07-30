@@ -12,42 +12,32 @@ mod util;
 
 pub use config::CONFIG;
 
-pub use api::nhl::{NhlStatsApi, NhlWebApi};
-pub use db::DbPool;
+pub use api::nhl::NhlApi;
+pub use db::{DbPool, SqlxJob, SqlxJobSender};
 pub use lp_error::LPError;
+pub use models::nhl::{NhlFranchise, NhlSeason, NhlTeam};
 
-use db::init_db;
+use db::init_db_context;
 use orchestrator::{
     get_nhl_all_games_in_season, get_nhl_franchises, get_nhl_seasons, get_nhl_teams,
 };
 
 #[tokio::main]
 async fn main() -> Result<(), LPError> {
-    // load the .env file into the environment variables, if it exists
     _ = dotenvy::dotenv();
 
-    // initialize logging with the level indicated by environment variable
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_env("LOG_LEVEL"))
         .init();
 
-    // validate command line arguments and environment variables and initialize a static CONFIG struct
     _ = &*CONFIG;
 
-    // initialize the lp database and return the pool of connections with which all db queries
-    // will be made
-    let pool: DbPool = init_db().await?;
+    let db_context = init_db_context().await?;
+    let nhl_api: NhlApi = NhlApi::new();
 
-    let nhl_stats_api: NhlStatsApi = NhlStatsApi::new();
-    let nhl_web_api: NhlWebApi = NhlWebApi::new();
-
-    let seasons = get_nhl_seasons(&pool, &nhl_stats_api).await?;
-    _ = get_nhl_franchises(&pool, &nhl_stats_api).await?;
-    _ = get_nhl_teams(&pool, &nhl_stats_api).await?;
-
-    for season in seasons {
-        let games = get_nhl_all_games_in_season(&pool, &nhl_web_api, &season).await?;
-    }
+    let seasons: Vec<NhlSeason> = get_nhl_seasons(&db_context, &nhl_api).await?;
+    let franchises = get_nhl_franchises(&db_context, &nhl_api).await?;
+    let teams = get_nhl_teams(&db_context, &nhl_api).await?;
 
     Ok(())
 }

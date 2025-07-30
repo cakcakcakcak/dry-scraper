@@ -1,13 +1,26 @@
 use sqlx::migrate::MigrateDatabase;
 use sqlx::postgres::PgPoolOptions;
-
 use tokio_retry::RetryIf;
 
-use crate::LPError;
 use crate::config::CONFIG;
-use crate::db::DbPool;
-use crate::sqlx_operation_with_retries;
 use crate::util::{default_retry_strategy, is_transient_sqlx_error};
+use crate::{LPError, SqlxJobSender};
+
+use super::{DbPool, start_sqlx_worker};
+
+use crate::sqlx_operation_with_retries;
+
+#[derive(Clone)]
+pub struct DbContext {
+    pub pool: DbPool,
+    pub sqlx_tx: SqlxJobSender,
+}
+
+pub async fn init_db_context() -> Result<DbContext, LPError> {
+    let pool = init_db().await?;
+    let sqlx_tx = start_sqlx_worker(pool.clone());
+    Ok(DbContext { pool, sqlx_tx })
+}
 
 #[tracing::instrument]
 pub async fn init_db() -> Result<DbPool, LPError> {

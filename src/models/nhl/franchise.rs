@@ -6,10 +6,11 @@ use sqlx::FromRow;
 use crate::LPError;
 use crate::api::CacheableApi;
 use crate::api::nhl::NhlStatsApi;
-use crate::db::{DbPool, Persistable};
+use crate::db::{DbContext, Persistable, PrimaryKey, StaticPgQuery};
 use crate::models::nhl::DefaultNhlContext;
 use crate::models::traits::{DbStruct, IntoDbStruct};
 
+use crate::bind;
 use crate::impl_has_type_name;
 use crate::sqlx_operation_with_retries;
 
@@ -55,33 +56,36 @@ pub struct NhlFranchise {
     pub endpoint: String,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl DbStruct for NhlFranchise {}
+impl DbStruct for NhlFranchise {
+    type IntoDbStruct = NhlFranchiseJson;
+}
 
 #[async_trait]
 impl Persistable for NhlFranchise {
-    type Id = i32;
-
+    type Id = PrimaryKey;
     fn id(&self) -> Self::Id {
-        self.id
+        PrimaryKey::NhlFranchise { id: self.id }
     }
 
-    #[tracing::instrument(skip(pool))]
-    async fn try_db(pool: &DbPool, id: Self::Id) -> Result<Option<Self>, LPError> {
-        sqlx_operation_with_retries!(
-            sqlx::query_as::<_, NhlFranchise>(r#"SELECT * FROM nhl_franchise WHERE id=$1"#)
-                .bind(id)
-                .fetch_optional(pool)
-                .await
-        )
-        .await
-        .map_err(LPError::from)
+    #[tracing::instrument(skip(db_context))]
+    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError> {
+        match id {
+            PrimaryKey::NhlFranchise { id } => sqlx_operation_with_retries!(
+                sqlx::query_as::<_, NhlFranchise>(r#"SELECT * FROM nhl_franchise WHERE id=$1"#)
+                    .bind(id.clone())
+                    .fetch_optional(&db_context.pool)
+                    .await
+            )
+            .await
+            .map_err(LPError::from),
+            _ => Err(LPError::DatabaseCustom("Wrong ID variant".to_string())),
+        }
     }
 
-    fn create_upsert_query(
-        &self,
-    ) -> sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments> {
-        sqlx::query(
-            r#"INSERT INTO nhl_franchise (
+    fn create_upsert_query(&self) -> StaticPgQuery {
+        bind!(
+            sqlx::query(
+                r#"INSERT INTO nhl_franchise (
                                         id, 
                                         full_name, 
                                         team_common_name, 
@@ -98,13 +102,14 @@ impl Persistable for NhlFranchise {
                                         endpoint = EXCLUDED.endpoint,
                                         last_updated = now()
                                     "#,
+            ),
+            self.id,
+            self.full_name,
+            self.team_common_name,
+            self.team_place_name,
+            self.raw_json,
+            self.endpoint,
         )
-        .bind(&self.id)
-        .bind(&self.full_name)
-        .bind(&self.team_common_name)
-        .bind(&self.team_place_name)
-        .bind(&self.raw_json)
-        .bind(&self.endpoint)
     }
 }
 
