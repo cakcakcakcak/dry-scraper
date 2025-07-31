@@ -44,7 +44,7 @@ impl NhlApi {
         self.nhl_stats_api.get_nhl_team(db_context, team_id).await
     }
 
-    pub async fn fetch_from_id<T>(
+    pub async fn fetch_by_id<T>(
         &self,
         db_context: &DbContext,
         id: i32,
@@ -56,6 +56,6 @@ impl NhlApi {
             + HasTypeName,
         T::Params: FromId,
     {
-        self.nhl_web_api.fetch_from_id::<T>(db_context, id).await
+        self.nhl_web_api.fetch_by_id::<T>(db_context, id).await
     }
 }

@@ -75,7 +75,7 @@ impl HasEndpoint for NhlGameJson {
 }
 impl NhlWebApi {
     #[tracing::instrument(skip(db_context))]
-    pub async fn fetch_from_id<T>(
+    pub async fn fetch_by_id<T>(
         &self,
         db_context: &DbContext,
         id: i32,

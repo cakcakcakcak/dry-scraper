@@ -23,7 +23,7 @@ pub trait CacheableApi: std::fmt::Debug + Sized + Clone + Send + Sync + 'static 
         tracing::debug!("Querying api_cache for the endpoint we seek...");
         match sqlx_operation_with_retries!(
             sqlx::query("SELECT raw_data from api_cache WHERE endpoint = $1")
-                .bind(&endpoint.clone())
+                .bind(&endpoint)
                 .fetch_optional(&db_context.pool)
                 .await
         )

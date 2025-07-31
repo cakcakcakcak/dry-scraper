@@ -39,5 +39,7 @@ async fn main() -> Result<(), LPError> {
     let franchises = get_nhl_franchises(&db_context, &nhl_api).await?;
     let teams = get_nhl_teams(&db_context, &nhl_api).await?;
 
+    let games = get_nhl_all_games_in_season(&db_context, &nhl_api, &seasons[0]).await?;
+
     Ok(())
 }

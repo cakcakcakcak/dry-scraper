@@ -12,7 +12,8 @@ const DEFAULT_MAX_DB_CONNECTIONS: u32 = 16;
 const DEFAULT_UPSERT_CONCURRENCY: usize = 16;
 const DEFAULT_DB_QUERY_BATCH_SIZE: usize = 1_000;
 const DEFAULT_DB_QUERY_BATCH_TIMEOUT_MS: u64 = 1_000;
-const DEFAULT_RETRY_JITTER_DURATION_MS: u64 = 100;
+const DEFAULT_RETRY_INTERVAL_MS: u64 = 100;
+const DEFAULT_RETRY_MAX_INTERVAL_MS: u64 = 10_000;
 const DEFAULT_RETRIES: usize = 5;
 
 pub static CONFIG: Lazy<Config> = Lazy::new(|| Config::from_env_and_args());
@@ -26,7 +27,8 @@ pub struct Config {
     pub db_query_batch_size: usize,
     pub db_query_batch_timeout_ms: u64,
     pub reset_db: bool,
-    pub retry_jitter_duration_ms: u64,
+    pub retry_interval_ms: u64,
+    pub retry_max_interval_ms: u64,
     pub retries: usize,
     pub progress_bar_style: ProgressStyle,
 }
@@ -81,10 +83,15 @@ impl Config {
 
         let reset_db: bool = cli_args.reset_db.or(env_vars.reset_db).unwrap_or(false);
 
-        let retry_jitter_duration_ms = cli_args
-            .retry_jitter_duration_ms
-            .or(env_vars.retry_jitter_duration_ms)
-            .unwrap_or(DEFAULT_RETRY_JITTER_DURATION_MS);
+        let retry_interval_ms = cli_args
+            .retry_interval_ms
+            .or(env_vars.retry_interval_ms)
+            .unwrap_or(DEFAULT_RETRY_INTERVAL_MS);
+
+        let retry_max_interval_ms = cli_args
+            .retry_max_interval_ms
+            .or(env_vars.retry_max_interval_ms)
+            .unwrap_or(DEFAULT_RETRY_MAX_INTERVAL_MS);
 
         let retries: usize = cli_args
             .retries
@@ -106,7 +113,8 @@ impl Config {
             db_query_batch_size,
             db_query_batch_timeout_ms,
             reset_db,
-            retry_jitter_duration_ms,
+            retry_interval_ms,
+            retry_max_interval_ms,
             retries,
             progress_bar_style,
         }

@@ -1,4 +1,3 @@
-use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use sqlx::postgres::types::PgInterval;
 

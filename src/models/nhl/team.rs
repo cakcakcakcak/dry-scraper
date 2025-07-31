@@ -67,26 +67,10 @@ impl DbStruct for NhlTeam {
 }
 #[async_trait]
 impl Persistable for NhlTeam {
-    type Id = PrimaryKey;
+    type Id = NhlTeamKey;
 
     fn id(&self) -> Self::Id {
-        PrimaryKey::NhlTeam { id: self.id }
-    }
-
-    #[tracing::instrument(skip(db_context))]
-    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError> {
-        match id {
-            PrimaryKey::NhlTeam { id } => sqlx_operation_with_retries!(
-                sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_season WHERE id=$1"#)
-                    .bind(id.clone())
-                    .fetch_optional(&db_context.pool)
-                    .await
-            )
-            .await
-            .map_err(LPError::from),
-
-            _ => Err(LPError::DatabaseCustom("Wrong ID variant".to_string())),
-        }
+        Self::Id { id: self.id }
     }
 
     fn create_upsert_query(&self) -> StaticPgQuery {
@@ -123,6 +107,16 @@ impl Persistable for NhlTeam {
             self.raw_json,
             self.endpoint,
         )
+    }
+}
+
+#[derive(Debug)]
+pub struct NhlTeamKey {
+    pub id: i32,
+}
+impl PrimaryKey for NhlTeamKey {
+    fn create_select_query(&self) -> StaticPgQuery {
+        sqlx::query("SELECT * FROM nhl_team WHERE id=$1").bind(self.id)
     }
 }
 

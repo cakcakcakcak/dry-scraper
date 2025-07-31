@@ -1,10 +1,9 @@
 pub type DbPool = sqlx::Pool<sqlx::Postgres>;
-use tokio::sync::oneshot;
-
 pub type SqlxJob = (
-    std::pin::Pin<Box<dyn Future<Output = Result<(), sqlx::Error>> + Send>>,
-    oneshot::Sender<Result<(), sqlx::Error>>,
+    std::pin::Pin<Box<dyn Future<Output = SqlxJobResult> + Send>>,
+    tokio::sync::oneshot::Sender<SqlxJobResult>,
 );
+pub type SqlxJobResult = Result<sqlx::postgres::PgQueryResult, sqlx::Error>;
 pub type SqlxJobSender = tokio::sync::mpsc::Sender<SqlxJob>;
 pub type StaticPgQuery = sqlx::query::Query<'static, sqlx::Postgres, sqlx::postgres::PgArguments>;
 

@@ -4,15 +4,13 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
-use crate::LPError;
-use crate::db::{DbContext, Persistable, PrimaryKey, StaticPgQuery};
+use crate::db::{Persistable, PrimaryKey, StaticPgQuery};
 use crate::models::nhl::GameNhlContext;
 use crate::models::nhl::LocalizedNameJson;
 use crate::models::traits::{DbStruct, IntoDbStruct};
 
 use crate::bind;
 use crate::impl_has_type_name;
-use crate::sqlx_operation_with_retries;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,30 +79,12 @@ impl DbStruct for NhlRosterSpot {
 
 #[async_trait]
 impl Persistable for NhlRosterSpot {
-    type Id = PrimaryKey;
+    type Id = NhlRosterSpotKey;
 
     fn id(&self) -> Self::Id {
-        PrimaryKey::NhlRosterSpot {
+        Self::Id {
             game_id: self.game_id,
             player_id: self.player_id,
-        }
-    }
-
-    #[tracing::instrument(skip(db_context))]
-    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError> {
-        match id {
-            PrimaryKey::NhlRosterSpot { game_id, player_id } => sqlx_operation_with_retries!(
-                sqlx::query_as::<_, Self>(
-                    r#"SELECT * FROM nhl_roster_spot WHERE game_id=$1 AND player_id=$2"#
-                )
-                .bind(game_id.clone())
-                .bind(player_id.clone())
-                .fetch_optional(&db_context.pool)
-                .await
-            )
-            .await
-            .map_err(LPError::from),
-            _ => Err(LPError::DatabaseCustom("Wrong ID variant".to_string())),
         }
     }
 
@@ -149,6 +129,19 @@ impl Persistable for NhlRosterSpot {
             self.raw_json,
             self.endpoint,
         )
+    }
+}
+
+#[derive(Debug)]
+pub struct NhlRosterSpotKey {
+    game_id: i32,
+    player_id: i32,
+}
+impl PrimaryKey for NhlRosterSpotKey {
+    fn create_select_query(&self) -> StaticPgQuery {
+        sqlx::query("SELECT * FROM nhl_roster_spot WHERE game_id=$1 AND player_id=$2")
+            .bind(self.game_id)
+            .bind(self.player_id)
     }
 }
 

@@ -163,52 +163,10 @@ impl DbStruct for NhlSeason {
 
 #[async_trait]
 impl Persistable for NhlSeason {
-    type Id = PrimaryKey;
+    type Id = NhlSeasonKey;
 
     fn id(&self) -> Self::Id {
-        PrimaryKey::NhlSeason { id: self.id }
-    }
-
-    async fn verify_relationships(
-        &self,
-        db_context: &DbContext,
-    ) -> Result<RelationshipIntegrity, LPError> {
-        let mut missing_vec: Vec<PrimaryKey> = vec![];
-
-        match ApiCache::try_db(
-            &db_context,
-            PrimaryKey::ApiCache {
-                endpoint: self.endpoint.clone(),
-            },
-        )
-        .await?
-        {
-            Some(_) => (),
-            None => missing_vec.push(PrimaryKey::ApiCache {
-                endpoint: self.endpoint.clone(),
-            }),
-        }
-
-        if missing_vec.is_empty() {
-            Ok(RelationshipIntegrity::AllValid)
-        } else {
-            Ok(RelationshipIntegrity::Missing(missing_vec))
-        }
-    }
-
-    #[tracing::instrument(skip(db_context))]
-    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError> {
-        match id {
-            PrimaryKey::NhlSeason { id } => sqlx_operation_with_retries!(
-                sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_season WHERE id=$1"#)
-                    .bind(id.clone())
-                    .fetch_optional(&db_context.pool)
-                    .await
-            )
-            .await
-            .map_err(LPError::from),
-            _ => Err(LPError::DatabaseCustom("Wrong ID variant".to_string())),
-        }
+        Self::Id { id: self.id }
     }
 
     fn create_upsert_query(&self) -> StaticPgQuery {
@@ -300,6 +258,15 @@ impl Persistable for NhlSeason {
     }
 }
 
+#[derive(Debug)]
+pub struct NhlSeasonKey {
+    pub id: i32,
+}
+impl PrimaryKey for NhlSeasonKey {
+    fn create_select_query(&self) -> StaticPgQuery {
+        sqlx::query("SELECT * from nhl_season where id=$1").bind(self.id)
+    }
+}
 impl_has_type_name!(NhlSeasonJson);
 impl_has_type_name!(NhlSeason);
 

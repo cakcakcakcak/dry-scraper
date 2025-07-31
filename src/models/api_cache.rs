@@ -16,26 +16,45 @@ pub struct ApiCache {
 }
 #[async_trait]
 impl Persistable for ApiCache {
-    type Id = PrimaryKey;
+    type Id = ApiCacheKey;
 
     fn id(&self) -> Self::Id {
-        PrimaryKey::ApiCache {
+        Self::Id {
             endpoint: self.endpoint.clone(),
         }
     }
 
     #[tracing::instrument(skip(db_context))]
-    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError> {
-        match id {
-            PrimaryKey::ApiCache { endpoint } => sqlx_operation_with_retries!(
-                sqlx::query_as::<_, Self>(r#"SELECT * FROM api_cache WHERE endpoint=$1"#)
-                    .bind(&endpoint.clone())
-                    .fetch_optional(&db_context.pool)
-                    .await
-            )
-            .await
-            .map_err(LPError::from),
-            _ => Err(LPError::DatabaseCustom("Wrong ID variant".to_string())),
+    async fn fetch_from_db(db_context: &DbContext, id: &Self::Id) -> Result<Option<Self>, LPError> {
+        match sqlx_operation_with_retries!(
+            sqlx::query_as::<_, Self>(r#"SELECT * FROM api_cache WHERE endpoint=$1"#)
+                .bind(&id.endpoint.clone())
+                .fetch_optional(&db_context.pool)
+                .await
+        )
+        .await
+        {
+            Ok(Some(record)) => {
+                tracing::debug!(
+                    "Record found in lp table api_cache for endpoint {}",
+                    id.endpoint
+                );
+                Ok(Some(record))
+            }
+            Ok(None) => {
+                tracing::debug!(
+                    "Record NOT found in lp table api_cache for endpoint {}",
+                    id.endpoint
+                );
+                Ok(None)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Error encountered while querying api_cache for endpoint {}",
+                    id.endpoint
+                );
+                Err(LPError::Database(e))
+            }
         }
     }
 
@@ -53,5 +72,15 @@ impl Persistable for ApiCache {
             self.endpoint,
             self.raw_data,
         )
+    }
+}
+
+#[derive(Debug)]
+pub struct ApiCacheKey {
+    pub endpoint: String,
+}
+impl PrimaryKey for ApiCacheKey {
+    fn create_select_query(&self) -> StaticPgQuery {
+        sqlx::query("SELECT * FROM api_cache WHERE endpoint=$1").bind(self.endpoint.clone())
     }
 }

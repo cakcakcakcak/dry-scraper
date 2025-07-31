@@ -7,8 +7,8 @@ use sqlx::FromRow;
 use crate::LPError;
 use crate::db::{DbContext, Persistable, PrimaryKey, StaticPgQuery};
 use crate::models::nhl::{
-    DefaultNhlContext, GameType, LocalizedNameJson, NhlPlay, NhlPlayJson, NhlRosterSpot,
-    NhlRosterSpotJson, PeriodDescriptorJson, PeriodTypeJson,
+    DefaultNhlContext, GameType, LocalizedNameJson, NhlPlayJson, NhlRosterSpotJson,
+    PeriodDescriptorJson, PeriodTypeJson,
 };
 use crate::models::traits::{DbStruct, IntoDbStruct};
 
@@ -211,25 +211,22 @@ impl DbStruct for NhlGame {
 }
 #[async_trait]
 impl Persistable for NhlGame {
-    type Id = PrimaryKey;
+    type Id = NhlGameKey;
 
     fn id(&self) -> Self::Id {
-        PrimaryKey::NhlGame { id: self.id }
+        Self::Id { id: self.id }
     }
 
     #[tracing::instrument(skip(db_context))]
-    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError> {
-        match id {
-            PrimaryKey::NhlGame { id } => sqlx_operation_with_retries!(
-                sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_game WHERE id=$1"#)
-                    .bind(id.clone())
-                    .fetch_optional(&db_context.pool)
-                    .await
-            )
-            .await
-            .map_err(LPError::from),
-            _ => Err(LPError::DatabaseCustom("Wrong ID variant".to_string())),
-        }
+    async fn fetch_from_db(db_context: &DbContext, id: &Self::Id) -> Result<Option<Self>, LPError> {
+        sqlx_operation_with_retries!(
+            sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_game WHERE id=$1"#)
+                .bind(id.id)
+                .fetch_optional(&db_context.pool)
+                .await
+        )
+        .await
+        .map_err(LPError::from)
     }
 
     fn create_upsert_query(&self) -> StaticPgQuery {
@@ -362,6 +359,16 @@ impl Persistable for NhlGame {
             self.endpoint,
             self.raw_json,
         )
+    }
+}
+
+#[derive(Debug)]
+pub struct NhlGameKey {
+    pub id: i32,
+}
+impl PrimaryKey for NhlGameKey {
+    fn create_select_query(&self) -> StaticPgQuery {
+        sqlx::query("SELECT * FROM nhl_game WHERE id=$1").bind(self.id)
     }
 }
 

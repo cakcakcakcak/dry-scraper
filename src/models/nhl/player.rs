@@ -3,8 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
-use crate::LPError;
-use crate::db::{DbContext, DbPool, Persistable, PrimaryKey, StaticPgQuery};
+use crate::db::{Persistable, PrimaryKey, StaticPgQuery};
 use crate::models::nhl::DefaultNhlContext;
 use crate::models::traits::{DbStruct, IntoDbStruct};
 use crate::serde_helpers::JsonExt;
@@ -13,7 +12,6 @@ use crate::bind;
 use crate::impl_has_type_name;
 use crate::make_deserialize_key_to_type;
 use crate::make_deserialize_to_type;
-use crate::sqlx_operation_with_retries;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -202,25 +200,10 @@ impl DbStruct for NhlPlayer {
 }
 #[async_trait]
 impl Persistable for NhlPlayer {
-    type Id = PrimaryKey;
+    type Id = NhlPlayerKey;
 
     fn id(&self) -> Self::Id {
-        PrimaryKey::NhlPlayer { id: self.id }
-    }
-
-    #[tracing::instrument(skip(db_context))]
-    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError> {
-        match id {
-            PrimaryKey::NhlPlayer { id } => sqlx_operation_with_retries!(
-                sqlx::query_as::<_, NhlPlayer>(r#"SELECT * FROM nhl_player WHERE id=$1"#)
-                    .bind(id.clone())
-                    .fetch_optional(&db_context.pool)
-                    .await
-            )
-            .await
-            .map_err(LPError::from),
-            _ => Err(LPError::DatabaseCustom("Wrong ID variant".to_string())),
-        }
+        Self::Id { id: self.id }
     }
 
     fn create_upsert_query(&self) -> StaticPgQuery {
@@ -338,6 +321,15 @@ impl Persistable for NhlPlayer {
     }
 }
 
+#[derive(Debug)]
+pub struct NhlPlayerKey {
+    id: i32,
+}
+impl PrimaryKey for NhlPlayerKey {
+    fn create_select_query(&self) -> StaticPgQuery {
+        sqlx::query(r#"SELECT * FROM nhl_player WHERE id=$1"#).bind(self.id)
+    }
+}
 make_deserialize_key_to_type!(
     deserialize_default_to_option_string,
     "default",

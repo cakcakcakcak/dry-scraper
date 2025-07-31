@@ -10,7 +10,7 @@ where
     T: IntoDbStruct + std::fmt::Debug,
 {
     pub fn to_db_struct(self) -> <T as IntoDbStruct>::DbStruct {
-        let mut db_struct: <T as IntoDbStruct>::DbStruct = self.item.to_db_struct(self.context);
+        let db_struct: <T as IntoDbStruct>::DbStruct = self.item.to_db_struct(self.context);
         db_struct
     }
 }

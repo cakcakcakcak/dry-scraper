@@ -2,7 +2,7 @@ use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 
 use crate::config::CONFIG;
-use crate::db::{DbPool, SqlxJob, SqlxJobSender};
+use crate::db::{DbPool, SqlxJob, SqlxJobResult, SqlxJobSender};
 
 pub fn start_sqlx_worker(pool: DbPool) -> SqlxJobSender {
     let (tx, mut rx) = mpsc::channel::<SqlxJob>(CONFIG.db_query_batch_size);
@@ -25,7 +25,7 @@ pub fn start_sqlx_worker(pool: DbPool) -> SqlxJobSender {
 
             let batch_len: usize = batch.len();
             if batch.len() >= CONFIG.db_query_batch_size || (!batch.is_empty() && rx.is_empty()) {
-                tracing::info!("Batched {batch_len} queries. Beginning transaction.");
+                tracing::debug!("Batched {batch_len} queries. Beginning transaction.");
                 let tx_db: sqlx::Transaction<'static, sqlx::Postgres> = match pool.begin().await {
                     Ok(tx_db) => tx_db,
                     Err(e) => {
@@ -35,13 +35,13 @@ pub fn start_sqlx_worker(pool: DbPool) -> SqlxJobSender {
                     }
                 };
                 for (job, result_tx) in batch.drain(..) {
-                    let res = job.await;
+                    let res: SqlxJobResult = job.await;
                     let _ = result_tx.send(res);
                 }
                 if let Err(e) = tx_db.commit().await {
                     tracing::error!("Failed to commit transaction: {e}");
                 }
-                tracing::info!("Committed transaction of {batch_len} queries.")
+                tracing::debug!("Committed transaction of {batch_len} queries.")
             }
         }
     });

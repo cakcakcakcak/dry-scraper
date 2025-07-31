@@ -20,7 +20,9 @@ pub struct CliArgs {
     #[arg(long)]
     pub reset_db: Option<bool>,
     #[arg(long)]
-    pub retry_jitter_duration_ms: Option<u64>,
+    pub retry_interval_ms: Option<u64>,
+    #[arg(long)]
+    pub retry_max_interval_ms: Option<u64>,
     #[arg(long)]
     pub retries: Option<usize>,
 }

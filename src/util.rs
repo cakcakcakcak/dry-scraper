@@ -52,7 +52,10 @@ macro_rules! impl_has_type_name {
 }
 
 pub fn default_retry_strategy() -> impl Iterator<Item = std::time::Duration> {
-    ExponentialBackoff::from_millis(CONFIG.retry_jitter_duration_ms)
+    ExponentialBackoff::from_millis(CONFIG.retry_interval_ms)
+        .max_delay(std::time::Duration::from_millis(
+            CONFIG.retry_max_interval_ms,
+        ))
         .map(jitter)
         .take(CONFIG.retries)
 }
@@ -60,7 +63,7 @@ pub fn default_retry_strategy() -> impl Iterator<Item = std::time::Duration> {
 pub fn is_transient_sqlx_error(e: &sqlx::Error) -> bool {
     let is_transient = matches!(e, sqlx::Error::Io(_) | sqlx::Error::Tls(_));
     if is_transient {
-        tracing::debug!("Retrying sqlx operation after transient error: {:?}", e);
+        tracing::warn!("Retrying sqlx operation after transient error: {:?}", e);
     }
     is_transient
 }
@@ -68,7 +71,7 @@ pub fn is_transient_sqlx_error(e: &sqlx::Error) -> bool {
 pub fn is_transient_reqwest_error(e: &reqwest::Error) -> bool {
     let is_transient = e.is_timeout() || e.is_connect();
     if is_transient {
-        tracing::debug!("Retrying reqwest operation after transient error: {:?}", e);
+        tracing::warn!("Retrying reqwest operation after transient error: {:?}", e);
     }
     is_transient
 }

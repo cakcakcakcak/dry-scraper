@@ -1,17 +1,35 @@
 use async_trait::async_trait;
+use sqlx::FromRow;
 
-use super::{DbContext, DbPool, StaticPgQuery};
+use super::{DbContext, DbPool, SqlxJobResult, StaticPgQuery};
 use crate::lp_error::LPError;
 
+use crate::sqlx_operation_with_retries;
+
 #[async_trait]
-pub trait Persistable: std::fmt::Debug + Sized + Clone + Send + Sync + 'static {
-    type Id: Send + Sync;
+pub trait Persistable:
+    std::fmt::Debug + Sized + Clone + Send + Sync + for<'a> FromRow<'a, sqlx::postgres::PgRow> + 'static
+{
+    type Id: PrimaryKey;
 
     fn id(&self) -> Self::Id;
 
     fn create_upsert_query(&self) -> StaticPgQuery;
 
-    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError>;
+    #[tracing::instrument(skip(db_context))]
+    async fn fetch_from_db(db_context: &DbContext, id: &Self::Id) -> Result<Option<Self>, LPError> {
+        match sqlx_operation_with_retries!(
+            id.create_select_query()
+                .fetch_optional(&db_context.pool)
+                .await
+        )
+        .await
+        {
+            Ok(Some(row)) => Self::from_row(&row).map(Some).map_err(LPError::from),
+            Ok(None) => Ok(None),
+            Err(e) => Err(LPError::from(e)),
+        }
+    }
 
     async fn verify_relationships(
         &self,
@@ -21,18 +39,35 @@ pub trait Persistable: std::fmt::Debug + Sized + Clone + Send + Sync + 'static {
     }
 
     #[tracing::instrument(skip(db_context))]
-    async fn upsert(&self, db_context: &DbContext) -> Result<(), LPError> {
-        let pool = db_context.pool.clone();
+    async fn upsert(
+        &self,
+        db_context: &DbContext,
+    ) -> Result<sqlx::postgres::PgQueryResult, LPError> {
+        let pool: DbPool = db_context.pool.clone();
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
 
-        // Clone self for the closure
-        let self_clone = self.clone();
+        let self_clone: Self = self.clone();
 
         let job = Box::pin(async move {
             crate::util::sqlx_operation_with_retries(|| async {
-                // Create a fresh query for each retry
-                let query = self_clone.create_upsert_query();
-                query.execute(&pool).await.map(|_| ())
+                let query: StaticPgQuery = self_clone.create_upsert_query();
+                tracing::debug!("Attempting upsert for {:?}", self_clone.id());
+
+                let res: SqlxJobResult = match query.execute(&pool).await {
+                    Ok(pg_result) => {
+                        tracing::debug!(
+                            "Upsert for {:?} affected {:?}",
+                            self_clone.id(),
+                            pg_result
+                        );
+                        Ok(pg_result)
+                    }
+                    Err(e) => {
+                        tracing::warn!("Upsert attempt for {:?} failed: {:?}", self_clone.id(), e);
+                        Err(e)
+                    }
+                };
+                res
             })
             .await
         });
@@ -44,7 +79,7 @@ pub trait Persistable: std::fmt::Debug + Sized + Clone + Send + Sync + 'static {
             .map_err(|e| LPError::DatabaseCustom(format!("Worker channel send failed: {e}")))?;
 
         match result_rx.await {
-            Ok(Ok(())) => Ok(()),
+            Ok(Ok(pg_result)) => Ok(pg_result),
             Ok(Err(e)) => Err(LPError::DatabaseCustom(format!("Upsert failed: {e}"))),
             Err(_) => Err(LPError::DatabaseCustom("Worker dropped".to_string())),
         }
@@ -54,39 +89,9 @@ pub trait Persistable: std::fmt::Debug + Sized + Clone + Send + Sync + 'static {
 #[derive(Debug)]
 pub enum RelationshipIntegrity {
     AllValid,
-    Missing(Vec<PrimaryKey>),
+    Missing(Vec<Box<dyn PrimaryKey>>),
 }
 
-#[derive(Debug)]
-pub enum PrimaryKey {
-    ApiCache {
-        endpoint: String,
-    },
-    NhlSeason {
-        id: i32,
-    },
-    NhlFranchise {
-        id: i32,
-    },
-    NhlTeam {
-        id: i32,
-    },
-    NhlPlayer {
-        id: i32,
-    },
-    NhlGame {
-        id: i32,
-    },
-    NhlPlayoffSeries {
-        season_id: i32,
-        series_letter: String,
-    },
-    NhlPlay {
-        game_id: i32,
-        event_id: i32,
-    },
-    NhlRosterSpot {
-        game_id: i32,
-        player_id: i32,
-    },
+pub trait PrimaryKey: std::fmt::Debug + Send + Sync {
+    fn create_select_query(&self) -> StaticPgQuery;
 }

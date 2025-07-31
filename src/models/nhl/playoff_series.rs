@@ -168,33 +168,12 @@ impl DbStruct for NhlPlayoffSeries {
 }
 #[async_trait]
 impl Persistable for NhlPlayoffSeries {
-    type Id = PrimaryKey;
+    type Id = NhlPlayoffSeriesKey;
 
     fn id(&self) -> Self::Id {
-        PrimaryKey::NhlPlayoffSeries {
+        Self::Id {
             season_id: self.season_id,
             series_letter: self.series_letter.clone(),
-        }
-    }
-
-    #[tracing::instrument(skip(db_context))]
-    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError> {
-        match id {
-            PrimaryKey::NhlPlayoffSeries {
-                season_id,
-                series_letter,
-            } => sqlx_operation_with_retries!(
-                sqlx::query_as::<_, Self>(
-                    r#"SELECT * FROM nhl_playoff_series WHERE season_id=$1 AND series_letter=$2"#
-                )
-                .bind(&season_id.clone())
-                .bind(&series_letter.clone())
-                .fetch_optional(&db_context.pool)
-                .await
-            )
-            .await
-            .map_err(LPError::from),
-            _ => Err(LPError::DatabaseCustom("Wrong ID variant".to_string())),
         }
     }
 
@@ -299,6 +278,19 @@ impl Persistable for NhlPlayoffSeries {
             self.endpoint,
             self.raw_json,
         )
+    }
+}
+
+#[derive(Debug)]
+pub struct NhlPlayoffSeriesKey {
+    pub season_id: i32,
+    pub series_letter: String,
+}
+impl PrimaryKey for NhlPlayoffSeriesKey {
+    fn create_select_query(&self) -> StaticPgQuery {
+        sqlx::query("SELECT * FROM nhl_playoff_series WHERE season_id=$1 AND series_letter=$2")
+            .bind(self.season_id)
+            .bind(self.series_letter.clone())
     }
 }
 

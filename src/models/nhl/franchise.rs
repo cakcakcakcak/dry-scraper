@@ -4,15 +4,13 @@ use serde_json;
 use sqlx::FromRow;
 
 use crate::LPError;
-use crate::api::CacheableApi;
-use crate::api::nhl::NhlStatsApi;
-use crate::db::{DbContext, Persistable, PrimaryKey, StaticPgQuery};
+use crate::db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery};
 use crate::models::nhl::DefaultNhlContext;
 use crate::models::traits::{DbStruct, IntoDbStruct};
+use crate::models::{ApiCache, ApiCacheKey};
 
 use crate::bind;
 use crate::impl_has_type_name;
-use crate::sqlx_operation_with_retries;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,27 +57,29 @@ pub struct NhlFranchise {
 impl DbStruct for NhlFranchise {
     type IntoDbStruct = NhlFranchiseJson;
 }
-
 #[async_trait]
 impl Persistable for NhlFranchise {
-    type Id = PrimaryKey;
+    type Id = NhlFranchiseKey;
+
     fn id(&self) -> Self::Id {
-        PrimaryKey::NhlFranchise { id: self.id }
+        Self::Id { id: self.id }
     }
 
-    #[tracing::instrument(skip(db_context))]
-    async fn try_db(db_context: &DbContext, id: Self::Id) -> Result<Option<Self>, LPError> {
-        match id {
-            PrimaryKey::NhlFranchise { id } => sqlx_operation_with_retries!(
-                sqlx::query_as::<_, NhlFranchise>(r#"SELECT * FROM nhl_franchise WHERE id=$1"#)
-                    .bind(id.clone())
-                    .fetch_optional(&db_context.pool)
-                    .await
-            )
-            .await
-            .map_err(LPError::from),
-            _ => Err(LPError::DatabaseCustom("Wrong ID variant".to_string())),
+    async fn verify_relationships(
+        &self,
+        db_context: &DbContext,
+    ) -> Result<RelationshipIntegrity, LPError> {
+        let mut missing: Vec<Box<dyn PrimaryKey>> = vec![];
+
+        let api_cache_key = ApiCacheKey {
+            endpoint: self.endpoint.clone(),
+        };
+        match ApiCache::fetch_from_db(db_context, &api_cache_key).await {
+            Ok(Some(_)) => (),
+            Ok(None) => missing.push(Box::new(api_cache_key) as Box<dyn PrimaryKey>),
+            Err(e) => return Err(e),
         }
+        Ok(RelationshipIntegrity::AllValid)
     }
 
     fn create_upsert_query(&self) -> StaticPgQuery {
@@ -110,6 +110,16 @@ impl Persistable for NhlFranchise {
             self.raw_json,
             self.endpoint,
         )
+    }
+}
+
+#[derive(Debug)]
+pub struct NhlFranchiseKey {
+    pub id: i32,
+}
+impl PrimaryKey for NhlFranchiseKey {
+    fn create_select_query(&self) -> StaticPgQuery {
+        sqlx::query(r#"SELECT * FROM nhl_franchise WHERE id=$1"#).bind(self.id)
     }
 }
 

@@ -1,9 +1,5 @@
 use std::env::VarError;
 
-use tracing::instrument;
-
-use crate::LPError;
-
 #[derive(Debug)]
 pub struct EnvironmentVariables {
     pub pg_host: Option<String>,
@@ -14,7 +10,8 @@ pub struct EnvironmentVariables {
     pub db_query_batch_size: Option<usize>,
     pub db_query_batch_timeout_ms: Option<u64>,
     pub reset_db: Option<bool>,
-    pub retry_jitter_duration_ms: Option<u64>,
+    pub retry_interval_ms: Option<u64>,
+    pub retry_max_interval_ms: Option<u64>,
     pub retries: Option<usize>,
 }
 impl EnvironmentVariables {
@@ -26,9 +23,12 @@ impl EnvironmentVariables {
             max_db_connections: Self::get_parsed_env_var_with_log("MAX_DB_CONNECTIONS"),
             upsert_concurrency: Self::get_parsed_env_var_with_log("UPSERT_CONCURRENCY"),
             db_query_batch_size: Self::get_parsed_env_var_with_log("DB_QUERY_BATCH_SIZE"),
-            db_query_batch_timeout_ms: Self::get_parsed_env_var_with_log("DB_QUERY_BATCH_TIMOUT_MS"),
+            db_query_batch_timeout_ms: Self::get_parsed_env_var_with_log(
+                "DB_QUERY_BATCH_TIMOUT_MS",
+            ),
             reset_db: Self::get_parsed_env_var_with_log("RESET_DB"),
-            retry_jitter_duration_ms: Self::get_parsed_env_var_with_log("RETRY_JITTER_DURATION_MS"),
+            retry_interval_ms: Self::get_parsed_env_var_with_log("retry_interval_ms"),
+            retry_max_interval_ms: Self::get_parsed_env_var_with_log("retry_max_interval_ms"),
             retries: Self::get_parsed_env_var_with_log("RETRIES"),
         }
     }

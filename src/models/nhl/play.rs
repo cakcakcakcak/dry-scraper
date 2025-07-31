@@ -4,7 +4,6 @@ use serde_json;
 use sqlx::FromRow;
 use sqlx::postgres::types::PgInterval;
 
-use crate::db::DbContext;
 use crate::models::nhl::{DefendingSide, GameNhlContext, PeriodDescriptorJson, PeriodTypeJson};
 use crate::models::traits::{DbStruct, IntoDbStruct};
 use crate::serde_helpers::{JsonExt, parse_mmss_to_pginterval};
