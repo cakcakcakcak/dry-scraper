@@ -3,13 +3,15 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 use crate::LPError;
-use crate::db::{DbContext, Persistable, PrimaryKey, StaticPgQuery};
-use crate::models::nhl::DefaultNhlContext;
+use crate::db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery};
+use crate::models::nhl::{DefaultNhlContext, NhlSeason, NhlSeasonKey, NhlTeam, NhlTeamKey};
 use crate::models::traits::{DbStruct, IntoDbStruct};
+use crate::models::{ApiCache, ApiCacheKey};
 
 use crate::bind;
 use crate::impl_has_type_name;
 use crate::sqlx_operation_with_retries;
+use crate::verify_fk;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -168,12 +170,56 @@ impl DbStruct for NhlPlayoffSeries {
 }
 #[async_trait]
 impl Persistable for NhlPlayoffSeries {
-    type Id = NhlPlayoffSeriesKey;
+    type Pk = NhlPlayoffSeriesKey;
 
-    fn id(&self) -> Self::Id {
-        Self::Id {
+    fn id(&self) -> Self::Pk {
+        Self::Pk {
             season_id: self.season_id,
             series_letter: self.series_letter.clone(),
+        }
+    }
+
+    #[tracing::instrument(skip(db_context))]
+    async fn verify_relationships(
+        &self,
+        db_context: &DbContext,
+    ) -> Result<RelationshipIntegrity, LPError> {
+        let mut missing: Vec<Box<dyn PrimaryKey>> = vec![];
+
+        verify_fk!(
+            missing,
+            db_context,
+            NhlSeason,
+            NhlSeasonKey { id: self.season_id }
+        );
+        verify_fk!(
+            missing,
+            db_context,
+            NhlTeam,
+            NhlTeamKey {
+                id: self.top_seed_team_id
+            }
+        );
+        verify_fk!(
+            missing,
+            db_context,
+            NhlTeam,
+            NhlTeamKey {
+                id: self.bottom_seed_team_id
+            }
+        );
+        verify_fk!(
+            missing,
+            db_context,
+            ApiCache,
+            ApiCacheKey {
+                endpoint: self.endpoint.clone()
+            }
+        );
+
+        match missing.len() {
+            0 => Ok(RelationshipIntegrity::AllValid),
+            _ => Ok(RelationshipIntegrity::Missing(missing)),
         }
     }
 

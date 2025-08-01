@@ -16,16 +16,16 @@ pub struct ApiCache {
 }
 #[async_trait]
 impl Persistable for ApiCache {
-    type Id = ApiCacheKey;
+    type Pk = ApiCacheKey;
 
-    fn id(&self) -> Self::Id {
-        Self::Id {
+    fn id(&self) -> Self::Pk {
+        Self::Pk {
             endpoint: self.endpoint.clone(),
         }
     }
 
     #[tracing::instrument(skip(db_context))]
-    async fn fetch_from_db(db_context: &DbContext, id: &Self::Id) -> Result<Option<Self>, LPError> {
+    async fn fetch_from_db(db_context: &DbContext, id: &Self::Pk) -> Result<Option<Self>, LPError> {
         match sqlx_operation_with_retries!(
             sqlx::query_as::<_, Self>(r#"SELECT * FROM api_cache WHERE endpoint=$1"#)
                 .bind(&id.endpoint.clone())

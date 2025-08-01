@@ -15,7 +15,6 @@ pub use config::CONFIG;
 pub use api::nhl::NhlApi;
 pub use db::{DbPool, SqlxJob, SqlxJobSender};
 pub use lp_error::LPError;
-pub use models::nhl::{NhlFranchise, NhlSeason, NhlTeam};
 
 use db::init_db_context;
 use orchestrator::{
@@ -35,11 +34,13 @@ async fn main() -> Result<(), LPError> {
     let db_context = init_db_context().await?;
     let nhl_api: NhlApi = NhlApi::new();
 
-    let seasons: Vec<NhlSeason> = get_nhl_seasons(&db_context, &nhl_api).await?;
-    let franchises = get_nhl_franchises(&db_context, &nhl_api).await?;
-    let teams = get_nhl_teams(&db_context, &nhl_api).await?;
+    let seasons: Vec<models::nhl::NhlSeason> = get_nhl_seasons(&db_context, &nhl_api).await?;
+    let franchises: Vec<models::nhl::NhlFranchise> =
+        get_nhl_franchises(&db_context, &nhl_api).await?;
+    let teams: Vec<models::nhl::NhlTeam> = get_nhl_teams(&db_context, &nhl_api).await?;
 
-    let games = get_nhl_all_games_in_season(&db_context, &nhl_api, &seasons[0]).await?;
+    let games: Vec<models::nhl::NhlGame> =
+        get_nhl_all_games_in_season(&db_context, &nhl_api, &seasons[0]).await?;
 
     Ok(())
 }

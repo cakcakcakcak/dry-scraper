@@ -16,6 +16,20 @@ macro_rules! bind {
 }
 
 #[macro_export]
+macro_rules! verify_fk {
+    ($missing:ident, $db_context:expr, $persistable:ty, $key:expr) => {
+        if let Some(pk) = <$persistable>::verify_by_key($db_context, $key).await? {
+            $missing.push(pk);
+        }
+    };
+    ($missing:ident, $db_context:expr, $persistable:ty, $key:expr) => {
+        if let Some(pk) = <$persistable>::verify_by_key($db_context, $key).await? {
+            $missing.push(pk);
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! with_progress_bar {
     ($count:expr, |$pb:ident| $body:block) => {{
         let $pb = indicatif::ProgressBar::new($count as u64);

@@ -10,14 +10,25 @@ use crate::sqlx_operation_with_retries;
 pub trait Persistable:
     std::fmt::Debug + Sized + Clone + Send + Sync + for<'a> FromRow<'a, sqlx::postgres::PgRow> + 'static
 {
-    type Id: PrimaryKey;
+    type Pk: PrimaryKey;
 
-    fn id(&self) -> Self::Id;
+    fn id(&self) -> Self::Pk;
 
     fn create_upsert_query(&self) -> StaticPgQuery;
 
+    async fn verify_by_key(
+        db_context: &DbContext,
+        id: Self::Pk,
+    ) -> Result<Option<Box<dyn PrimaryKey>>, LPError> {
+        match Self::fetch_from_db(db_context, &id).await {
+            Ok(Some(_)) => Ok(None),
+            Ok(None) => Ok(Some(Box::new(id))),
+            Err(e) => return Err(e),
+        }
+    }
+
     #[tracing::instrument(skip(db_context))]
-    async fn fetch_from_db(db_context: &DbContext, id: &Self::Id) -> Result<Option<Self>, LPError> {
+    async fn fetch_from_db(db_context: &DbContext, id: &Self::Pk) -> Result<Option<Self>, LPError> {
         match sqlx_operation_with_retries!(
             id.create_select_query()
                 .fetch_optional(&db_context.pool)
@@ -25,9 +36,22 @@ pub trait Persistable:
         )
         .await
         {
-            Ok(Some(row)) => Self::from_row(&row).map(Some).map_err(LPError::from),
-            Ok(None) => Ok(None),
-            Err(e) => Err(LPError::from(e)),
+            Ok(Some(row)) => {
+                tracing::debug!("Record found in lp database for key {:?}", id);
+                Self::from_row(&row).map(Some).map_err(LPError::from)
+            }
+            Ok(None) => {
+                tracing::warn!("Record not found in lp database for key {:?}", id);
+                Ok(None)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to fetch from lp database using key {:?}: {:?}",
+                    id,
+                    e
+                );
+                Err(LPError::from(e))
+            }
         }
     }
 

@@ -4,13 +4,18 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
-use crate::db::{Persistable, PrimaryKey, StaticPgQuery};
-use crate::models::nhl::GameNhlContext;
-use crate::models::nhl::LocalizedNameJson;
+use crate::LPError;
+use crate::db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery};
+use crate::models::nhl::{
+    GameNhlContext, NhlGameKey, NhlPlayer, NhlPlayerKey, NhlTeam, NhlTeamKey,
+};
+use crate::models::nhl::{LocalizedNameJson, NhlGame};
 use crate::models::traits::{DbStruct, IntoDbStruct};
+use crate::models::{ApiCache, ApiCacheKey};
 
 use crate::bind;
 use crate::impl_has_type_name;
+use crate::verify_fk;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -79,12 +84,52 @@ impl DbStruct for NhlRosterSpot {
 
 #[async_trait]
 impl Persistable for NhlRosterSpot {
-    type Id = NhlRosterSpotKey;
+    type Pk = NhlRosterSpotKey;
 
-    fn id(&self) -> Self::Id {
-        Self::Id {
+    fn id(&self) -> Self::Pk {
+        Self::Pk {
             game_id: self.game_id,
             player_id: self.player_id,
+        }
+    }
+
+    #[tracing::instrument(skip(db_context))]
+    async fn verify_relationships(
+        &self,
+        db_context: &DbContext,
+    ) -> Result<RelationshipIntegrity, LPError> {
+        let mut missing: Vec<Box<dyn PrimaryKey>> = vec![];
+
+        verify_fk!(
+            missing,
+            db_context,
+            NhlGame,
+            NhlGameKey { id: self.game_id }
+        );
+        verify_fk!(
+            missing,
+            db_context,
+            NhlPlayer,
+            NhlPlayerKey { id: self.player_id }
+        );
+        verify_fk!(
+            missing,
+            db_context,
+            NhlTeam,
+            NhlTeamKey { id: self.team_id }
+        );
+        verify_fk!(
+            missing,
+            db_context,
+            ApiCache,
+            ApiCacheKey {
+                endpoint: self.endpoint.clone()
+            }
+        );
+
+        match missing.len() {
+            0 => Ok(RelationshipIntegrity::AllValid),
+            _ => Ok(RelationshipIntegrity::Missing(missing)),
         }
     }
 

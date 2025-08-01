@@ -3,15 +3,18 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
-use crate::db::{Persistable, PrimaryKey, StaticPgQuery};
-use crate::models::nhl::DefaultNhlContext;
+use crate::LPError;
+use crate::db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery};
+use crate::models::nhl::{DefaultNhlContext, NhlTeam, NhlTeamKey};
 use crate::models::traits::{DbStruct, IntoDbStruct};
+use crate::models::{ApiCache, ApiCacheKey};
 use crate::serde_helpers::JsonExt;
 
 use crate::bind;
 use crate::impl_has_type_name;
 use crate::make_deserialize_key_to_type;
 use crate::make_deserialize_to_type;
+use crate::verify_fk;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -200,10 +203,42 @@ impl DbStruct for NhlPlayer {
 }
 #[async_trait]
 impl Persistable for NhlPlayer {
-    type Id = NhlPlayerKey;
+    type Pk = NhlPlayerKey;
 
-    fn id(&self) -> Self::Id {
-        Self::Id { id: self.id }
+    fn id(&self) -> Self::Pk {
+        Self::Pk { id: self.id }
+    }
+
+    #[tracing::instrument(skip(db_context))]
+    async fn verify_relationships(
+        &self,
+        db_context: &DbContext,
+    ) -> Result<RelationshipIntegrity, LPError> {
+        let mut missing: Vec<Box<dyn PrimaryKey>> = vec![];
+
+        if let Some(current_team_id) = self.current_team_id {
+            verify_fk!(
+                missing,
+                db_context,
+                NhlTeam,
+                NhlTeamKey {
+                    id: current_team_id
+                }
+            )
+        }
+        verify_fk!(
+            missing,
+            db_context,
+            ApiCache,
+            ApiCacheKey {
+                endpoint: self.endpoint.clone()
+            }
+        );
+
+        match missing.len() {
+            0 => Ok(RelationshipIntegrity::AllValid),
+            _ => Ok(RelationshipIntegrity::Missing(missing)),
+        }
     }
 
     fn create_upsert_query(&self) -> StaticPgQuery {
@@ -323,7 +358,7 @@ impl Persistable for NhlPlayer {
 
 #[derive(Debug)]
 pub struct NhlPlayerKey {
-    id: i32,
+    pub id: i32,
 }
 impl PrimaryKey for NhlPlayerKey {
     fn create_select_query(&self) -> StaticPgQuery {

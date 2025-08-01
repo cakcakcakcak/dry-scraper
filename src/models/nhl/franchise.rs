@@ -11,6 +11,7 @@ use crate::models::{ApiCache, ApiCacheKey};
 
 use crate::bind;
 use crate::impl_has_type_name;
+use crate::verify_fk;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,27 +60,32 @@ impl DbStruct for NhlFranchise {
 }
 #[async_trait]
 impl Persistable for NhlFranchise {
-    type Id = NhlFranchiseKey;
+    type Pk = NhlFranchiseKey;
 
-    fn id(&self) -> Self::Id {
-        Self::Id { id: self.id }
+    fn id(&self) -> Self::Pk {
+        Self::Pk { id: self.id }
     }
 
+    #[tracing::instrument(skip(db_context))]
     async fn verify_relationships(
         &self,
         db_context: &DbContext,
     ) -> Result<RelationshipIntegrity, LPError> {
         let mut missing: Vec<Box<dyn PrimaryKey>> = vec![];
 
-        let api_cache_key = ApiCacheKey {
-            endpoint: self.endpoint.clone(),
-        };
-        match ApiCache::fetch_from_db(db_context, &api_cache_key).await {
-            Ok(Some(_)) => (),
-            Ok(None) => missing.push(Box::new(api_cache_key) as Box<dyn PrimaryKey>),
-            Err(e) => return Err(e),
+        verify_fk!(
+            missing,
+            db_context,
+            ApiCache,
+            ApiCacheKey {
+                endpoint: self.endpoint.clone()
+            }
+        );
+
+        match missing.len() {
+            0 => Ok(RelationshipIntegrity::AllValid),
+            _ => Ok(RelationshipIntegrity::Missing(missing)),
         }
-        Ok(RelationshipIntegrity::AllValid)
     }
 
     fn create_upsert_query(&self) -> StaticPgQuery {

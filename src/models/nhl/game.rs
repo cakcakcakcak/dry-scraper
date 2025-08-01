@@ -5,16 +5,18 @@ use serde_json;
 use sqlx::FromRow;
 
 use crate::LPError;
-use crate::db::{DbContext, Persistable, PrimaryKey, StaticPgQuery};
+use crate::db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery};
 use crate::models::nhl::{
-    DefaultNhlContext, GameType, LocalizedNameJson, NhlPlayJson, NhlRosterSpotJson,
-    PeriodDescriptorJson, PeriodTypeJson,
+    DefaultNhlContext, GameType, LocalizedNameJson, NhlPlayJson, NhlRosterSpotJson, NhlSeason,
+    NhlSeasonKey, NhlTeam, NhlTeamKey, PeriodDescriptorJson, PeriodTypeJson,
 };
 use crate::models::traits::{DbStruct, IntoDbStruct};
+use crate::models::{ApiCache, ApiCacheKey};
 
 use crate::bind;
 use crate::impl_has_type_name;
 use crate::sqlx_operation_with_retries;
+use crate::verify_fk;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -211,14 +213,58 @@ impl DbStruct for NhlGame {
 }
 #[async_trait]
 impl Persistable for NhlGame {
-    type Id = NhlGameKey;
+    type Pk = NhlGameKey;
 
-    fn id(&self) -> Self::Id {
-        Self::Id { id: self.id }
+    fn id(&self) -> Self::Pk {
+        Self::Pk { id: self.id }
     }
 
     #[tracing::instrument(skip(db_context))]
-    async fn fetch_from_db(db_context: &DbContext, id: &Self::Id) -> Result<Option<Self>, LPError> {
+    async fn verify_relationships(
+        &self,
+        db_context: &DbContext,
+    ) -> Result<RelationshipIntegrity, LPError> {
+        let mut missing: Vec<Box<dyn PrimaryKey>> = vec![];
+
+        verify_fk!(
+            missing,
+            db_context,
+            NhlSeason,
+            NhlSeasonKey { id: self.season }
+        );
+        verify_fk!(
+            missing,
+            db_context,
+            NhlTeam,
+            NhlTeamKey {
+                id: self.away_team_id
+            }
+        );
+        verify_fk!(
+            missing,
+            db_context,
+            NhlTeam,
+            NhlTeamKey {
+                id: self.home_team_id
+            }
+        );
+        verify_fk!(
+            missing,
+            db_context,
+            ApiCache,
+            ApiCacheKey {
+                endpoint: self.endpoint.clone()
+            }
+        );
+
+        match missing.len() {
+            0 => Ok(RelationshipIntegrity::AllValid),
+            _ => Ok(RelationshipIntegrity::Missing(missing)),
+        }
+    }
+
+    #[tracing::instrument(skip(db_context))]
+    async fn fetch_from_db(db_context: &DbContext, id: &Self::Pk) -> Result<Option<Self>, LPError> {
         sqlx_operation_with_retries!(
             sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_game WHERE id=$1"#)
                 .bind(id.id)

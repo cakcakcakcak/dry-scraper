@@ -4,13 +4,14 @@ use serde_json;
 use sqlx::FromRow;
 
 use crate::LPError;
-use crate::db::{DbContext, Persistable, PrimaryKey, StaticPgQuery};
-use crate::models::nhl::DefaultNhlContext;
+use crate::db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery};
+use crate::models::nhl::{DefaultNhlContext, NhlFranchise, NhlFranchiseKey};
 use crate::models::traits::{DbStruct, IntoDbStruct};
+use crate::models::{ApiCache, ApiCacheKey};
 
 use crate::bind;
 use crate::impl_has_type_name;
-use crate::sqlx_operation_with_retries;
+use crate::verify_fk;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,12 +68,40 @@ impl DbStruct for NhlTeam {
 }
 #[async_trait]
 impl Persistable for NhlTeam {
-    type Id = NhlTeamKey;
+    type Pk = NhlTeamKey;
 
-    fn id(&self) -> Self::Id {
-        Self::Id { id: self.id }
+    fn id(&self) -> Self::Pk {
+        Self::Pk { id: self.id }
     }
 
+    async fn verify_relationships(
+        &self,
+        db_context: &DbContext,
+    ) -> Result<RelationshipIntegrity, LPError> {
+        let mut missing: Vec<Box<dyn PrimaryKey>> = vec![];
+
+        if let Some(franchise_id) = self.franchise_id {
+            verify_fk!(
+                missing,
+                db_context,
+                NhlFranchise,
+                NhlFranchiseKey { id: franchise_id }
+            );
+        }
+        verify_fk!(
+            missing,
+            db_context,
+            ApiCache,
+            ApiCacheKey {
+                endpoint: self.endpoint.clone()
+            }
+        );
+
+        match missing.len() {
+            0 => Ok(RelationshipIntegrity::AllValid),
+            _ => Ok(RelationshipIntegrity::Missing(missing)),
+        }
+    }
     fn create_upsert_query(&self) -> StaticPgQuery {
         bind!(
             sqlx::query(
