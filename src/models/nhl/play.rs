@@ -96,8 +96,21 @@ pub struct NhlPlay {
     pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
+impl NhlPlay {
+    pub(crate) async fn verify_by_key(db_context: &crate::db::DbContext, arg: super::NhlPrimaryKey) -> Result<Option<super::NhlPrimaryKey>, crate::LPError> {
+        todo!()
+    }
+}
 impl DbStruct for NhlPlay {
     type IntoDbStruct = NhlPlayJson;
+
+    fn create_context_struct(&self) -> <<Self as DbStruct>::IntoDbStruct as IntoDbStruct>::Context {
+        GameNhlContext {
+            game_id: self.game_id,
+            endpoint: self.endpoint.clone(),
+            raw_json: self.raw_json.clone(),
+        }
+    }
 }
 
 impl_has_type_name!(NhlPlayJson);

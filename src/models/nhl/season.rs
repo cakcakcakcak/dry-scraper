@@ -5,7 +5,7 @@ use sqlx::FromRow;
 
 use crate::LPError;
 use crate::db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery};
-use crate::models::nhl::DefaultNhlContext;
+use crate::models::nhl::{DefaultNhlContext, NhlPrimaryKey, NhlSeasonKey};
 use crate::models::traits::{DbStruct, IntoDbStruct};
 use crate::models::{ApiCache, ApiCacheKey};
 use crate::serde_helpers::JsonExt;
@@ -159,30 +159,31 @@ impl std::fmt::Debug for NhlSeason {
 }
 impl DbStruct for NhlSeason {
     type IntoDbStruct = NhlSeasonJson;
+
+    fn create_context_struct(&self) -> <<Self as DbStruct>::IntoDbStruct as IntoDbStruct>::Context {
+        DefaultNhlContext {
+            endpoint: self.endpoint.clone(),
+            raw_json: self.raw_json.clone(),
+        }
+    }
 }
 
 #[async_trait]
 impl Persistable for NhlSeason {
-    type Pk = NhlSeasonKey;
+    type Pk = NhlPrimaryKey;
 
     fn id(&self) -> Self::Pk {
-        Self::Pk { id: self.id }
+        Self::Pk::Season(NhlSeasonKey { id: self.id })
     }
 
+    #[tracing::instrument(skip(self, db_context))]
     async fn verify_relationships(
         &self,
         db_context: &DbContext,
-    ) -> Result<RelationshipIntegrity, LPError> {
-        let mut missing: Vec<Box<dyn PrimaryKey>> = vec![];
+    ) -> Result<RelationshipIntegrity<Self::Pk>, LPError> {
+        let mut missing: Vec<Self::Pk> = vec![];
 
-        verify_fk!(
-            missing,
-            db_context,
-            ApiCache,
-            ApiCacheKey {
-                endpoint: self.endpoint.clone()
-            }
-        );
+        verify_fk!(missing, db_context, Self::Pk::api_cache(&self.endpoint));
 
         match missing.len() {
             0 => Ok(RelationshipIntegrity::AllValid),
@@ -279,15 +280,6 @@ impl Persistable for NhlSeason {
     }
 }
 
-#[derive(Debug)]
-pub struct NhlSeasonKey {
-    pub id: i32,
-}
-impl PrimaryKey for NhlSeasonKey {
-    fn create_select_query(&self) -> StaticPgQuery {
-        sqlx::query("SELECT * from nhl_season where id=$1").bind(self.id)
-    }
-}
 impl_has_type_name!(NhlSeasonJson);
 impl_has_type_name!(NhlSeason);
 

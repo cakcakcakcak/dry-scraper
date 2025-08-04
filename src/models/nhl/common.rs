@@ -14,10 +14,12 @@ pub enum DefendingSide {
     Right,
 }
 
+#[derive(Clone)]
 pub struct DefaultNhlContext {
     pub endpoint: String,
     pub raw_json: serde_json::Value,
 }
+#[derive(Clone)]
 pub struct GameNhlContext {
     pub game_id: i32,
     pub endpoint: String,

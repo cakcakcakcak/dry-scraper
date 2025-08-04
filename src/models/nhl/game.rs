@@ -7,8 +7,9 @@ use sqlx::FromRow;
 use crate::LPError;
 use crate::db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery};
 use crate::models::nhl::{
-    DefaultNhlContext, GameType, LocalizedNameJson, NhlPlayJson, NhlRosterSpotJson, NhlSeason,
-    NhlSeasonKey, NhlTeam, NhlTeamKey, PeriodDescriptorJson, PeriodTypeJson,
+    DefaultNhlContext, GameType, LocalizedNameJson, NhlGameKey, NhlPlayJson, NhlPrimaryKey,
+    NhlRosterSpotJson, NhlSeason, NhlSeasonKey, NhlTeam, NhlTeamKey, PeriodDescriptorJson,
+    PeriodTypeJson,
 };
 use crate::models::traits::{DbStruct, IntoDbStruct};
 use crate::models::{ApiCache, ApiCacheKey};
@@ -210,69 +211,38 @@ pub struct NhlGame {
 }
 impl DbStruct for NhlGame {
     type IntoDbStruct = NhlGameJson;
+
+    fn create_context_struct(&self) -> <<Self as DbStruct>::IntoDbStruct as IntoDbStruct>::Context {
+        DefaultNhlContext {
+            endpoint: self.endpoint.clone(),
+            raw_json: self.raw_json.clone(),
+        }
+    }
 }
 #[async_trait]
 impl Persistable for NhlGame {
-    type Pk = NhlGameKey;
+    type Pk = NhlPrimaryKey;
 
     fn id(&self) -> Self::Pk {
-        Self::Pk { id: self.id }
+        Self::Pk::Game(NhlGameKey { id: self.id })
     }
 
-    #[tracing::instrument(skip(db_context))]
+    #[tracing::instrument(skip(self, db_context))]
     async fn verify_relationships(
         &self,
         db_context: &DbContext,
-    ) -> Result<RelationshipIntegrity, LPError> {
-        let mut missing: Vec<Box<dyn PrimaryKey>> = vec![];
+    ) -> Result<RelationshipIntegrity<Self::Pk>, LPError> {
+        let mut missing: Vec<Self::Pk> = vec![];
 
-        verify_fk!(
-            missing,
-            db_context,
-            NhlSeason,
-            NhlSeasonKey { id: self.season }
-        );
-        verify_fk!(
-            missing,
-            db_context,
-            NhlTeam,
-            NhlTeamKey {
-                id: self.away_team_id
-            }
-        );
-        verify_fk!(
-            missing,
-            db_context,
-            NhlTeam,
-            NhlTeamKey {
-                id: self.home_team_id
-            }
-        );
-        verify_fk!(
-            missing,
-            db_context,
-            ApiCache,
-            ApiCacheKey {
-                endpoint: self.endpoint.clone()
-            }
-        );
+        verify_fk!(missing, db_context, Self::Pk::season(self.season));
+        verify_fk!(missing, db_context, Self::Pk::team(self.away_team_id));
+        verify_fk!(missing, db_context, Self::Pk::team(self.home_team_id));
+        verify_fk!(missing, db_context, Self::Pk::api_cache(&self.endpoint));
 
         match missing.len() {
             0 => Ok(RelationshipIntegrity::AllValid),
             _ => Ok(RelationshipIntegrity::Missing(missing)),
         }
-    }
-
-    #[tracing::instrument(skip(db_context))]
-    async fn fetch_from_db(db_context: &DbContext, id: &Self::Pk) -> Result<Option<Self>, LPError> {
-        sqlx_operation_with_retries!(
-            sqlx::query_as::<_, Self>(r#"SELECT * FROM nhl_game WHERE id=$1"#)
-                .bind(id.id)
-                .fetch_optional(&db_context.pool)
-                .await
-        )
-        .await
-        .map_err(LPError::from)
     }
 
     fn create_upsert_query(&self) -> StaticPgQuery {
@@ -405,16 +375,6 @@ impl Persistable for NhlGame {
             self.endpoint,
             self.raw_json,
         )
-    }
-}
-
-#[derive(Debug)]
-pub struct NhlGameKey {
-    pub id: i32,
-}
-impl PrimaryKey for NhlGameKey {
-    fn create_select_query(&self) -> StaticPgQuery {
-        sqlx::query("SELECT * FROM nhl_game WHERE id=$1").bind(self.id)
     }
 }
 

@@ -1,5 +1,6 @@
 use futures::future::join_all;
 use futures::stream::{self, StreamExt};
+use tracing::instrument;
 
 use crate::api::api_common::HasEndpoint;
 use crate::api::nhl::{NhlApi, NhlStatsApi, NhlWebApi};
@@ -8,9 +9,9 @@ use crate::db::{DbContext, Persistable, PrimaryKey};
 use crate::lp_error::LPError;
 use crate::models::ItemParsedWithContext;
 use crate::models::nhl::{
-    DefaultNhlContext, NhlFranchise, NhlFranchiseJson, NhlGame, NhlGameJson, NhlGameKey, NhlPlayer,
-    NhlPlayerJson, NhlRosterSpot, NhlRosterSpotJson, NhlSeason, NhlSeasonJson, NhlSeasonKey,
-    NhlTeam, NhlTeamJson,
+    DefaultNhlContext, GameNhlContext, NhlFranchise, NhlFranchiseJson, NhlGame, NhlGameJson,
+    NhlGameKey, NhlPlayer, NhlPlayerJson, NhlPlayerKey, NhlPrimaryKey, NhlRosterSpot,
+    NhlRosterSpotJson, NhlSeason, NhlSeasonJson, NhlSeasonKey, NhlTeam, NhlTeamJson,
 };
 use crate::models::traits::{DbStruct, HasTypeName, IntoDbStruct};
 use crate::util::filter_results;
@@ -120,7 +121,7 @@ pub async fn get_nhl_game(
     id: i32,
 ) -> Result<NhlGame, LPError> {
     tracing::debug!("Checking lp database for NhlGame with id `{id}`");
-    match NhlGame::fetch_from_db(db_context, &NhlGameKey { id }).await {
+    match NhlGame::fetch_from_db(db_context, &NhlPrimaryKey::Game(NhlGameKey { id: id })).await {
         Ok(Some(game)) => {
             return Ok(game);
         }
@@ -141,13 +142,14 @@ pub async fn get_nhl_all_games_in_season_by_season_id(
     nhl_api: &NhlApi,
     id: i32,
 ) -> Result<Vec<NhlGame>, LPError> {
-    let season: NhlSeason = NhlSeason::fetch_from_db(db_context, &NhlSeasonKey { id })
-        .await?
-        .ok_or_else(|| {
-            LPError::DatabaseCustom(format!(
-                "Season {id} not found in database. Please fetch seasons first."
-            ))
-        })?;
+    let season: NhlSeason =
+        NhlSeason::fetch_from_db(db_context, &NhlPrimaryKey::Season(NhlSeasonKey { id: id }))
+            .await?
+            .ok_or_else(|| {
+                LPError::DatabaseCustom(format!(
+                    "Season {id} not found in database. Please fetch seasons first."
+                ))
+            })?;
 
     get_nhl_all_games_in_season(db_context, nhl_api, &season).await
 }
@@ -190,26 +192,17 @@ pub async fn get_nhl_all_games_in_season(
         "Successfully fetched {ok_json_result_count}/{number_of_games} games from {season_id} NHL season."
     );
 
-    tracing::info!(
-        "Parsing {ok_json_result_count} games from {season_id} NHL season into lp database structs."
-    );
-    let games: Vec<NhlGame> = with_progress_bar!(ok_json_result_count, |pb| {
-        ok_json_results
-            .into_iter()
-            .map(|game_json| game_json.to_db_struct())
-            .inspect(|_| pb.inc(1))
-            .collect()
-    });
+    let games: Vec<NhlGame> = json_struct_vector_into_db_structs(ok_json_results);
     let game_count = games.len();
     tracing::info!(
-        "Successfully parsed {game_count}/{number_of_games} games from {season_id} NHL season into lp database structs."
+        "Parsed {game_count}/{number_of_games} games from {season_id} NHL season into lp database structs."
     );
 
     tracing::info!(
         "Upserting {number_of_games} games from {season_id} NHL season into lp database."
     );
     let upsert_results: Vec<Result<sqlx::postgres::PgQueryResult, LPError>> =
-        join_all(games.iter().map(|game| game.upsert(db_context))).await;
+        upsert_all(games.clone(), db_context).await;
     let ok_upsert_results = filter_results(upsert_results);
     let ok_upsert_count = ok_upsert_results.len();
     tracing::info!(
@@ -217,4 +210,93 @@ pub async fn get_nhl_all_games_in_season(
     );
 
     Ok(games)
+}
+
+#[tracing::instrument(skip(db_context, nhl_api, game))]
+pub async fn get_nhl_roster_spots_in_game(
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
+    game: NhlGame,
+) -> Result<Vec<NhlRosterSpot>, LPError> {
+    let game_json: NhlGameJson = serde_json::from_value(game.raw_json.clone())?;
+
+    let roster_spot_jsons: Vec<NhlRosterSpotJson> = game_json.roster_spots;
+    let roster_spot_jsons_with_context: Vec<ItemParsedWithContext<NhlRosterSpotJson>> =
+        roster_spot_jsons
+            .into_iter()
+            .map(|json| ItemParsedWithContext {
+                item: json,
+                context: GameNhlContext {
+                    game_id: game.id,
+                    endpoint: game.endpoint.clone(),
+                    raw_json: game.raw_json.clone(),
+                },
+            })
+            .collect();
+
+    let roster_spots: Vec<NhlRosterSpot> =
+        json_struct_vector_into_db_structs(roster_spot_jsons_with_context);
+    tracing::info!(
+        "Parsed {} roster spots from NHL game with id {} into lp database structs.",
+        roster_spots.len(),
+        game.id
+    );
+
+    tracing::info!(
+        "Upserting {} roster spots from NHL game with id {} into lp database.",
+        roster_spots.len(),
+        game.id
+    );
+    let upsert_results: Vec<Result<sqlx::postgres::PgQueryResult, LPError>> =
+        upsert_all(roster_spots.clone(), db_context).await;
+    let ok_upsert_results = filter_results(upsert_results);
+    let ok_upsert_count = ok_upsert_results.len();
+    tracing::info!(
+        "Upserted {}/{} roster spots from NHL game with id {} into lp database.",
+        ok_upsert_count,
+        roster_spots.len(),
+        game.id
+    );
+
+    Ok(roster_spots)
+}
+
+pub fn json_struct_vector_into_db_structs<J>(
+    json_structs: Vec<ItemParsedWithContext<J>>,
+) -> Vec<J::DbStruct>
+where
+    J: IntoDbStruct,
+    J::DbStruct: DbStruct,
+{
+    with_progress_bar!(json_structs.len(), |pb| {
+        json_structs
+            .into_iter()
+            .map(|game_json| game_json.to_db_struct())
+            .inspect(|_| pb.inc(1))
+            .collect()
+    })
+}
+
+#[tracing::instrument(skip(items, db_context))]
+pub async fn upsert_all<T: Persistable + DbStruct + HasTypeName>(
+    items: Vec<T>,
+    db_context: &DbContext,
+) -> Vec<Result<sqlx::postgres::PgQueryResult, LPError>> {
+    join_all(items.iter().map(|game| game.upsert(db_context))).await
+}
+
+pub async fn try_fetch_by_primary_key(
+    nhl_api: &NhlApi,
+    db_context: &DbContext,
+    pk: NhlPrimaryKey,
+) -> Result<(), LPError> {
+    // if let Some(player_key) = pk.as_any().downcast_ref::<NhlPlayerKey>() {
+    //     let player_json = nhl_api.fetch_by_id::<NhlPlayerJson>(db_context, player_key.id).await?;
+    //     player_json.to_db_struct().upsert(db_context, ||);
+    //     Ok(())
+    // } else {
+    //     // handle other key types or return an error
+    //     Err(LPError::DatabaseCustom("Unknown key type".to_string()))
+    // }
+    Ok(())
 }

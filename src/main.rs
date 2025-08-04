@@ -21,6 +21,8 @@ use orchestrator::{
     get_nhl_all_games_in_season, get_nhl_franchises, get_nhl_seasons, get_nhl_teams,
 };
 
+use crate::orchestrator::get_nhl_roster_spots_in_game;
+
 #[tokio::main]
 async fn main() -> Result<(), LPError> {
     _ = dotenvy::dotenv();
@@ -39,8 +41,11 @@ async fn main() -> Result<(), LPError> {
         get_nhl_franchises(&db_context, &nhl_api).await?;
     let teams: Vec<models::nhl::NhlTeam> = get_nhl_teams(&db_context, &nhl_api).await?;
 
-    let games: Vec<models::nhl::NhlGame> =
-        get_nhl_all_games_in_season(&db_context, &nhl_api, &seasons[0]).await?;
+    let season: &models::nhl::NhlSeason = &seasons[0];
+    let games = get_nhl_all_games_in_season(&db_context, &nhl_api, season).await?;
+    for game in games {
+        get_nhl_roster_spots_in_game(&db_context, &nhl_api, game).await?;
+    }
 
     Ok(())
 }

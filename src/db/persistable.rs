@@ -4,6 +4,7 @@ use sqlx::FromRow;
 use super::{DbContext, DbPool, SqlxJobResult, StaticPgQuery};
 use crate::lp_error::LPError;
 
+use crate::models::traits::DbStruct;
 use crate::sqlx_operation_with_retries;
 
 #[async_trait]
@@ -19,10 +20,10 @@ pub trait Persistable:
     async fn verify_by_key(
         db_context: &DbContext,
         id: Self::Pk,
-    ) -> Result<Option<Box<dyn PrimaryKey>>, LPError> {
+    ) -> Result<Option<Self::Pk>, LPError> {
         match Self::fetch_from_db(db_context, &id).await {
             Ok(Some(_)) => Ok(None),
-            Ok(None) => Ok(Some(Box::new(id))),
+            Ok(None) => Ok(Some(id)),
             Err(e) => return Err(e),
         }
     }
@@ -55,19 +56,33 @@ pub trait Persistable:
         }
     }
 
+    #[tracing::instrument(skip(_db_context, self))]
     async fn verify_relationships(
         &self,
-        _context: &DbContext,
-    ) -> Result<RelationshipIntegrity, LPError> {
+        _db_context: &DbContext,
+    ) -> Result<RelationshipIntegrity<Self::Pk>, LPError> {
         Ok(RelationshipIntegrity::AllValid)
     }
 
-    #[tracing::instrument(skip(db_context))]
+    #[tracing::instrument(skip(self, db_context))]
     async fn upsert(
+        //<F, Fut>(
         &self,
         db_context: &DbContext,
-    ) -> Result<sqlx::postgres::PgQueryResult, LPError> {
+        // correct_missing: F,
+    ) -> Result<sqlx::postgres::PgQueryResult, LPError>
+// where
+    //     F: Fn(&Box<dyn PrimaryKey>) -> Fut + Send + Sync,
+    //     Fut: Future<Output = Result<(), LPError>> + Send,
+    {
         let pool: DbPool = db_context.pool.clone();
+
+        match self.verify_relationships(db_context).await {
+            Ok(RelationshipIntegrity::AllValid) => (),
+            Ok(RelationshipIntegrity::Missing(missing)) => {}
+            Err(e) => return Err(e),
+        };
+
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
 
         let self_clone: Self = self.clone();
@@ -111,9 +126,9 @@ pub trait Persistable:
 }
 
 #[derive(Debug)]
-pub enum RelationshipIntegrity {
+pub enum RelationshipIntegrity<Pk: PrimaryKey> {
     AllValid,
-    Missing(Vec<Box<dyn PrimaryKey>>),
+    Missing(Vec<Pk>),
 }
 
 pub trait PrimaryKey: std::fmt::Debug + Send + Sync {

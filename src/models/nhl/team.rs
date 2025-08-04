@@ -5,7 +5,9 @@ use sqlx::FromRow;
 
 use crate::LPError;
 use crate::db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery};
-use crate::models::nhl::{DefaultNhlContext, NhlFranchise, NhlFranchiseKey};
+use crate::models::nhl::{
+    DefaultNhlContext, NhlFranchise, NhlFranchiseKey, NhlPrimaryKey, NhlTeamKey,
+};
 use crate::models::traits::{DbStruct, IntoDbStruct};
 use crate::models::{ApiCache, ApiCacheKey};
 
@@ -65,37 +67,45 @@ pub struct NhlTeam {
 }
 impl DbStruct for NhlTeam {
     type IntoDbStruct = NhlTeamJson;
+
+    fn create_context_struct(&self) -> <<Self as DbStruct>::IntoDbStruct as IntoDbStruct>::Context {
+        DefaultNhlContext {
+            endpoint: self.endpoint.clone(),
+            raw_json: self.raw_json.clone(),
+        }
+    }
 }
 #[async_trait]
 impl Persistable for NhlTeam {
-    type Pk = NhlTeamKey;
+    type Pk = NhlPrimaryKey;
 
     fn id(&self) -> Self::Pk {
-        Self::Pk { id: self.id }
+        Self::Pk::Team(NhlTeamKey { id: self.id })
     }
 
+    #[tracing::instrument(skip(self, db_context))]
     async fn verify_relationships(
         &self,
         db_context: &DbContext,
-    ) -> Result<RelationshipIntegrity, LPError> {
-        let mut missing: Vec<Box<dyn PrimaryKey>> = vec![];
+    ) -> Result<RelationshipIntegrity<Self::Pk>, LPError> {
+        let mut missing: Vec<Self::Pk> = vec![];
 
-        if let Some(franchise_id) = self.franchise_id {
-            verify_fk!(
-                missing,
-                db_context,
-                NhlFranchise,
-                NhlFranchiseKey { id: franchise_id }
-            );
-        }
-        verify_fk!(
-            missing,
-            db_context,
-            ApiCache,
-            ApiCacheKey {
-                endpoint: self.endpoint.clone()
-            }
-        );
+        // if let Some(franchise_id) = self.franchise_id {
+        //     verify_fk!(
+        //         missing,
+        //         db_context,
+        //         NhlFranchise,
+        //         NhlFranchiseKey { id: franchise_id }
+        //     );
+        // }
+        // verify_fk!(
+        //     missing,
+        //     db_context,
+        //     ApiCache,
+        //     ApiCacheKey {
+        //         endpoint: self.endpoint.clone()
+        //     }
+        // );
 
         match missing.len() {
             0 => Ok(RelationshipIntegrity::AllValid),
@@ -136,16 +146,6 @@ impl Persistable for NhlTeam {
             self.raw_json,
             self.endpoint,
         )
-    }
-}
-
-#[derive(Debug)]
-pub struct NhlTeamKey {
-    pub id: i32,
-}
-impl PrimaryKey for NhlTeamKey {
-    fn create_select_query(&self) -> StaticPgQuery {
-        sqlx::query("SELECT * FROM nhl_team WHERE id=$1").bind(self.id)
     }
 }
 

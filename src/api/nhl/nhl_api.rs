@@ -1,3 +1,4 @@
+use crate::api::FromId;
 use crate::api::api_common::HasEndpoint;
 use crate::db::DbContext;
 use crate::lp_error::LPError;
@@ -5,7 +6,6 @@ use crate::models::ItemParsedWithContext;
 use crate::models::nhl::{DefaultNhlContext, NhlTeamJson};
 use crate::models::traits::{HasTypeName, IntoDbStruct};
 
-use super::super::FromId;
 use super::{NhlStatsApi, NhlWebApi};
 
 pub struct NhlApi {

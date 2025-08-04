@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS nhl_game (
     game_date DATE NOT NULL,
     venue TEXT NOT NULL,
     venue_location TEXT NOT NULL,
-    start_time_utc TIMESTAMP NOT NULL,
+    start_time_utc TIMESTAMPTZ NOT NULL,
     eastern_utc_offset CHAR(6) NOT NULL,
     venue_utc_offset CHAR(6) NOT NULL,
     period_descriptor_number INTEGER NOT NULL,
