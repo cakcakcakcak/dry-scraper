@@ -1,27 +1,18 @@
 use tokio;
 use tracing_subscriber;
 
-mod api;
+mod common;
 mod config;
-mod db;
-mod lp_error;
-mod models;
-mod orchestrator;
-mod serde_helpers;
-mod util;
+mod data_sources;
 
-pub use config::CONFIG;
+use config::CONFIG;
 
-pub use api::nhl::NhlApi;
-pub use db::{DbPool, SqlxJob, SqlxJobSender};
-pub use lp_error::LPError;
-
-use db::init_db_context;
-use orchestrator::{
-    get_nhl_all_games_in_season, get_nhl_franchises, get_nhl_seasons, get_nhl_teams,
+use common::{
+    db::{SqlxJob, init_db_context},
+    errors::LPError,
 };
 
-use crate::orchestrator::get_nhl_roster_spots_in_game;
+use data_sources::nhl::{api::*, models::*, orchestrator::*};
 
 #[tokio::main]
 async fn main() -> Result<(), LPError> {
@@ -36,12 +27,11 @@ async fn main() -> Result<(), LPError> {
     let db_context = init_db_context().await?;
     let nhl_api: NhlApi = NhlApi::new();
 
-    let seasons: Vec<models::nhl::NhlSeason> = get_nhl_seasons(&db_context, &nhl_api).await?;
-    let franchises: Vec<models::nhl::NhlFranchise> =
-        get_nhl_franchises(&db_context, &nhl_api).await?;
-    let teams: Vec<models::nhl::NhlTeam> = get_nhl_teams(&db_context, &nhl_api).await?;
+    let seasons: Vec<NhlSeason> = get_nhl_seasons(&db_context, &nhl_api).await?;
+    let franchises: Vec<NhlFranchise> = get_nhl_franchises(&db_context, &nhl_api).await?;
+    let teams: Vec<NhlTeam> = get_nhl_teams(&db_context, &nhl_api).await?;
 
-    let season: &models::nhl::NhlSeason = &seasons[0];
+    let season: &NhlSeason = &seasons[0];
     let games = get_nhl_all_games_in_season(&db_context, &nhl_api, season).await?;
     for game in games {
         get_nhl_roster_spots_in_game(&db_context, &nhl_api, game).await?;
