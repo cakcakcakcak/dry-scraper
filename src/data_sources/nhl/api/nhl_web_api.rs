@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use async_trait::async_trait;
+
 use crate::common::{
     api::{
         api_common::{FromId, HasBaseUrl, HasEndpoint},
@@ -34,6 +36,7 @@ impl Debug for NhlWebApi {
         f.debug_struct("NhlWebApi").finish()
     }
 }
+#[async_trait]
 impl CacheableApi for NhlWebApi {
     fn client(&self) -> &reqwest::Client {
         &self.client

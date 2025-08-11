@@ -1,22 +1,28 @@
 use std::fmt::Debug;
 
+use async_trait::async_trait;
+
 use super::{NhlStatsApi, NhlWebApi};
 use crate::{
     common::{
-        api::{FromId, HasEndpoint},
+        api::{CacheableApi, FromId, HasEndpoint},
         db::DbContext,
         errors::LPError,
-        models::{
-            ItemParsedWithContext,
-            traits::{HasTypeName, IntoDbStruct},
-        },
+        models::{ItemParsedWithContext, traits::IntoDbStruct},
     },
     data_sources::nhl::models::{DefaultNhlContext, NhlTeamJson},
 };
 
+#[derive(Debug)]
 pub struct NhlApi {
     nhl_stats_api: NhlStatsApi,
     nhl_web_api: NhlWebApi,
+}
+#[async_trait]
+impl CacheableApi for NhlApi {
+    fn client(&self) -> &reqwest::Client {
+        &self.nhl_stats_api.client
+    }
 }
 impl NhlApi {
     pub fn new() -> Self {

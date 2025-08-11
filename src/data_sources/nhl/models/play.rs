@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use chrono;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -128,6 +129,7 @@ impl DbStruct for NhlPlay {
         }
     }
 }
+#[async_trait]
 impl DbEntity for NhlPlay {
     type Pk = NhlPrimaryKey;
 

@@ -1,12 +1,20 @@
 use std::fmt::Debug;
 
+use async_trait::async_trait;
+
 use crate::{
     LPError,
-    common::db::{DbContext, DbEntity, PrimaryKey, StaticPgQuery},
-    common::models::{ApiCache, ApiCacheKey},
-    data_sources::nhl::models::{
-        NhlFranchise, NhlGame, NhlPlay, NhlPlayer, NhlPlayoffSeries, NhlRosterSpot, NhlSeason,
-        NhlTeam,
+    common::{
+        api::cacheable_api::SimpleApi,
+        db::{DbContext, DbEntity, PrimaryKey, StaticPgQuery},
+        models::{ApiCache, ApiCacheKey, ItemParsedWithContext},
+    },
+    data_sources::nhl::{
+        api::{NhlApi, NhlStatsApi, NhlWebApi},
+        models::{
+            NhlFranchise, NhlGame, NhlGameJson, NhlPlay, NhlPlayer, NhlPlayerJson,
+            NhlPlayoffSeries, NhlRosterSpot, NhlSeason, NhlTeam, NhlTeamJson,
+        },
     },
 };
 
@@ -22,7 +30,10 @@ pub enum NhlPrimaryKey {
     Play(NhlPlayKey),
     PlayoffSeries(NhlPlayoffSeriesKey),
 }
+#[async_trait]
 impl PrimaryKey for NhlPrimaryKey {
+    type Api = NhlApi;
+
     fn create_select_query(&self) -> StaticPgQuery {
         match self {
             NhlPrimaryKey::ApiCache(pk) => pk.create_select_query(),
@@ -34,6 +45,24 @@ impl PrimaryKey for NhlPrimaryKey {
             NhlPrimaryKey::RosterSpot(pk) => pk.create_select_query(),
             NhlPrimaryKey::Play(pk) => pk.create_select_query(),
             NhlPrimaryKey::PlayoffSeries(pk) => pk.create_select_query(),
+        }
+    }
+
+    async fn upsert_from_api(&self, db_context: &DbContext, api: &NhlApi) -> Result<(), LPError> {
+        match self {
+            NhlPrimaryKey::ApiCache(pk) => {
+                pk.upsert_from_api(
+                    db_context,
+                    &SimpleApi {
+                        client: reqwest::Client::new(),
+                    },
+                )
+                .await
+            }
+            NhlPrimaryKey::Team(pk) => pk.upsert_from_api(db_context, api).await,
+            NhlPrimaryKey::Player(pk) => pk.upsert_from_api(db_context, api).await,
+            NhlPrimaryKey::Game(pk) => pk.upsert_from_api(db_context, api).await,
+            _ => Ok(()),
         }
     }
 }
@@ -133,6 +162,22 @@ impl NhlTeamKey {
     fn create_select_query(&self) -> StaticPgQuery {
         sqlx::query("SELECT * FROM nhl_team WHERE id=$1").bind(self.id)
     }
+    async fn upsert_from_api(
+        &self,
+        db_context: &DbContext,
+        nhl_api: &NhlApi,
+    ) -> Result<(), LPError> {
+        let team_id = self.id;
+
+        let team_json_with_context: ItemParsedWithContext<NhlTeamJson> =
+            nhl_api.get_nhl_team(db_context, team_id).await?;
+        let team = team_json_with_context.to_db_struct();
+
+        tracing::debug!("Upserting team with id {team_id} into lp database.");
+        team.upsert(db_context).await?;
+        tracing::debug!("Upserted team with id {team_id} into lp database.");
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -143,6 +188,25 @@ impl NhlPlayerKey {
     fn create_select_query(&self) -> StaticPgQuery {
         sqlx::query(r#"SELECT * FROM nhl_player WHERE id=$1"#).bind(self.id)
     }
+
+    async fn upsert_from_api(
+        &self,
+        db_context: &DbContext,
+        nhl_api: &NhlApi,
+    ) -> Result<(), LPError> {
+        let player_id = self.id;
+
+        let player_json_with_context: ItemParsedWithContext<NhlPlayerJson> = nhl_api
+            .fetch_by_id::<NhlPlayerJson>(db_context, player_id)
+            .await?;
+        let player: NhlPlayer = player_json_with_context.to_db_struct();
+
+        tracing::debug!("Upserting player with id {player_id} into lp database.");
+        player.upsert(db_context).await?;
+        tracing::debug!("Upserted player with id {player_id} into lp database.");
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -152,6 +216,25 @@ pub struct NhlGameKey {
 impl NhlGameKey {
     fn create_select_query(&self) -> StaticPgQuery {
         sqlx::query("SELECT * FROM nhl_game WHERE id=$1").bind(self.id)
+    }
+
+    async fn upsert_from_api(
+        &self,
+        db_context: &DbContext,
+        nhl_api: &NhlApi,
+    ) -> Result<(), LPError> {
+        let game_id = self.id;
+
+        let game_json_with_context: ItemParsedWithContext<NhlGameJson> = nhl_api
+            .fetch_by_id::<NhlGameJson>(db_context, game_id)
+            .await?;
+        let game: NhlGame = game_json_with_context.to_db_struct();
+
+        tracing::debug!("Upserting game with id {game_id} into lp database.");
+        game.upsert(db_context).await?;
+        tracing::debug!("Upserted game with id {game_id} into lp database.");
+
+        Ok(())
     }
 }
 

@@ -1,10 +1,11 @@
 use std::fmt::Debug;
 
 use async_trait::async_trait;
-use sqlx::FromRow;
+use sqlx::{FromRow, postgres::PgQueryResult};
 
 use crate::{
     common::{
+        api::CacheableApi,
         db::{DbContext, DbPool, SqlxJobResult, StaticPgQuery},
         errors::LPError,
     },
@@ -25,7 +26,7 @@ pub trait DbEntity:
         db_context: &DbContext,
         id: Self::Pk,
     ) -> Result<Option<Self::Pk>, LPError> {
-        match Self::fetch_from_db(db_context, &id).await {
+        match Self::fetch_from_db_by_key(db_context, &id).await {
             Ok(Some(_)) => Ok(None),
             Ok(None) => Ok(Some(id)),
             Err(e) => return Err(e),
@@ -33,7 +34,10 @@ pub trait DbEntity:
     }
 
     #[tracing::instrument(skip(db_context))]
-    async fn fetch_from_db(db_context: &DbContext, id: &Self::Pk) -> Result<Option<Self>, LPError> {
+    async fn fetch_from_db_by_key(
+        db_context: &DbContext,
+        id: &Self::Pk,
+    ) -> Result<Option<Self>, LPError> {
         match sqlx_operation_with_retries!(
             id.create_select_query()
                 .fetch_optional(&db_context.pool)
@@ -46,7 +50,7 @@ pub trait DbEntity:
                 Self::from_row(&row).map(Some).map_err(LPError::from)
             }
             Ok(None) => {
-                tracing::warn!("Record not found in lp database for key {:?}", id);
+                tracing::debug!("Record not found in lp database for key {:?}", id);
                 Ok(None)
             }
             Err(e) => {
@@ -68,18 +72,26 @@ pub trait DbEntity:
         Ok(RelationshipIntegrity::AllValid)
     }
 
-    #[tracing::instrument(skip(self, db_context))]
-    async fn upsert(
+    async fn upsert_and_fix_relationships(
         &self,
         db_context: &DbContext,
-    ) -> Result<sqlx::postgres::PgQueryResult, LPError> {
-        let pool: DbPool = db_context.pool.clone();
+        api: &<Self::Pk as PrimaryKey>::Api,
+    ) -> Result<PgQueryResult, LPError> {
+        match self.verify_relationships(db_context).await? {
+            RelationshipIntegrity::AllValid => (),
+            RelationshipIntegrity::Missing(keys) => {
+                for key in keys {
+                    key.upsert_from_api(db_context, api).await?
+                }
+            }
+        }
 
-        // match self.verify_relationships(db_context).await {
-        //     Ok(RelationshipIntegrity::AllValid) => (),
-        //     Ok(RelationshipIntegrity::Missing(missing)) => {}
-        //     Err(e) => return Err(e),
-        // };
+        self.upsert(db_context).await
+    }
+
+    #[tracing::instrument(skip(self, db_context))]
+    async fn upsert(&self, db_context: &DbContext) -> Result<PgQueryResult, LPError> {
+        let pool: DbPool = db_context.pool.clone();
 
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
 
@@ -129,6 +141,12 @@ pub enum RelationshipIntegrity<Pk: PrimaryKey> {
     Missing(Vec<Pk>),
 }
 
+#[async_trait]
 pub trait PrimaryKey: Debug + Send + Sync {
+    type Api: CacheableApi + Send + Sync;
+
     fn create_select_query(&self) -> StaticPgQuery;
+
+    async fn upsert_from_api(&self, db_context: &DbContext, api: &Self::Api)
+    -> Result<(), LPError>;
 }

@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use futures::{future::join_all, stream, stream::StreamExt};
+use sqlx::postgres::PgQueryResult;
 
 use super::{
     api::{NhlApi, NhlStatsApi, NhlWebApi},
@@ -128,7 +129,9 @@ pub async fn get_nhl_game(
     id: i32,
 ) -> Result<NhlGame, LPError> {
     tracing::debug!("Checking lp database for NhlGame with id `{id}`");
-    match NhlGame::fetch_from_db(db_context, &NhlPrimaryKey::Game(NhlGameKey { id: id })).await {
+    match NhlGame::fetch_from_db_by_key(db_context, &NhlPrimaryKey::Game(NhlGameKey { id: id }))
+        .await
+    {
         Ok(Some(game)) => {
             return Ok(game);
         }
@@ -149,14 +152,16 @@ pub async fn get_nhl_all_games_in_season_by_season_id(
     nhl_api: &NhlApi,
     id: i32,
 ) -> Result<Vec<NhlGame>, LPError> {
-    let season: NhlSeason =
-        NhlSeason::fetch_from_db(db_context, &NhlPrimaryKey::Season(NhlSeasonKey { id: id }))
-            .await?
-            .ok_or_else(|| {
-                LPError::DatabaseCustom(format!(
-                    "Season {id} not found in database. Please fetch seasons first."
-                ))
-            })?;
+    let season: NhlSeason = NhlSeason::fetch_from_db_by_key(
+        db_context,
+        &NhlPrimaryKey::Season(NhlSeasonKey { id: id }),
+    )
+    .await?
+    .ok_or_else(|| {
+        LPError::DatabaseCustom(format!(
+            "Season {id} not found in database. Please fetch seasons first."
+        ))
+    })?;
 
     get_nhl_all_games_in_season(db_context, nhl_api, &season).await
 }
@@ -209,7 +214,7 @@ pub async fn get_nhl_all_games_in_season(
         "Upserting {number_of_games} games from {season_id} NHL season into lp database."
     );
     let upsert_results: Vec<Result<sqlx::postgres::PgQueryResult, LPError>> =
-        upsert_all(games.clone(), db_context).await;
+        upsert_all(games.clone(), db_context, nhl_api).await;
     let ok_upsert_results = filter_results(upsert_results);
     let ok_upsert_count = ok_upsert_results.len();
     tracing::info!(
@@ -255,7 +260,7 @@ pub async fn get_nhl_roster_spots_in_game(
         game.id
     );
     let upsert_results: Vec<Result<sqlx::postgres::PgQueryResult, LPError>> =
-        upsert_all(roster_spots.clone(), db_context).await;
+        upsert_all(roster_spots.clone(), db_context, nhl_api).await;
     let ok_upsert_results = filter_results(upsert_results);
     let ok_upsert_count = ok_upsert_results.len();
     tracing::info!(
@@ -288,6 +293,12 @@ where
 pub async fn upsert_all<T: DbEntity + DbStruct + HasTypeName>(
     items: Vec<T>,
     db_context: &DbContext,
-) -> Vec<Result<sqlx::postgres::PgQueryResult, LPError>> {
-    join_all(items.iter().map(|game| game.upsert(db_context))).await
+    api: &<<T as DbEntity>::Pk as PrimaryKey>::Api,
+) -> Vec<Result<PgQueryResult, LPError>> {
+    join_all(
+        items
+            .iter()
+            .map(|game| game.upsert_and_fix_relationships(db_context, api)),
+    )
+    .await
 }

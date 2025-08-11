@@ -38,23 +38,18 @@ pub struct DraftDetailsJson {
 pub struct NhlPlayerJson {
     #[serde(rename = "playerId")]
     pub id: i32,
-    #[serde(deserialize_with = "deserialize_default_to_string")]
-    pub first_name: String,
-    #[serde(deserialize_with = "deserialize_default_to_string")]
-    pub last_name: String,
+    pub first_name: LocalizedNameJson,
+    pub last_name: LocalizedNameJson,
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_to_bool")]
     pub is_active: bool,
     pub current_team_id: Option<i32>,
     pub current_team_abbrev: Option<String>,
-    #[serde(deserialize_with = "deserialize_default_to_option_string")]
-    pub full_team_name: Option<String>,
-    #[serde(deserialize_with = "deserialize_default_to_option_string")]
-    pub team_common_name: Option<String>,
-    #[serde(deserialize_with = "deserialize_default_to_option_string")]
-    pub team_place_name_with_preposition: Option<String>,
-    pub team_logo: String,
-    pub sweater_number: i32,
+    pub full_team_name: Option<LocalizedNameJson>,
+    pub team_common_name: Option<LocalizedNameJson>,
+    pub team_place_name_with_preposition: Option<LocalizedNameJson>,
+    pub team_logo: Option<String>,
+    pub sweater_number: Option<i32>,
     pub position: String,
     pub headshot: String,
     pub hero_image: String,
@@ -63,10 +58,8 @@ pub struct NhlPlayerJson {
     pub weight_in_pounds: i32,
     pub weight_in_kilograms: i32,
     pub birth_date: chrono::NaiveDate,
-    #[serde(deserialize_with = "deserialize_default_to_string")]
-    pub birth_city: String,
-    #[serde(deserialize_with = "deserialize_default_to_string")]
-    pub birth_state_province: String,
+    pub birth_city: LocalizedNameJson,
+    pub birth_state_province: Option<LocalizedNameJson>,
     pub birth_country: String,
     pub shoots_catches: String,
     pub draft_details: Option<DraftDetailsJson>,
@@ -129,10 +122,16 @@ impl IntoDbStruct for NhlPlayerJson {
             ),
             None => (None, None, None, None, None),
         };
+        let full_team_name = full_team_name.map(|name| name.default);
+        let team_common_name = team_common_name.map(|name| name.default);
+        let team_place_name_with_preposition =
+            team_place_name_with_preposition.map(|name| name.default);
+        let birth_city = birth_city.default;
+        let birth_state_province = birth_state_province.map(|name| name.default);
         NhlPlayer {
             id,
-            first_name,
-            last_name,
+            first_name: first_name.default,
+            last_name: last_name.default,
             is_active,
             current_team_id,
             current_team_abbrev,
@@ -179,8 +178,8 @@ pub struct NhlPlayer {
     pub full_team_name: Option<String>,
     pub team_common_name: Option<String>,
     pub team_place_name_with_preposition: Option<String>,
-    pub team_logo: String,
-    pub sweater_number: i32,
+    pub team_logo: Option<String>,
+    pub sweater_number: Option<i32>,
     pub position: String,
     pub headshot: String,
     pub hero_image: String,
@@ -190,7 +189,7 @@ pub struct NhlPlayer {
     pub weight_in_kilograms: i32,
     pub birth_date: chrono::NaiveDate,
     pub birth_city: String,
-    pub birth_state_province: String,
+    pub birth_state_province: Option<String>,
     pub birth_country: String,
     pub shoots_catches: String,
     pub draft_year: Option<i32>,

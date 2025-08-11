@@ -73,7 +73,7 @@ pub struct PeriodDescriptorJson {
     pub max_regulation_periods: i32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalizedNameJson {
     pub default: String,

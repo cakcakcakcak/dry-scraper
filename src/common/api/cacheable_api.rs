@@ -86,3 +86,14 @@ pub trait CacheableApi: Debug {
         Ok(cache_record.raw_data)
     }
 }
+
+#[derive(Debug)]
+pub struct SimpleApi {
+    pub client: reqwest::Client,
+}
+#[async_trait]
+impl CacheableApi for SimpleApi {
+    fn client(&self) -> &reqwest::Client {
+        &self.client
+    }
+}
