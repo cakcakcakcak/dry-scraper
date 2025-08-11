@@ -1,10 +1,12 @@
-pub trait ApiContext {
+use std::fmt::Debug;
+
+pub trait HasBaseUrl {
     fn base_url(&self) -> &str;
 }
 
 pub trait HasEndpoint {
-    type Api: ApiContext;
-    type Params: Default + std::fmt::Debug;
+    type Api: HasBaseUrl;
+    type Params: Default + Debug;
 
     fn endpoint(api: &Self::Api, params: Self::Params) -> String;
 }

@@ -1,23 +1,26 @@
+use std::fmt::Debug;
+
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
 
-use crate::common::models::ItemParsedWithContext;
+use crate::common::db::DbEntity;
 
-pub trait IntoDbStruct: std::fmt::Debug + Serialize + Sized + for<'a> Deserialize<'a> {
+// use crate::common::models::ItemParsedWithContext;
+
+pub trait IntoDbStruct: HasTypeName + Debug + Serialize + Sized + for<'a> Deserialize<'a> {
     type DbStruct: DbStruct;
     type Context;
 
     fn to_db_struct(self, context: Self::Context) -> Self::DbStruct;
 
-    fn to_item_parsed_with_context(self, context: Self::Context) -> ItemParsedWithContext<Self> {
-        ItemParsedWithContext {
-            item: self,
-            context: context,
-        }
-    }
+    // fn to_item_parsed_with_context(self, context: Self::Context) -> ItemParsedWithContext<Self> {
+    //     ItemParsedWithContext {
+    //         item: self,
+    //         context: context,
+    //     }
+    // }
 }
 
-pub trait DbStruct: Clone + std::fmt::Debug + for<'a> FromRow<'a, sqlx::postgres::PgRow> {
+pub trait DbStruct: Debug + DbEntity + HasTypeName {
     type IntoDbStruct: IntoDbStruct;
 
     fn create_context_struct(&self) -> <<Self as DbStruct>::IntoDbStruct as IntoDbStruct>::Context;

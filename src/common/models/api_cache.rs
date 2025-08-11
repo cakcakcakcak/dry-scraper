@@ -5,7 +5,7 @@ use sqlx::FromRow;
 use crate::{
     bind,
     common::{
-        db::{DbContext, Persistable, PrimaryKey, StaticPgQuery},
+        db::{DbContext, DbEntity, PrimaryKey, StaticPgQuery},
         errors::LPError,
     },
     sqlx_operation_with_retries,
@@ -18,7 +18,7 @@ pub struct ApiCache {
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
 #[async_trait]
-impl Persistable for ApiCache {
+impl DbEntity for ApiCache {
     type Pk = ApiCacheKey;
 
     fn id(&self) -> Self::Pk {

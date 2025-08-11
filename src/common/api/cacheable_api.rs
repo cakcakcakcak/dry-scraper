@@ -1,10 +1,12 @@
+use std::fmt::Debug;
+
 use async_trait::async_trait;
 use sqlx::Row;
 use tracing::instrument;
 
 use crate::{
     common::{
-        db::{DbContext, Persistable},
+        db::{DbContext, DbEntity},
         errors::LPError,
         models::ApiCache,
     },
@@ -12,16 +14,15 @@ use crate::{
 };
 
 #[async_trait]
-pub trait CacheableApi: std::fmt::Debug + Sized + Clone + Send + Sync + 'static {
+pub trait CacheableApi: Debug {
     fn client(&self) -> &reqwest::Client;
 
     #[instrument(skip(db_context))]
-    async fn get_or_cache_endpoint(
+    async fn fetch_endpoint_cached(
         &self,
         db_context: &DbContext,
         endpoint: &str,
     ) -> Result<String, LPError> {
-        // query our api_cache for the endpoint we seek
         tracing::debug!("Querying api_cache for the endpoint we seek...");
         match sqlx_operation_with_retries!(
             sqlx::query("SELECT raw_data from api_cache WHERE endpoint = $1")

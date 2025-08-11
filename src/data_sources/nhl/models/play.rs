@@ -12,13 +12,14 @@ use super::{
 use crate::{
     bind,
     common::{
-        db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
+        db::{DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
         errors::LPError,
         models::{
             ApiCache, ApiCacheKey,
             traits::{DbStruct, IntoDbStruct},
         },
     },
+    data_sources::models::NhlPlayKey,
     impl_has_type_name, make_deserialize_to_type, sqlx_operation_with_retries, verify_fk,
 };
 
@@ -125,6 +126,20 @@ impl DbStruct for NhlPlay {
             endpoint: self.endpoint.clone(),
             raw_json: self.raw_json.clone(),
         }
+    }
+}
+impl DbEntity for NhlPlay {
+    type Pk = NhlPrimaryKey;
+
+    fn id(&self) -> Self::Pk {
+        Self::Pk::Play(NhlPlayKey {
+            game_id: self.game_id,
+            sort_order: self.sort_order,
+        })
+    }
+
+    fn create_upsert_query(&self) -> StaticPgQuery {
+        sqlx::query("SELECT * from nhl_play")
     }
 }
 

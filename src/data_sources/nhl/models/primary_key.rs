@@ -1,6 +1,8 @@
+use std::fmt::Debug;
+
 use crate::{
     LPError,
-    common::db::{DbContext, Persistable, PrimaryKey, StaticPgQuery},
+    common::db::{DbContext, DbEntity, PrimaryKey, StaticPgQuery},
     common::models::{ApiCache, ApiCacheKey},
     data_sources::nhl::models::{
         NhlFranchise, NhlGame, NhlPlay, NhlPlayer, NhlPlayoffSeries, NhlRosterSpot, NhlSeason,

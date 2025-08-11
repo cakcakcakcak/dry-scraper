@@ -11,7 +11,7 @@ use super::{
 use crate::{
     bind,
     common::{
-        db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
+        db::{DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
         errors::LPError,
         models::{
             ApiCache, ApiCacheKey,
@@ -216,7 +216,7 @@ impl DbStruct for NhlPlayer {
     }
 }
 #[async_trait]
-impl Persistable for NhlPlayer {
+impl DbEntity for NhlPlayer {
     type Pk = NhlPrimaryKey;
 
     fn id(&self) -> Self::Pk {

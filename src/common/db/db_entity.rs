@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use async_trait::async_trait;
 use sqlx::FromRow;
 
@@ -10,8 +12,8 @@ use crate::{
 };
 
 #[async_trait]
-pub trait Persistable:
-    std::fmt::Debug + Sized + Clone + Send + Sync + for<'a> FromRow<'a, sqlx::postgres::PgRow> + 'static
+pub trait DbEntity:
+    Debug + Sized + Clone + Send + Sync + for<'a> FromRow<'a, sqlx::postgres::PgRow> + 'static
 {
     type Pk: PrimaryKey;
 
@@ -68,22 +70,16 @@ pub trait Persistable:
 
     #[tracing::instrument(skip(self, db_context))]
     async fn upsert(
-        //<F, Fut>(
         &self,
         db_context: &DbContext,
-        // correct_missing: F,
-    ) -> Result<sqlx::postgres::PgQueryResult, LPError>
-// where
-    //     F: Fn(&Box<dyn PrimaryKey>) -> Fut + Send + Sync,
-    //     Fut: Future<Output = Result<(), LPError>> + Send,
-    {
+    ) -> Result<sqlx::postgres::PgQueryResult, LPError> {
         let pool: DbPool = db_context.pool.clone();
 
-        match self.verify_relationships(db_context).await {
-            Ok(RelationshipIntegrity::AllValid) => (),
-            Ok(RelationshipIntegrity::Missing(missing)) => {}
-            Err(e) => return Err(e),
-        };
+        // match self.verify_relationships(db_context).await {
+        //     Ok(RelationshipIntegrity::AllValid) => (),
+        //     Ok(RelationshipIntegrity::Missing(missing)) => {}
+        //     Err(e) => return Err(e),
+        // };
 
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
 
@@ -133,6 +129,6 @@ pub enum RelationshipIntegrity<Pk: PrimaryKey> {
     Missing(Vec<Pk>),
 }
 
-pub trait PrimaryKey: std::fmt::Debug + Send + Sync {
+pub trait PrimaryKey: Debug + Send + Sync {
     fn create_select_query(&self) -> StaticPgQuery;
 }

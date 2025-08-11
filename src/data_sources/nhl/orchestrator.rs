@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use futures::{future::join_all, stream, stream::StreamExt};
 
 use super::{
@@ -8,7 +10,7 @@ use crate::{
     bind,
     common::{
         api::HasEndpoint,
-        db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
+        db::{DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
         errors::LPError,
         models::{
             ApiCache, ApiCacheKey, ItemParsedWithContext,
@@ -33,9 +35,8 @@ where
     T: serde::de::DeserializeOwned
         + HasEndpoint<Api = NhlStatsApi>
         + IntoDbStruct<Context = DefaultNhlContext>
-        + std::fmt::Debug
-        + HasTypeName,
-    T::DbStruct: std::fmt::Debug + DbStruct + Persistable + HasTypeName + Clone + Send + Sync,
+        + Debug,
+    T::DbStruct: Debug + DbStruct + DbEntity + Clone + Send + Sync,
 {
     let data_array: Vec<ItemParsedWithContext<T>> =
         nhl_api.fetch_nhl_api_data_array::<T>(db_context).await?;
@@ -284,25 +285,9 @@ where
 }
 
 #[tracing::instrument(skip(items, db_context))]
-pub async fn upsert_all<T: Persistable + DbStruct + HasTypeName>(
+pub async fn upsert_all<T: DbEntity + DbStruct + HasTypeName>(
     items: Vec<T>,
     db_context: &DbContext,
 ) -> Vec<Result<sqlx::postgres::PgQueryResult, LPError>> {
     join_all(items.iter().map(|game| game.upsert(db_context))).await
-}
-
-pub async fn try_fetch_by_primary_key(
-    nhl_api: &NhlApi,
-    db_context: &DbContext,
-    pk: NhlPrimaryKey,
-) -> Result<(), LPError> {
-    // if let Some(player_key) = pk.as_any().downcast_ref::<NhlPlayerKey>() {
-    //     let player_json = nhl_api.fetch_by_id::<NhlPlayerJson>(db_context, player_key.id).await?;
-    //     player_json.to_db_struct().upsert(db_context, ||);
-    //     Ok(())
-    // } else {
-    //     // handle other key types or return an error
-    //     Err(LPError::DatabaseCustom("Unknown key type".to_string()))
-    // }
-    Ok(())
 }

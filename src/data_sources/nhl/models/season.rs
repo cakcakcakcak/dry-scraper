@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -11,7 +13,7 @@ use super::{
 use crate::{
     bind,
     common::{
-        db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
+        db::{DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
         errors::LPError,
         models::{
             ApiCache, ApiCacheKey,
@@ -153,7 +155,7 @@ pub struct NhlSeason {
     pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl std::fmt::Debug for NhlSeason {
+impl Debug for NhlSeason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Only print the base_url, not the whole client struct
         f.debug_struct("NhlSeason")
@@ -177,7 +179,7 @@ impl DbStruct for NhlSeason {
 }
 
 #[async_trait]
-impl Persistable for NhlSeason {
+impl DbEntity for NhlSeason {
     type Pk = NhlPrimaryKey;
 
     fn id(&self) -> Self::Pk {

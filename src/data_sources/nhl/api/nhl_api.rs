@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use super::{NhlStatsApi, NhlWebApi};
 use crate::{
     common::{
@@ -29,11 +31,7 @@ impl NhlApi {
         db_context: &DbContext,
     ) -> Result<Vec<ItemParsedWithContext<T>>, LPError>
     where
-        T: serde::de::DeserializeOwned
-            + HasEndpoint<Api = NhlStatsApi>
-            + HasTypeName
-            + std::fmt::Debug
-            + IntoDbStruct<Context = DefaultNhlContext>,
+        T: HasEndpoint<Api = NhlStatsApi> + Debug + IntoDbStruct<Context = DefaultNhlContext>,
     {
         self.nhl_stats_api
             .fetch_nhl_api_data_array::<T>(db_context)
@@ -56,8 +54,7 @@ impl NhlApi {
     where
         T: serde::de::DeserializeOwned
             + HasEndpoint<Api = NhlWebApi>
-            + IntoDbStruct<Context = DefaultNhlContext>
-            + HasTypeName,
+            + IntoDbStruct<Context = DefaultNhlContext>,
         T::Params: FromId,
     {
         self.nhl_web_api.fetch_by_id::<T>(db_context, id).await

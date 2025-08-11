@@ -10,7 +10,7 @@ use super::{
 use crate::{
     bind,
     common::{
-        db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
+        db::{DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
         errors::LPError,
         models::{
             ApiCache, ApiCacheKey,
@@ -185,7 +185,7 @@ impl DbStruct for NhlPlayoffSeries {
     }
 }
 #[async_trait]
-impl Persistable for NhlPlayoffSeries {
+impl DbEntity for NhlPlayoffSeries {
     type Pk = NhlPrimaryKey;
 
     fn id(&self) -> Self::Pk {

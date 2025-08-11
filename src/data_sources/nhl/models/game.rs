@@ -4,10 +4,15 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
+use super::{
+    DefaultNhlContext, GameType, LocalizedNameJson, NhlGameKey, NhlPlayJson, NhlPrimaryKey,
+    NhlRosterSpotJson, NhlSeason, NhlSeasonKey, NhlTeam, NhlTeamKey, PeriodDescriptorJson,
+    PeriodTypeJson,
+};
 use crate::{
     bind,
     common::{
-        db::{DbContext, Persistable, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
+        db::{DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
         errors::LPError,
         models::{
             ApiCache, ApiCacheKey,
@@ -15,11 +20,6 @@ use crate::{
         },
     },
     impl_has_type_name, sqlx_operation_with_retries, verify_fk,
-};
-use super::{
-    DefaultNhlContext, GameType, LocalizedNameJson, NhlGameKey, NhlPlayJson, NhlPrimaryKey,
-    NhlRosterSpotJson, NhlSeason, NhlSeasonKey, NhlTeam, NhlTeamKey, PeriodDescriptorJson,
-    PeriodTypeJson,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -223,7 +223,7 @@ impl DbStruct for NhlGame {
     }
 }
 #[async_trait]
-impl Persistable for NhlGame {
+impl DbEntity for NhlGame {
     type Pk = NhlPrimaryKey;
 
     fn id(&self) -> Self::Pk {

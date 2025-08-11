@@ -8,9 +8,9 @@ pub type SqlxJobSender = tokio::sync::mpsc::Sender<SqlxJob>;
 pub type StaticPgQuery = sqlx::query::Query<'static, sqlx::Postgres, sqlx::postgres::PgArguments>;
 
 pub mod init;
-pub mod persistable;
+pub mod db_entity;
 pub mod worker;
 
 pub use init::{DbContext, init_db_context};
-pub use persistable::{Persistable, PrimaryKey, RelationshipIntegrity};
+pub use db_entity::{DbEntity, PrimaryKey, RelationshipIntegrity};
 pub use worker::start_sqlx_worker;

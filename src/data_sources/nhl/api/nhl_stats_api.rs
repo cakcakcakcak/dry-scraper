@@ -1,6 +1,8 @@
+use std::fmt::Debug;
+
 use crate::common::{
     api::{
-        api_common::{ApiContext, HasEndpoint},
+        api_common::{HasBaseUrl, HasEndpoint},
         cacheable_api::CacheableApi,
     },
     db::DbContext,
@@ -21,7 +23,7 @@ pub struct NhlStatsApi {
     pub client: reqwest::Client,
     pub base_url: String,
 }
-impl std::fmt::Debug for NhlStatsApi {
+impl Debug for NhlStatsApi {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NhlStatsApi")
             .field("base_url", &self.base_url)
@@ -33,7 +35,7 @@ impl CacheableApi for NhlStatsApi {
         &self.client
     }
 }
-impl ApiContext for NhlStatsApi {
+impl HasBaseUrl for NhlStatsApi {
     fn base_url(&self) -> &str {
         &self.base_url
     }
@@ -86,12 +88,11 @@ impl NhlStatsApi {
     where
         T: serde::de::DeserializeOwned
             + HasEndpoint<Api = NhlStatsApi>
-            + HasTypeName
-            + std::fmt::Debug
+            + Debug
             + IntoDbStruct<Context = DefaultNhlContext>,
     {
         let endpoint: String = T::endpoint(self, T::Params::default());
-        let raw_data: String = self.get_or_cache_endpoint(&db_context, &endpoint).await?;
+        let raw_data: String = self.fetch_endpoint_cached(&db_context, &endpoint).await?;
 
         let data_array_response: NhlApiDataArrayResponse = match serde_json::from_str(&raw_data) {
             Ok(value) => value,
@@ -123,7 +124,7 @@ impl NhlStatsApi {
                 team_id: Some(team_id),
             },
         );
-        let raw_data: String = self.get_or_cache_endpoint(&db_context, &endpoint).await?;
+        let raw_data: String = self.fetch_endpoint_cached(&db_context, &endpoint).await?;
 
         let data_array_response: NhlApiDataArrayResponse = match serde_json::from_str(&raw_data) {
             Ok(value) => value,
