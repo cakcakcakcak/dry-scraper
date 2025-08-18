@@ -22,6 +22,7 @@ pub trait DbEntity:
 
     fn create_upsert_query(&self) -> StaticPgQuery;
 
+    #[tracing::instrument(skip(db_context))]
     async fn verify_by_key(
         db_context: &DbContext,
         id: Self::Pk,

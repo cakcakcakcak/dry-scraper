@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS nhl_play (
     type_code INTEGER NOT NULL,
     type_desc_key TEXT NOT NULL,
     sort_order INTEGER NOT NULL,
-    details JSONB NOT NULL,
+    details JSONB,
     raw_json JSONB NOT NULL,
     endpoint TEXT NOT NULL REFERENCES api_cache (endpoint),
     last_updated TIMESTAMP DEFAULT now() NOT NULL,

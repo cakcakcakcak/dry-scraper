@@ -31,10 +31,15 @@ async fn main() -> Result<(), LPError> {
     let franchises: Vec<NhlFranchise> = get_nhl_franchises(&db_context, &nhl_api).await?;
     let teams: Vec<NhlTeam> = get_nhl_teams(&db_context, &nhl_api).await?;
 
-    let season: &NhlSeason = &seasons[0];
+    let season: &NhlSeason = &seasons[106];
+    let game = get_nhl_game(&db_context, &nhl_api, 2024020001).await?;
+    get_nhl_plays_in_game(&db_context, &nhl_api, &game).await?;
+    get_nhl_roster_spots_in_game(&db_context, &nhl_api, &game).await?;
+
     let games = get_nhl_all_games_in_season(&db_context, &nhl_api, season).await?;
     for game in games {
-        get_nhl_roster_spots_in_game(&db_context, &nhl_api, game).await?;
+        get_nhl_plays_in_game(&db_context, &nhl_api, &game).await?;
+        get_nhl_roster_spots_in_game(&db_context, &nhl_api, &game).await?;
     }
 
     Ok(())

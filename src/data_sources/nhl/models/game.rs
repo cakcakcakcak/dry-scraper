@@ -214,13 +214,6 @@ pub struct NhlGame {
 }
 impl DbStruct for NhlGame {
     type IntoDbStruct = NhlGameJson;
-
-    fn create_context_struct(&self) -> <<Self as DbStruct>::IntoDbStruct as IntoDbStruct>::Context {
-        DefaultNhlContext {
-            endpoint: self.endpoint.clone(),
-            raw_json: self.raw_json.clone(),
-        }
-    }
 }
 #[async_trait]
 impl DbEntity for NhlGame {

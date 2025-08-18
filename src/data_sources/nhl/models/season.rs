@@ -169,13 +169,6 @@ impl Debug for NhlSeason {
 }
 impl DbStruct for NhlSeason {
     type IntoDbStruct = NhlSeasonJson;
-
-    fn create_context_struct(&self) -> <<Self as DbStruct>::IntoDbStruct as IntoDbStruct>::Context {
-        DefaultNhlContext {
-            endpoint: self.endpoint.clone(),
-            raw_json: self.raw_json.clone(),
-        }
-    }
 }
 
 #[async_trait]

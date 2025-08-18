@@ -5,23 +5,16 @@ use serde_json;
 use sqlx::FromRow;
 use sqlx::postgres::types::PgInterval;
 
-use super::{
-    DefaultNhlContext, DefendingSide, GameNhlContext, GameType, LocalizedNameJson, NhlGameKey,
-    NhlPrimaryKey, NhlRosterSpotJson, NhlSeason, NhlSeasonKey, NhlTeam, NhlTeamKey,
-    PeriodDescriptorJson, PeriodTypeJson,
-};
+use super::{DefendingSide, GameNhlContext, NhlPrimaryKey, PeriodDescriptorJson, PeriodTypeJson};
 use crate::{
     bind,
     common::{
-        db::{DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
+        db::{DbContext, DbEntity, RelationshipIntegrity, StaticPgQuery},
         errors::LPError,
-        models::{
-            ApiCache, ApiCacheKey,
-            traits::{DbStruct, IntoDbStruct},
-        },
+        models::traits::{DbStruct, IntoDbStruct},
     },
     data_sources::models::NhlPlayKey,
-    impl_has_type_name, make_deserialize_to_type, sqlx_operation_with_retries, verify_fk,
+    impl_has_type_name, make_deserialize_to_type, verify_fk,
 };
 
 use crate::common::serde_helpers::{JsonExt, parse_mmss_to_pginterval};
@@ -120,14 +113,6 @@ impl NhlPlay {
 }
 impl DbStruct for NhlPlay {
     type IntoDbStruct = NhlPlayJson;
-
-    fn create_context_struct(&self) -> <<Self as DbStruct>::IntoDbStruct as IntoDbStruct>::Context {
-        GameNhlContext {
-            game_id: self.game_id,
-            endpoint: self.endpoint.clone(),
-            raw_json: self.raw_json.clone(),
-        }
-    }
 }
 #[async_trait]
 impl DbEntity for NhlPlay {
@@ -140,8 +125,78 @@ impl DbEntity for NhlPlay {
         })
     }
 
+    #[tracing::instrument(skip(self, db_context))]
+    async fn verify_relationships(
+        &self,
+        db_context: &DbContext,
+    ) -> Result<RelationshipIntegrity<Self::Pk>, LPError> {
+        let mut missing: Vec<Self::Pk> = vec![];
+
+        verify_fk!(missing, db_context, Self::Pk::api_cache(&self.endpoint));
+        verify_fk!(missing, db_context, Self::Pk::game(self.game_id));
+
+        match missing.len() {
+            0 => Ok(RelationshipIntegrity::AllValid),
+            _ => Ok(RelationshipIntegrity::Missing(missing)),
+        }
+    }
+
     fn create_upsert_query(&self) -> StaticPgQuery {
-        sqlx::query("SELECT * from nhl_play")
+        bind!(
+            sqlx::query(
+                r#"INSERT INTO nhl_play (
+                                            game_id,
+                                            event_id,
+                                            period_descriptor_number,
+                                            period_descriptor_type,
+                                            period_descriptor_max_regulation_periods,
+                                            time_in_period,
+                                            time_remaining,
+                                            situation_code,
+                                            home_team_defending_side,
+                                            type_code,
+                                            type_desc_key,
+                                            sort_order,
+                                            details,
+                                            raw_json,
+                                            endpoint
+                                        ) VALUES (
+                                            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
+                                            $11,$12,$13,$14,$15)
+                                        ON CONFLICT (game_id, sort_order) DO UPDATE SET
+                                            event_id = EXCLUDED.event_id,
+                                            period_descriptor_number = EXCLUDED.period_descriptor_number,
+                                            period_descriptor_type = EXCLUDED.period_descriptor_type,
+                                            period_descriptor_max_regulation_periods = EXCLUDED.period_descriptor_max_regulation_periods,
+                                            time_in_period = EXCLUDED.time_in_period,
+                                            time_remaining = EXCLUDED.time_remaining,
+                                            situation_code = EXCLUDED.situation_code,
+                                            home_team_defending_side = EXCLUDED.home_team_defending_side,
+                                            type_code = EXCLUDED.type_code,
+                                            type_desc_key = EXCLUDED.type_desc_key,
+                                            sort_order = EXCLUDED.sort_order,
+                                            details = EXCLUDED.details,
+                                            raw_json = EXCLUDED.raw_json,
+                                            endpoint = EXCLUDED.endpoint,
+                                            last_updated = now()
+                                        "#,
+            ),
+            self.game_id,
+            self.event_id,
+            self.period_descriptor_number,
+            self.period_descriptor_type,
+            self.period_descriptor_max_regulation_periods,
+            self.time_in_period,
+            self.time_remaining,
+            self.situation_code,
+            self.home_team_defending_side,
+            self.type_code,
+            self.type_desc_key,
+            self.sort_order,
+            self.details,
+            self.raw_json,
+            self.endpoint,
+        )
     }
 }
 

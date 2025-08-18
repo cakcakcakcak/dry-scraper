@@ -228,7 +228,7 @@ pub async fn get_nhl_all_games_in_season(
 pub async fn get_nhl_roster_spots_in_game(
     db_context: &DbContext,
     nhl_api: &NhlApi,
-    game: NhlGame,
+    game: &NhlGame,
 ) -> Result<Vec<NhlRosterSpot>, LPError> {
     let game_json: NhlGameJson = serde_json::from_value(game.raw_json.clone())?;
 
@@ -236,13 +236,24 @@ pub async fn get_nhl_roster_spots_in_game(
     let roster_spot_jsons_with_context: Vec<ItemParsedWithContext<NhlRosterSpotJson>> =
         roster_spot_jsons
             .into_iter()
-            .map(|json| ItemParsedWithContext {
-                item: json,
-                context: GameNhlContext {
-                    game_id: game.id,
-                    endpoint: game.endpoint.clone(),
-                    raw_json: game.raw_json.clone(),
-                },
+            .map(|json| {
+                let raw_json: serde_json::Value = match serde_json::to_value(&json) {
+                    Ok(val) => val,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to turn NhlRosterSpotJson back to a json value. Using json for entire game instead: {e}"
+                        );
+                        game.raw_json.clone()
+                    }
+                };
+                ItemParsedWithContext {
+                    item: json,
+                    context: GameNhlContext {
+                        game_id: game.id,
+                        endpoint: game.endpoint.clone(),
+                        raw_json,
+                    },
+                }
             })
             .collect();
 
@@ -273,6 +284,65 @@ pub async fn get_nhl_roster_spots_in_game(
     Ok(roster_spots)
 }
 
+#[tracing::instrument(skip(db_context, nhl_api, game))]
+pub async fn get_nhl_plays_in_game(
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
+    game: &NhlGame,
+) -> Result<Vec<NhlPlay>, LPError> {
+    let game_json: NhlGameJson = serde_json::from_value(game.raw_json.clone())?;
+
+    let play_jsons: Vec<NhlPlayJson> = game_json.plays;
+    let play_jsons_with_context: Vec<ItemParsedWithContext<NhlPlayJson>> = 
+        play_jsons
+            .into_iter()
+            .map(|json| {
+                let raw_json: serde_json::Value = match serde_json::to_value(&json) {
+                    Ok(val) => val,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to turn NhlPlayJson back to a json value. Using json for entire game instead: {e}"
+                        );
+                        game.raw_json.clone()
+                    }
+                };
+                ItemParsedWithContext {
+                    item: json,
+                    context: GameNhlContext {
+                        game_id: game.id,
+                        endpoint: game.endpoint.clone(),
+                        raw_json,
+                    },
+                }
+            })
+            .collect();
+
+    let plays: Vec<NhlPlay> = json_struct_vector_into_db_structs(play_jsons_with_context);
+    tracing::info!(
+        "Parsed {} plays from NHL game with id {} into lp database structs.",
+        plays.len(),
+        game.id
+    );
+
+    tracing::info!(
+        "Upserting {} plays from NHL game with id {} into lp database.",
+        plays.len(),
+        game.id
+    );
+    let upsert_results: Vec<Result<sqlx::postgres::PgQueryResult, LPError>> =
+        upsert_all(plays.clone(), db_context, nhl_api).await;
+    let ok_upsert_results = filter_results(upsert_results);
+    let ok_upsert_count = ok_upsert_results.len();
+    tracing::info!(
+        "Upserted {}/{} plays from NHL game with id {} into lp database.",
+        ok_upsert_count,
+        plays.len(),
+        game.id
+    );
+
+    Ok(plays)
+}
+
 pub fn json_struct_vector_into_db_structs<J>(
     json_structs: Vec<ItemParsedWithContext<J>>,
 ) -> Vec<J::DbStruct>
@@ -289,7 +359,7 @@ where
     })
 }
 
-#[tracing::instrument(skip(items, db_context))]
+#[tracing::instrument(skip(items, db_context, api))]
 pub async fn upsert_all<T: DbEntity + DbStruct + HasTypeName>(
     items: Vec<T>,
     db_context: &DbContext,
