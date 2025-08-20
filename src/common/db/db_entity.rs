@@ -1,12 +1,17 @@
 use std::fmt::Debug;
 
 use async_trait::async_trait;
-use sqlx::{FromRow, postgres::PgQueryResult};
+use sqlx::{
+    FromRow, Postgres,
+    postgres::{PgArguments, PgQueryResult},
+    query::QueryAs,
+};
 
 use crate::{
     common::{
+        any_primary_key::AnyPrimaryKey,
         api::CacheableApi,
-        db::{DbContext, DbPool, SqlxJobResult, StaticPgQuery},
+        db::{DbContext, DbPool, SqlxJobResult, StaticPgQuery, StaticPgQueryAs},
         errors::LPError,
     },
     sqlx_operation_with_retries,
@@ -14,19 +19,37 @@ use crate::{
 
 #[async_trait]
 pub trait DbEntity:
-    Debug + Sized + Clone + Send + Sync + for<'a> FromRow<'a, sqlx::postgres::PgRow> + 'static
+    Debug + Sized + Clone + Send + Sync + Unpin + for<'a> FromRow<'a, sqlx::postgres::PgRow> + 'static
 {
     type Pk: PrimaryKey;
 
-    fn id(&self) -> Self::Pk;
+    fn pk(&self) -> Self::Pk;
 
-    fn create_upsert_query(&self) -> StaticPgQuery;
+    fn any_pk(&self) -> AnyPrimaryKey {
+        self.pk().any_pk()
+    }
+
+    async fn warm_key_cache(db_context: &DbContext) -> Result<(), LPError> {
+        let select_query: StaticPgQueryAs<Self::Pk> = Self::select_key_query();
+        let key_vec: Vec<Self::Pk> = select_query.fetch_all(&db_context.pool).await?;
+        for entity in key_vec {
+            db_context.key_cache.insert(entity.any_pk());
+        }
+        Ok(())
+    }
+
+    fn upsert_query(&self) -> StaticPgQuery;
+
+    fn select_key_query() -> StaticPgQueryAs<Self::Pk>;
 
     #[tracing::instrument(skip(db_context))]
     async fn verify_by_key(
         db_context: &DbContext,
         id: Self::Pk,
     ) -> Result<Option<Self::Pk>, LPError> {
+        if db_context.key_cache.contains(&id.any_pk()) {
+            return Ok(None);
+        }
         match Self::fetch_from_db_by_key(db_context, &id).await {
             Ok(Some(_)) => Ok(None),
             Ok(None) => Ok(Some(id)),
@@ -47,7 +70,11 @@ pub trait DbEntity:
         .await
         {
             Ok(Some(row)) => {
-                tracing::debug!("Record found in lp database for key {:?}", id);
+                tracing::debug!(
+                    "Record found in lp database for key {:?}. Adding key to key cache",
+                    id
+                );
+                db_context.key_cache.insert(id.any_pk());
                 Self::from_row(&row).map(Some).map_err(LPError::from)
             }
             Ok(None) => {
@@ -100,20 +127,20 @@ pub trait DbEntity:
 
         let job = Box::pin(async move {
             crate::common::util::sqlx_operation_with_retries(|| async {
-                let query: StaticPgQuery = self_clone.create_upsert_query();
-                tracing::debug!("Attempting upsert for {:?}", self_clone.id());
+                let query: StaticPgQuery = self_clone.upsert_query();
+                tracing::debug!("Attempting upsert for {:?}", self_clone.pk());
 
                 let res: SqlxJobResult = match query.execute(&pool).await {
                     Ok(pg_result) => {
                         tracing::debug!(
                             "Upsert for {:?} affected {:?}",
-                            self_clone.id(),
+                            self_clone.pk(),
                             pg_result
                         );
                         Ok(pg_result)
                     }
                     Err(e) => {
-                        tracing::warn!("Upsert attempt for {:?} failed: {:?}", self_clone.id(), e);
+                        tracing::warn!("Upsert attempt for {:?} failed: {:?}", self_clone.pk(), e);
                         Err(e)
                     }
                 };
@@ -129,7 +156,10 @@ pub trait DbEntity:
             .map_err(|e| LPError::DatabaseCustom(format!("Worker channel send failed: {e}")))?;
 
         match result_rx.await {
-            Ok(Ok(pg_result)) => Ok(pg_result),
+            Ok(Ok(pg_result)) => {
+                db_context.key_cache.insert(self.any_pk());
+                Ok(pg_result)
+            }
             Ok(Err(e)) => Err(LPError::DatabaseCustom(format!("Upsert failed: {e}"))),
             Err(_) => Err(LPError::DatabaseCustom("Worker dropped".to_string())),
         }
@@ -143,8 +173,12 @@ pub enum RelationshipIntegrity<Pk: PrimaryKey> {
 }
 
 #[async_trait]
-pub trait PrimaryKey: Debug + Send + Sync {
+pub trait PrimaryKey:
+    Debug + Send + Sync + Unpin + for<'a> FromRow<'a, sqlx::postgres::PgRow>
+{
     type Api: CacheableApi + Send + Sync;
+
+    fn any_pk(&self) -> AnyPrimaryKey;
 
     fn create_select_query(&self) -> StaticPgQuery;
 

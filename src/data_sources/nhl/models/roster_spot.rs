@@ -4,15 +4,14 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
-use super::{
-    DefaultNhlContext, DefendingSide, GameNhlContext, GameType, LocalizedNameJson, NhlGame,
-    NhlGameKey, NhlPlayerKey, NhlPlayoffSeriesKey, NhlPrimaryKey, NhlRosterSpotKey, NhlSeason,
-    NhlSeasonKey, NhlTeam, NhlTeamKey, PeriodDescriptorJson, PeriodTypeJson,
-};
+use super::super::primary_key::*;
+use super::{GameNhlContext, LocalizedNameJson};
 use crate::{
     bind,
     common::{
-        db::{DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
+        db::{
+            DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs,
+        },
         errors::LPError,
         models::{
             ApiCache, ApiCacheKey,
@@ -93,11 +92,17 @@ impl DbStruct for NhlRosterSpot {
 impl DbEntity for NhlRosterSpot {
     type Pk = NhlPrimaryKey;
 
-    fn id(&self) -> Self::Pk {
+    fn pk(&self) -> Self::Pk {
         Self::Pk::RosterSpot(NhlRosterSpotKey {
             game_id: self.game_id,
             player_id: self.player_id,
         })
+    }
+
+    fn select_key_query() -> StaticPgQueryAs<Self::Pk> {
+        sqlx::query_as::<_, Self::Pk>(
+            "SELECT 'nhl_roster_spot' AS table_name, game_id, player_id from nhl_roster_spot",
+        )
     }
 
     #[tracing::instrument(skip(self, db_context))]
@@ -118,7 +123,7 @@ impl DbEntity for NhlRosterSpot {
         }
     }
 
-    fn create_upsert_query(&self) -> StaticPgQuery {
+    fn upsert_query(&self) -> StaticPgQuery {
         bind!(
             sqlx::query(
                 r#"INSERT INTO nhl_roster_spot (

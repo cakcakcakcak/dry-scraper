@@ -1,12 +1,14 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use sqlx::FromRow;
+use sqlx::{FromRow, Postgres, postgres::PgArguments, query::QueryAs};
 
 use crate::{
     bind,
     common::{
-        db::{DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
+        db::{
+            DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs,
+        },
         errors::LPError,
         models::{
             ApiCache, ApiCacheKey,
@@ -16,7 +18,8 @@ use crate::{
     impl_has_type_name, verify_fk,
 };
 
-use super::{DefaultNhlContext, NhlFranchiseKey, NhlPrimaryKey};
+use super::super::{NhlFranchiseKey, NhlPrimaryKey};
+use super::DefaultNhlContext;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,8 +70,12 @@ impl DbStruct for NhlFranchise {
 impl DbEntity for NhlFranchise {
     type Pk = NhlPrimaryKey;
 
-    fn id(&self) -> Self::Pk {
+    fn pk(&self) -> Self::Pk {
         Self::Pk::Franchise(NhlFranchiseKey { id: self.id })
+    }
+
+    fn select_key_query() -> StaticPgQueryAs<Self::Pk> {
+        sqlx::query_as::<_, Self::Pk>("SELECT 'nhl_franchise' AS table_name, id from nhl_franchise")
     }
 
     #[tracing::instrument(skip(self, db_context))]
@@ -86,7 +93,7 @@ impl DbEntity for NhlFranchise {
         }
     }
 
-    fn create_upsert_query(&self) -> StaticPgQuery {
+    fn upsert_query(&self) -> StaticPgQuery {
         bind!(
             sqlx::query(
                 r#"INSERT INTO nhl_franchise (

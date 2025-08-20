@@ -13,7 +13,7 @@ use crate::{
     data_sources::nhl::models::{DefaultNhlContext, NhlTeamJson},
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct NhlApi {
     nhl_stats_api: NhlStatsApi,
     nhl_web_api: NhlWebApi,

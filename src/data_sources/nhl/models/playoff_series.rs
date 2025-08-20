@@ -2,15 +2,14 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-use super::{
-    DefaultNhlContext, DefendingSide, GameNhlContext, GameType, LocalizedNameJson, NhlGameKey,
-    NhlPlayerKey, NhlPlayoffSeriesKey, NhlPrimaryKey, NhlRosterSpotJson, NhlSeason, NhlSeasonKey,
-    NhlTeam, NhlTeamKey, PeriodDescriptorJson, PeriodTypeJson,
-};
+use super::super::primary_key::*;
+use super::DefaultNhlContext;
 use crate::{
     bind,
     common::{
-        db::{DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
+        db::{
+            DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs,
+        },
         errors::LPError,
         models::{
             ApiCache, ApiCacheKey,
@@ -181,11 +180,17 @@ impl DbStruct for NhlPlayoffSeries {
 impl DbEntity for NhlPlayoffSeries {
     type Pk = NhlPrimaryKey;
 
-    fn id(&self) -> Self::Pk {
+    fn pk(&self) -> Self::Pk {
         Self::Pk::PlayoffSeries(NhlPlayoffSeriesKey {
             season_id: self.season_id,
             series_letter: self.series_letter.clone(),
         })
+    }
+
+    fn select_key_query() -> StaticPgQueryAs<Self::Pk> {
+        sqlx::query_as::<_, Self::Pk>(
+            "SELECT 'nhl_playoff_series' AS table_name, season_id, series_letter from nhl_playoff_series",
+        )
     }
 
     #[tracing::instrument(skip(self, db_context))]
@@ -210,7 +215,7 @@ impl DbEntity for NhlPlayoffSeries {
         }
     }
 
-    fn create_upsert_query(&self) -> StaticPgQuery {
+    fn upsert_query(&self) -> StaticPgQuery {
         bind!(
             sqlx::query(
                 r#"INSERT INTO nhl_playoff_series (

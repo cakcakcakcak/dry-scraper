@@ -1,10 +1,12 @@
 use std::fmt::Debug;
 
 use async_trait::async_trait;
+use sqlx::{FromRow, Row, postgres::PgRow};
 
 use crate::{
     LPError,
     common::{
+        any_primary_key::AnyPrimaryKey,
         api::cacheable_api::SimpleApi,
         db::{DbContext, DbEntity, PrimaryKey, StaticPgQuery},
         models::{ApiCache, ApiCacheKey, ItemParsedWithContext},
@@ -18,7 +20,7 @@ use crate::{
     },
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum NhlPrimaryKey {
     ApiCache(ApiCacheKey),
     Season(NhlSeasonKey),
@@ -30,9 +32,34 @@ pub enum NhlPrimaryKey {
     Play(NhlPlayKey),
     PlayoffSeries(NhlPlayoffSeriesKey),
 }
+impl<'r> FromRow<'r, PgRow> for NhlPrimaryKey {
+    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+        let table_name: &str = row.try_get("table_name")?;
+        match table_name {
+            "api_cache" => Ok(NhlPrimaryKey::ApiCache(ApiCacheKey::from_row(row)?)),
+            "nhl_season" => Ok(NhlPrimaryKey::Season(NhlSeasonKey::from_row(row)?)),
+            "nhl_franchise" => Ok(NhlPrimaryKey::Franchise(NhlFranchiseKey::from_row(row)?)),
+            "nhl_team" => Ok(NhlPrimaryKey::Team(NhlTeamKey::from_row(row)?)),
+            "nhl_player" => Ok(NhlPrimaryKey::Player(NhlPlayerKey::from_row(row)?)),
+            "nhl_game" => Ok(NhlPrimaryKey::Game(NhlGameKey::from_row(row)?)),
+            "nhl_roster_spot" => Ok(NhlPrimaryKey::RosterSpot(NhlRosterSpotKey::from_row(row)?)),
+            "nhl_play" => Ok(NhlPrimaryKey::Play(NhlPlayKey::from_row(row)?)),
+            "nhl_playoff_series" => Ok(NhlPrimaryKey::PlayoffSeries(
+                NhlPlayoffSeriesKey::from_row(row)?,
+            )),
+            _ => Err(sqlx::Error::ColumnNotFound(
+                "Unknown table `{table_name}`".into(),
+            )),
+        }
+    }
+}
 #[async_trait]
 impl PrimaryKey for NhlPrimaryKey {
     type Api = NhlApi;
+
+    fn any_pk(&self) -> AnyPrimaryKey {
+        AnyPrimaryKey::Nhl(self.clone())
+    }
 
     fn create_select_query(&self) -> StaticPgQuery {
         match self {
@@ -134,7 +161,7 @@ impl NhlPrimaryKey {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, FromRow, Hash, PartialEq)]
 pub struct NhlSeasonKey {
     pub id: i32,
 }
@@ -144,7 +171,7 @@ impl NhlSeasonKey {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, FromRow, Hash, PartialEq)]
 pub struct NhlFranchiseKey {
     pub id: i32,
 }
@@ -154,7 +181,7 @@ impl NhlFranchiseKey {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, FromRow, Hash, PartialEq)]
 pub struct NhlTeamKey {
     pub id: i32,
 }
@@ -180,7 +207,7 @@ impl NhlTeamKey {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, FromRow, Hash, PartialEq)]
 pub struct NhlPlayerKey {
     pub id: i32,
 }
@@ -209,7 +236,7 @@ impl NhlPlayerKey {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, FromRow, Hash, PartialEq)]
 pub struct NhlGameKey {
     pub id: i32,
 }
@@ -238,7 +265,7 @@ impl NhlGameKey {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, FromRow, Hash, PartialEq)]
 pub struct NhlRosterSpotKey {
     pub game_id: i32,
     pub player_id: i32,
@@ -251,7 +278,7 @@ impl NhlRosterSpotKey {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, FromRow, Hash, PartialEq)]
 pub struct NhlPlayKey {
     pub game_id: i32,
     pub sort_order: i32,
@@ -264,7 +291,7 @@ impl NhlPlayKey {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, FromRow, Hash, PartialEq)]
 pub struct NhlPlayoffSeriesKey {
     pub season_id: i32,
     pub series_letter: String,

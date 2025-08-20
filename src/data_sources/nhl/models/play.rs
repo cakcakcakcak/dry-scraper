@@ -5,15 +5,15 @@ use serde_json;
 use sqlx::FromRow;
 use sqlx::postgres::types::PgInterval;
 
-use super::{DefendingSide, GameNhlContext, NhlPrimaryKey, PeriodDescriptorJson, PeriodTypeJson};
+use super::super::{NhlPlayKey, NhlPrimaryKey};
+use super::{DefendingSide, GameNhlContext, PeriodDescriptorJson, PeriodTypeJson};
 use crate::{
     bind,
     common::{
-        db::{DbContext, DbEntity, RelationshipIntegrity, StaticPgQuery},
+        db::{DbContext, DbEntity, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs},
         errors::LPError,
         models::traits::{DbStruct, IntoDbStruct},
     },
-    data_sources::models::NhlPlayKey,
     impl_has_type_name, make_deserialize_to_type, verify_fk,
 };
 
@@ -103,14 +103,6 @@ pub struct NhlPlay {
     pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl NhlPlay {
-    pub(crate) async fn verify_by_key(
-        db_context: &crate::common::db::DbContext,
-        arg: super::NhlPrimaryKey,
-    ) -> Result<Option<super::NhlPrimaryKey>, crate::LPError> {
-        todo!()
-    }
-}
 impl DbStruct for NhlPlay {
     type IntoDbStruct = NhlPlayJson;
 }
@@ -118,11 +110,17 @@ impl DbStruct for NhlPlay {
 impl DbEntity for NhlPlay {
     type Pk = NhlPrimaryKey;
 
-    fn id(&self) -> Self::Pk {
+    fn pk(&self) -> Self::Pk {
         Self::Pk::Play(NhlPlayKey {
             game_id: self.game_id,
             sort_order: self.sort_order,
         })
+    }
+
+    fn select_key_query() -> StaticPgQueryAs<Self::Pk> {
+        sqlx::query_as::<_, Self::Pk>(
+            "SELECT 'nhl_play' AS table_name, game_id, sort_order from nhl_play",
+        )
     }
 
     #[tracing::instrument(skip(self, db_context))]
@@ -141,7 +139,7 @@ impl DbEntity for NhlPlay {
         }
     }
 
-    fn create_upsert_query(&self) -> StaticPgQuery {
+    fn upsert_query(&self) -> StaticPgQuery {
         bind!(
             sqlx::query(
                 r#"INSERT INTO nhl_play (

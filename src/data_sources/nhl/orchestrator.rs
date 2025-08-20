@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use futures::{future::join_all, stream, stream::StreamExt};
 use sqlx::postgres::PgQueryResult;
 
+use super::super::primary_key::*;
 use super::{
     api::{NhlApi, NhlStatsApi, NhlWebApi},
     models::*,
@@ -371,4 +372,19 @@ pub async fn upsert_all<T: DbEntity + DbStruct + HasTypeName>(
             .map(|game| game.upsert_and_fix_relationships(db_context, api)),
     )
     .await
+}
+
+pub async fn warm_nhl_key_cache(db_context: &DbContext) -> Result<(), LPError> {
+    tracing::info!("Warming NHL database key cache.");
+    ApiCache::warm_key_cache(db_context).await?;
+    NhlSeason::warm_key_cache(db_context).await?;
+    NhlFranchise::warm_key_cache(db_context).await?;
+    NhlTeam::warm_key_cache(db_context).await?;
+    NhlPlayer::warm_key_cache(db_context).await?;
+    NhlGame::warm_key_cache(db_context).await?;
+    NhlRosterSpot::warm_key_cache(db_context).await?;
+    NhlPlay::warm_key_cache(db_context).await?;
+    NhlPlayoffSeries::warm_key_cache(db_context).await?;
+    tracing::info!("Warmed NHL database key cache.");
+    Ok(())
 }

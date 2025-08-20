@@ -1,8 +1,12 @@
+use std::sync::Arc;
+
+use dashmap::DashSet;
 use sqlx::{migrate::MigrateDatabase, postgres::PgPoolOptions};
 use tokio_retry::RetryIf;
 
 use crate::{
     common::{
+        any_primary_key::AnyPrimaryKey,
         db::{DbPool, SqlxJobSender, start_sqlx_worker},
         errors::LPError,
         util::{default_retry_strategy, is_transient_sqlx_error},
@@ -15,12 +19,17 @@ use crate::{
 pub struct DbContext {
     pub pool: DbPool,
     pub sqlx_tx: SqlxJobSender,
+    pub key_cache: Arc<DashSet<AnyPrimaryKey>>,
 }
 
 pub async fn init_db_context() -> Result<DbContext, LPError> {
     let pool = init_db().await?;
     let sqlx_tx = start_sqlx_worker(pool.clone());
-    Ok(DbContext { pool, sqlx_tx })
+    Ok(DbContext {
+        pool,
+        sqlx_tx,
+        key_cache: Arc::new(DashSet::new()),
+    })
 }
 
 #[tracing::instrument]

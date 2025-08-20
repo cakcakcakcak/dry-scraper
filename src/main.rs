@@ -25,21 +25,20 @@ async fn main() -> Result<(), LPError> {
     _ = &*CONFIG;
 
     let db_context = init_db_context().await?;
+    warm_nhl_key_cache(&db_context).await?;
     let nhl_api: NhlApi = NhlApi::new();
 
     let seasons: Vec<NhlSeason> = get_nhl_seasons(&db_context, &nhl_api).await?;
     let franchises: Vec<NhlFranchise> = get_nhl_franchises(&db_context, &nhl_api).await?;
     let teams: Vec<NhlTeam> = get_nhl_teams(&db_context, &nhl_api).await?;
 
-    let season: &NhlSeason = &seasons[106];
-    let game = get_nhl_game(&db_context, &nhl_api, 2024020001).await?;
-    get_nhl_plays_in_game(&db_context, &nhl_api, &game).await?;
-    get_nhl_roster_spots_in_game(&db_context, &nhl_api, &game).await?;
-
-    let games = get_nhl_all_games_in_season(&db_context, &nhl_api, season).await?;
-    for game in games {
-        get_nhl_plays_in_game(&db_context, &nhl_api, &game).await?;
-        get_nhl_roster_spots_in_game(&db_context, &nhl_api, &game).await?;
+    for season in seasons {
+        let games: Vec<NhlGame> =
+            get_nhl_all_games_in_season(&db_context, &nhl_api, &season).await?;
+        for game in games {
+            get_nhl_plays_in_game(&db_context, &nhl_api, &game).await?;
+            get_nhl_roster_spots_in_game(&db_context, &nhl_api, &game).await?;
+        }
     }
 
     Ok(())
