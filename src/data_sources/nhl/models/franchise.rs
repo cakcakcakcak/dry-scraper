@@ -15,7 +15,7 @@ use crate::{
             traits::{DbStruct, IntoDbStruct},
         },
     },
-    impl_has_type_name, verify_fk,
+    impl_has_type_name, impl_pk_debug, verify_fk,
 };
 
 use super::super::{NhlFranchiseKey, NhlPrimaryKey};
@@ -53,7 +53,7 @@ impl IntoDbStruct for NhlFranchiseJson {
     }
 }
 
-#[derive(Clone, Debug, FromRow)]
+#[derive(Clone, FromRow)]
 pub struct NhlFranchise {
     pub id: i32,
     pub full_name: String,
@@ -126,3 +126,4 @@ impl DbEntity for NhlFranchise {
 
 impl_has_type_name!(NhlFranchiseJson);
 impl_has_type_name!(NhlFranchise);
+impl_pk_debug!(NhlFranchise);

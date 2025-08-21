@@ -7,6 +7,7 @@ use sqlx::postgres::types::PgInterval;
 
 use super::super::{NhlPlayKey, NhlPrimaryKey};
 use super::{DefendingSide, GameNhlContext, PeriodDescriptorJson, PeriodTypeJson};
+use crate::impl_pk_debug;
 use crate::{
     bind,
     common::{
@@ -84,7 +85,7 @@ impl IntoDbStruct for NhlPlayJson {
     }
 }
 
-#[derive(Clone, Debug, FromRow)]
+#[derive(Clone, FromRow)]
 pub struct NhlPlay {
     pub game_id: i32,
     pub event_id: i32,
@@ -200,5 +201,6 @@ impl DbEntity for NhlPlay {
 
 impl_has_type_name!(NhlPlayJson);
 impl_has_type_name!(NhlPlay);
+impl_pk_debug!(NhlPlay);
 
 make_deserialize_to_type!(deserialize_to_option_i32, Option<i32>);

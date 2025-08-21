@@ -214,7 +214,7 @@ pub async fn get_nhl_all_games_in_season(
     tracing::info!(
         "Upserting {number_of_games} games from {season_id} NHL season into lp database."
     );
-    let upsert_results: Vec<Result<sqlx::postgres::PgQueryResult, LPError>> =
+    let upsert_results =
         upsert_all(games.clone(), db_context, nhl_api).await;
     let ok_upsert_results = filter_results(upsert_results);
     let ok_upsert_count = ok_upsert_results.len();
@@ -271,7 +271,7 @@ pub async fn get_nhl_roster_spots_in_game(
         roster_spots.len(),
         game.id
     );
-    let upsert_results: Vec<Result<sqlx::postgres::PgQueryResult, LPError>> =
+    let upsert_results =
         upsert_all(roster_spots.clone(), db_context, nhl_api).await;
     let ok_upsert_results = filter_results(upsert_results);
     let ok_upsert_count = ok_upsert_results.len();
@@ -330,7 +330,7 @@ pub async fn get_nhl_plays_in_game(
         plays.len(),
         game.id
     );
-    let upsert_results: Vec<Result<sqlx::postgres::PgQueryResult, LPError>> =
+    let upsert_results =
         upsert_all(plays.clone(), db_context, nhl_api).await;
     let ok_upsert_results = filter_results(upsert_results);
     let ok_upsert_count = ok_upsert_results.len();
@@ -365,11 +365,11 @@ pub async fn upsert_all<T: DbEntity + DbStruct + HasTypeName>(
     items: Vec<T>,
     db_context: &DbContext,
     api: &<<T as DbEntity>::Pk as PrimaryKey>::Api,
-) -> Vec<Result<PgQueryResult, LPError>> {
+) -> Vec<Result<Option<PgQueryResult>, LPError>> {
     join_all(
         items
             .iter()
-            .map(|game| game.upsert_and_fix_relationships(db_context, api)),
+            .map(|game| game.fix_relationships_and_upsert(db_context, api)),
     )
     .await
 }

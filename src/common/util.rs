@@ -61,6 +61,17 @@ macro_rules! impl_has_type_name {
     };
 }
 
+#[macro_export]
+macro_rules! impl_pk_debug {
+    ($t:ty) => {
+        impl std::fmt::Debug for $t {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.fmt_debug(f)
+            }
+        }
+    };
+}
+
 pub fn default_retry_strategy() -> impl Iterator<Item = std::time::Duration> {
     ExponentialBackoff::from_millis(CONFIG.retry_interval_ms)
         .max_delay(std::time::Duration::from_millis(

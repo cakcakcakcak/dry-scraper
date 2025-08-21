@@ -8,6 +8,7 @@ use super::{
     DefaultNhlContext, DefendingSide, GameNhlContext, GameType, LocalizedNameJson,
     NhlRosterSpotJson, NhlSeason, NhlTeam, PeriodDescriptorJson, PeriodTypeJson,
 };
+use crate::impl_pk_debug;
 use crate::{
     bind,
     common::{
@@ -169,7 +170,7 @@ impl IntoDbStruct for NhlPlayerJson {
     }
 }
 
-#[derive(Clone, Debug, FromRow)]
+#[derive(Clone, FromRow)]
 pub struct NhlPlayer {
     pub id: i32,
     pub first_name: String,
@@ -356,6 +357,7 @@ impl DbEntity for NhlPlayer {
 
 impl_has_type_name!(NhlPlayerJson);
 impl_has_type_name!(NhlPlayer);
+impl_pk_debug!(NhlPlayer);
 
 make_deserialize_key_to_type!(deserialize_default_to_string, "default", String);
 make_deserialize_to_type!(deserialize_to_bool, bool);

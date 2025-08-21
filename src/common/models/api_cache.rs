@@ -10,10 +10,10 @@ use crate::{
         db::{DbContext, DbEntity, PrimaryKey, StaticPgQuery, StaticPgQueryAs},
         errors::LPError,
     },
-    sqlx_operation_with_retries,
+    impl_has_type_name, impl_pk_debug, sqlx_operation_with_retries,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Serialize, Deserialize, FromRow)]
 pub struct ApiCache {
     pub endpoint: String,
     pub raw_data: String,
@@ -128,3 +128,6 @@ impl ApiCacheKey {
         ApiCache::verify_by_key(db_context, self).await
     }
 }
+
+impl_has_type_name!(ApiCache);
+impl_pk_debug!(ApiCache);

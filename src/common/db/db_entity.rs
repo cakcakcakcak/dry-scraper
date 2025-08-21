@@ -13,13 +13,22 @@ use crate::{
         api::CacheableApi,
         db::{DbContext, DbPool, SqlxJobResult, StaticPgQuery, StaticPgQueryAs},
         errors::LPError,
+        models::traits::HasTypeName,
     },
     sqlx_operation_with_retries,
 };
 
 #[async_trait]
 pub trait DbEntity:
-    Debug + Sized + Clone + Send + Sync + Unpin + for<'a> FromRow<'a, sqlx::postgres::PgRow> + 'static
+    Debug
+    + Sized
+    + Clone
+    + Send
+    + Sync
+    + Unpin
+    + HasTypeName
+    + for<'a> FromRow<'a, sqlx::postgres::PgRow>
+    + 'static
 {
     type Pk: PrimaryKey;
 
@@ -27,6 +36,12 @@ pub trait DbEntity:
 
     fn any_pk(&self) -> AnyPrimaryKey {
         self.pk().any_pk()
+    }
+
+    fn fmt_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(Self::type_name())
+            .field("primary_key", &self.pk())
+            .finish()
     }
 
     async fn warm_key_cache(db_context: &DbContext) -> Result<(), LPError> {
@@ -100,11 +115,12 @@ pub trait DbEntity:
         Ok(RelationshipIntegrity::AllValid)
     }
 
-    async fn upsert_and_fix_relationships(
+    #[tracing::instrument(skip(db_context, api))]
+    async fn fix_relationships_and_upsert(
         &self,
         db_context: &DbContext,
         api: &<Self::Pk as PrimaryKey>::Api,
-    ) -> Result<PgQueryResult, LPError> {
+    ) -> Result<Option<PgQueryResult>, LPError> {
         match self.verify_relationships(db_context).await? {
             RelationshipIntegrity::AllValid => (),
             RelationshipIntegrity::Missing(keys) => {
@@ -114,7 +130,15 @@ pub trait DbEntity:
             }
         }
 
-        self.upsert(db_context).await
+        if db_context.key_cache.contains(&self.any_pk()) {
+            tracing::debug!("Key cache contains {:?}, skipping upsert.", self.pk());
+            return Ok(None);
+        }
+
+        match self.upsert(db_context).await {
+            Ok(query_result) => Ok(Some(query_result)),
+            Err(e) => Err(e),
+        }
     }
 
     #[tracing::instrument(skip(self, db_context))]

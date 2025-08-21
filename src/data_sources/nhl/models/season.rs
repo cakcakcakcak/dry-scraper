@@ -20,7 +20,7 @@ use crate::{
         },
         serde_helpers::JsonExt,
     },
-    impl_has_type_name, make_deserialize_key_to_type, make_deserialize_to_type,
+    impl_has_type_name, impl_pk_debug, make_deserialize_key_to_type, make_deserialize_to_type,
     sqlx_operation_with_retries, verify_fk,
 };
 
@@ -154,18 +154,6 @@ pub struct NhlSeason {
     pub raw_json: serde_json::Value,
     pub last_updated: Option<chrono::NaiveDateTime>,
 }
-impl Debug for NhlSeason {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Only print the base_url, not the whole client struct
-        f.debug_struct("NhlSeason")
-            .field("id", &self.id)
-            .field(
-                "total_regular_season_games",
-                &self.total_regular_season_games,
-            )
-            .finish()
-    }
-}
 impl DbStruct for NhlSeason {
     type IntoDbStruct = NhlSeasonJson;
 }
@@ -288,5 +276,5 @@ impl DbEntity for NhlSeason {
 
 impl_has_type_name!(NhlSeasonJson);
 impl_has_type_name!(NhlSeason);
-
+impl_pk_debug!(NhlSeason);
 make_deserialize_to_type!(deserialize_to_bool, bool);

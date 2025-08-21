@@ -6,6 +6,7 @@ use sqlx::FromRow;
 
 use super::super::primary_key::*;
 use super::{GameNhlContext, LocalizedNameJson};
+use crate::impl_pk_debug;
 use crate::{
     bind,
     common::{
@@ -70,7 +71,7 @@ impl IntoDbStruct for NhlRosterSpotJson {
     }
 }
 
-#[derive(Debug, FromRow, Clone)]
+#[derive(FromRow, Clone)]
 pub struct NhlRosterSpot {
     pub game_id: i32,
     pub player_id: i32,
@@ -169,3 +170,4 @@ impl DbEntity for NhlRosterSpot {
 
 impl_has_type_name!(NhlRosterSpotJson);
 impl_has_type_name!(NhlRosterSpot);
+impl_pk_debug!(NhlRosterSpot);

@@ -17,7 +17,7 @@ use crate::{
         },
         serde_helpers::JsonExt,
     },
-    impl_has_type_name, make_deserialize_key_to_type, make_deserialize_to_type,
+    impl_has_type_name, impl_pk_debug, make_deserialize_key_to_type, make_deserialize_to_type,
     sqlx_operation_with_retries, verify_fk,
 };
 
@@ -139,7 +139,7 @@ impl IntoDbStruct for NhlPlayoffSeriesJson {
         }
     }
 }
-#[derive(Clone, Debug, FromRow)]
+#[derive(Clone, FromRow)]
 pub struct NhlPlayoffSeries {
     pub season_id: i32,
     pub series_letter: String,
@@ -319,6 +319,7 @@ impl DbEntity for NhlPlayoffSeries {
     }
 }
 
+impl_has_type_name!(NhlPlayoffBracketJson);
 impl_has_type_name!(NhlPlayoffSeriesJson);
 impl_has_type_name!(NhlPlayoffSeries);
-impl_has_type_name!(NhlPlayoffBracketJson);
+impl_pk_debug!(NhlPlayoffSeries);

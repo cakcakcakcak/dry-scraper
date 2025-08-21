@@ -28,9 +28,11 @@ async fn main() -> Result<(), LPError> {
     warm_nhl_key_cache(&db_context).await?;
     let nhl_api: NhlApi = NhlApi::new();
 
-    let seasons: Vec<NhlSeason> = get_nhl_seasons(&db_context, &nhl_api).await?;
+    let mut seasons: Vec<NhlSeason> = get_nhl_seasons(&db_context, &nhl_api).await?;
     let franchises: Vec<NhlFranchise> = get_nhl_franchises(&db_context, &nhl_api).await?;
     let teams: Vec<NhlTeam> = get_nhl_teams(&db_context, &nhl_api).await?;
+
+    seasons.sort_by_key(|season| season.id);
 
     for season in seasons {
         let games: Vec<NhlGame> =
