@@ -4,26 +4,17 @@ use serde_json;
 use sqlx::FromRow;
 
 use super::super::primary_key::*;
-use super::{
-    DefaultNhlContext, DefendingSide, GameNhlContext, GameType, LocalizedNameJson,
-    NhlRosterSpotJson, NhlSeason, NhlTeam, PeriodDescriptorJson, PeriodTypeJson,
-};
+use super::{DefaultNhlContext, LocalizedNameJson};
 use crate::impl_pk_debug;
 use crate::{
     bind,
     common::{
-        db::{
-            DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs,
-        },
+        db::{DbContext, DbEntity, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs},
         errors::LPError,
-        models::{
-            ApiCache, ApiCacheKey,
-            traits::{DbStruct, IntoDbStruct},
-        },
+        models::traits::{DbStruct, IntoDbStruct},
         serde_helpers::JsonExt,
     },
-    impl_has_type_name, make_deserialize_key_to_type, make_deserialize_to_type,
-    sqlx_operation_with_retries, verify_fk,
+    impl_has_type_name, make_deserialize_to_type, verify_fk,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -165,7 +156,6 @@ impl IntoDbStruct for NhlPlayerJson {
             in_hhof,
             endpoint,
             raw_json,
-            last_updated: None,
         }
     }
 }
@@ -205,7 +195,6 @@ pub struct NhlPlayer {
     pub in_hhof: bool,
     pub endpoint: String,
     pub raw_json: serde_json::Value,
-    pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl DbStruct for NhlPlayer {
     type IntoDbStruct = NhlPlayerJson;
@@ -359,10 +348,4 @@ impl_has_type_name!(NhlPlayerJson);
 impl_has_type_name!(NhlPlayer);
 impl_pk_debug!(NhlPlayer);
 
-make_deserialize_key_to_type!(deserialize_default_to_string, "default", String);
 make_deserialize_to_type!(deserialize_to_bool, bool);
-make_deserialize_key_to_type!(
-    deserialize_default_to_option_string,
-    "default",
-    Option<String>
-);

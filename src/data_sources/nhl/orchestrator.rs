@@ -5,25 +5,21 @@ use sqlx::postgres::PgQueryResult;
 
 use super::super::primary_key::*;
 use super::{
-    api::{NhlApi, NhlStatsApi, NhlWebApi},
+    api::{NhlApi, NhlStatsApi},
     models::*,
 };
 use crate::{
-    bind,
     common::{
         api::HasEndpoint,
-        db::{DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery},
+        db::{DbContext, DbEntity, PrimaryKey},
         errors::LPError,
         models::{
-            ApiCache, ApiCacheKey, ItemParsedWithContext,
+            ApiCache, ItemParsedWithContext,
             traits::{DbStruct, HasTypeName, IntoDbStruct},
         },
-        serde_helpers::JsonExt,
         util::filter_results,
     },
     config::CONFIG,
-    impl_has_type_name, make_deserialize_key_to_type, make_deserialize_to_type,
-    sqlx_operation_with_retries, verify_fk,
 };
 
 use crate::with_progress_bar;
@@ -93,7 +89,7 @@ pub async fn get_nhl_teams(
 }
 
 #[tracing::instrument(skip(db_context, nhl_api))]
-pub async fn get_nhl_team(
+pub async fn _get_nhl_team(
     db_context: &DbContext,
     nhl_api: &NhlApi,
     team_id: i32,
@@ -110,7 +106,7 @@ pub async fn get_nhl_team(
 }
 
 #[tracing::instrument(skip(db_context, nhl_api))]
-pub async fn get_nhl_player(
+pub async fn _get_nhl_player(
     db_context: &DbContext,
     nhl_api: &NhlApi,
     player_id: i32,
@@ -124,7 +120,7 @@ pub async fn get_nhl_player(
 }
 
 #[tracing::instrument(skip(db_context, nhl_api))]
-pub async fn get_nhl_game(
+pub async fn _get_nhl_game(
     db_context: &DbContext,
     nhl_api: &NhlApi,
     id: i32,
@@ -148,7 +144,7 @@ pub async fn get_nhl_game(
     Ok(game)
 }
 
-pub async fn get_nhl_all_games_in_season_by_season_id(
+pub async fn _get_nhl_all_games_in_season_by_season_id(
     db_context: &DbContext,
     nhl_api: &NhlApi,
     id: i32,
@@ -214,8 +210,7 @@ pub async fn get_nhl_all_games_in_season(
     tracing::info!(
         "Upserting {number_of_games} games from {season_id} NHL season into lp database."
     );
-    let upsert_results =
-        upsert_all(games.clone(), db_context, nhl_api).await;
+    let upsert_results = upsert_all(games.clone(), db_context, nhl_api).await;
     let ok_upsert_results = filter_results(upsert_results);
     let ok_upsert_count = ok_upsert_results.len();
     tracing::info!(
@@ -271,8 +266,7 @@ pub async fn get_nhl_roster_spots_in_game(
         roster_spots.len(),
         game.id
     );
-    let upsert_results =
-        upsert_all(roster_spots.clone(), db_context, nhl_api).await;
+    let upsert_results = upsert_all(roster_spots.clone(), db_context, nhl_api).await;
     let ok_upsert_results = filter_results(upsert_results);
     let ok_upsert_count = ok_upsert_results.len();
     tracing::info!(
@@ -294,8 +288,7 @@ pub async fn get_nhl_plays_in_game(
     let game_json: NhlGameJson = serde_json::from_value(game.raw_json.clone())?;
 
     let play_jsons: Vec<NhlPlayJson> = game_json.plays;
-    let play_jsons_with_context: Vec<ItemParsedWithContext<NhlPlayJson>> = 
-        play_jsons
+    let play_jsons_with_context: Vec<ItemParsedWithContext<NhlPlayJson>> = play_jsons
             .into_iter()
             .map(|json| {
                 let raw_json: serde_json::Value = match serde_json::to_value(&json) {
@@ -330,8 +323,7 @@ pub async fn get_nhl_plays_in_game(
         plays.len(),
         game.id
     );
-    let upsert_results =
-        upsert_all(plays.clone(), db_context, nhl_api).await;
+    let upsert_results = upsert_all(plays.clone(), db_context, nhl_api).await;
     let ok_upsert_results = filter_results(upsert_results);
     let ok_upsert_count = ok_upsert_results.len();
     tracing::info!(
@@ -342,6 +334,40 @@ pub async fn get_nhl_plays_in_game(
     );
 
     Ok(plays)
+}
+
+#[tracing::instrument(skip(db_context, nhl_api, game))]
+pub async fn get_nhl_shifts_in_game(
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
+    game: &NhlGame,
+) -> Result<Vec<NhlShift>, LPError> {
+    let shift_array: Vec<ItemParsedWithContext<NhlShiftJson>> =
+        nhl_api.get_nhl_shifts_in_game(db_context, game.id).await?;
+    let shifts: Vec<NhlShift> = json_struct_vector_into_db_structs(shift_array);
+
+    tracing::info!(
+        "Parsed {} shifts from NHL game with id {} into lp database structs.",
+        shifts.len(),
+        game.id
+    );
+
+    tracing::info!(
+        "Upserting {} shifts from NHL game with id {} into lp database.",
+        shifts.len(),
+        game.id
+    );
+    let upsert_results = upsert_all(shifts.clone(), db_context, nhl_api).await;
+    let ok_upsert_results = filter_results(upsert_results);
+    let ok_upsert_count = ok_upsert_results.len();
+    tracing::info!(
+        "Upserted {}/{} plays from NHL game with id {} into lp database.",
+        ok_upsert_count,
+        shifts.len(),
+        game.id
+    );
+
+    Ok(shifts)
 }
 
 pub fn json_struct_vector_into_db_structs<J>(

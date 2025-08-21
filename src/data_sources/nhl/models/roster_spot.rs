@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use chrono;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
@@ -10,18 +9,11 @@ use crate::impl_pk_debug;
 use crate::{
     bind,
     common::{
-        db::{
-            DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs,
-        },
+        db::{DbContext, DbEntity, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs},
         errors::LPError,
-        models::{
-            ApiCache, ApiCacheKey,
-            traits::{DbStruct, IntoDbStruct},
-        },
-        serde_helpers::JsonExt,
+        models::traits::{DbStruct, IntoDbStruct},
     },
-    impl_has_type_name, make_deserialize_key_to_type, make_deserialize_to_type,
-    sqlx_operation_with_retries, verify_fk,
+    impl_has_type_name, verify_fk,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -66,7 +58,6 @@ impl IntoDbStruct for NhlRosterSpotJson {
             headshot,
             endpoint,
             raw_json,
-            last_updated: None,
         }
     }
 }
@@ -83,7 +74,6 @@ pub struct NhlRosterSpot {
     pub headshot: String,
     pub raw_json: serde_json::Value,
     pub endpoint: String,
-    pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl DbStruct for NhlRosterSpot {
     type IntoDbStruct = NhlRosterSpotJson;

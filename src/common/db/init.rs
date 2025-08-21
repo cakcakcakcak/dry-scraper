@@ -5,8 +5,8 @@ use sqlx::{migrate::MigrateDatabase, postgres::PgPoolOptions};
 use tokio_retry::RetryIf;
 
 use crate::{
+    any_primary_key::AnyPrimaryKey,
     common::{
-        any_primary_key::AnyPrimaryKey,
         db::{DbPool, SqlxJobSender, start_sqlx_worker},
         errors::LPError,
         util::{default_retry_strategy, is_transient_sqlx_error},
@@ -76,6 +76,12 @@ pub async fn init_db() -> Result<DbPool, LPError> {
         tracing::warn!("RESET_DB enabled: dropping tables and enums for clean state");
         sqlx_operation_with_retries!(
             sqlx::query("DROP TABLE IF EXISTS nhl_playoff_series")
+                .execute(&pool)
+                .await
+        )
+        .await?;
+        sqlx_operation_with_retries!(
+            sqlx::query("DROP TABLE IF EXISTS nhl_shift")
                 .execute(&pool)
                 .await
         )

@@ -56,7 +56,7 @@ macro_rules! make_deserialize_key_to_type {
             D: serde::Deserializer<'de>,
         {
             let value = serde_json::Value::deserialize(deserializer)?;
-            Ok(value.get_key_as_logged::<$ty>($key))
+            Ok(value._get_key_as_logged::<$ty>($key))
         }
     };
     ($func_name:ident, $key:expr, $ty:ty) => {
@@ -74,7 +74,7 @@ macro_rules! make_deserialize_key_to_type {
             D: serde::Deserializer<'de>,
         {
             let value = serde_json::Value::deserialize(deserializer)?;
-            value.get_key_as_logged::<$ty>($key).ok_or_else(|| {
+            value._get_key_as_logged::<$ty>($key).ok_or_else(|| {
                 serde::de::Error::custom(format!(
                     "Failed to deserialize value `{value}` to `{}`.",
                     stringify!($ty)
@@ -132,7 +132,7 @@ macro_rules! make_deserialize_nested_key_to_type {
 
 pub trait AsLogged: Sized {
     fn as_logged(value: &serde_json::Value) -> Option<Self>;
-    fn get_key_as_logged(value: &serde_json::Value, key: &str) -> Option<Self> {
+    fn _get_key_as_logged(value: &serde_json::Value, key: &str) -> Option<Self> {
         match value.get(&key) {
             Some(v) => v.as_logged::<Self>(),
             None => {
@@ -222,15 +222,15 @@ impl AsLogged for bool {
 
 pub trait JsonExt {
     fn as_logged<T: AsLogged>(&self) -> Option<T>;
-    fn get_key_as_logged<T: AsLogged>(&self, key: &str) -> Option<T>;
+    fn _get_key_as_logged<T: AsLogged>(&self, key: &str) -> Option<T>;
 }
 
 impl JsonExt for serde_json::Value {
     fn as_logged<T: AsLogged>(&self) -> Option<T> {
         T::as_logged(self)
     }
-    fn get_key_as_logged<T: AsLogged>(&self, key: &str) -> Option<T> {
-        T::get_key_as_logged(self, key)
+    fn _get_key_as_logged<T: AsLogged>(&self, key: &str) -> Option<T> {
+        T::_get_key_as_logged(self, key)
     }
 }
 

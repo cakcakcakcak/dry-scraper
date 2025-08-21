@@ -7,18 +7,11 @@ use super::DefaultNhlContext;
 use crate::{
     bind,
     common::{
-        db::{
-            DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs,
-        },
+        db::{DbContext, DbEntity, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs},
         errors::LPError,
-        models::{
-            ApiCache, ApiCacheKey,
-            traits::{DbStruct, IntoDbStruct},
-        },
-        serde_helpers::JsonExt,
+        models::traits::{DbStruct, IntoDbStruct},
     },
-    impl_has_type_name, impl_pk_debug, make_deserialize_key_to_type, make_deserialize_to_type,
-    sqlx_operation_with_retries, verify_fk,
+    impl_has_type_name, impl_pk_debug, verify_fk,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -135,7 +128,6 @@ impl IntoDbStruct for NhlPlayoffSeriesJson {
             bottom_seed_team_dark_logo,
             endpoint,
             raw_json,
-            last_updated: None,
         }
     }
 }
@@ -171,7 +163,6 @@ pub struct NhlPlayoffSeries {
     pub bottom_seed_team_dark_logo: String,
     pub endpoint: String,
     pub raw_json: serde_json::Value,
-    pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl DbStruct for NhlPlayoffSeries {
     type IntoDbStruct = NhlPlayoffSeriesJson;

@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use chrono;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
@@ -80,7 +79,6 @@ impl IntoDbStruct for NhlPlayJson {
             details,
             endpoint,
             raw_json,
-            last_updated: None,
         }
     }
 }
@@ -102,7 +100,6 @@ pub struct NhlPlay {
     pub details: Option<serde_json::Value>,
     pub endpoint: String,
     pub raw_json: serde_json::Value,
-    pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl DbStruct for NhlPlay {
     type IntoDbStruct = NhlPlayJson;
@@ -114,13 +111,13 @@ impl DbEntity for NhlPlay {
     fn pk(&self) -> Self::Pk {
         Self::Pk::Play(NhlPlayKey {
             game_id: self.game_id,
-            sort_order: self.sort_order,
+            event_id: self.event_id,
         })
     }
 
     fn select_key_query() -> StaticPgQueryAs<Self::Pk> {
         sqlx::query_as::<_, Self::Pk>(
-            "SELECT 'nhl_play' AS table_name, game_id, sort_order from nhl_play",
+            "SELECT 'nhl_play' AS table_name, game_id, event_id from nhl_play",
         )
     }
 
@@ -162,8 +159,7 @@ impl DbEntity for NhlPlay {
                                         ) VALUES (
                                             $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
                                             $11,$12,$13,$14,$15)
-                                        ON CONFLICT (game_id, sort_order) DO UPDATE SET
-                                            event_id = EXCLUDED.event_id,
+                                        ON CONFLICT (game_id, event_id) DO UPDATE SET
                                             period_descriptor_number = EXCLUDED.period_descriptor_number,
                                             period_descriptor_type = EXCLUDED.period_descriptor_type,
                                             period_descriptor_max_regulation_periods = EXCLUDED.period_descriptor_max_regulation_periods,

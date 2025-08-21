@@ -6,6 +6,7 @@ pub mod player;
 pub mod playoff_series;
 pub mod roster_spot;
 pub mod season;
+pub mod shift;
 pub mod team;
 
 pub use common::*;
@@ -16,4 +17,5 @@ pub use player::*;
 pub use playoff_series::*;
 pub use roster_spot::*;
 pub use season::*;
+pub use shift::*;
 pub use team::*;

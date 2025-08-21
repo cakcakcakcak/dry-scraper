@@ -5,17 +5,17 @@ use sqlx::{FromRow, Row, postgres::PgRow};
 
 use crate::{
     LPError,
+    any_primary_key::AnyPrimaryKey,
     common::{
-        any_primary_key::AnyPrimaryKey,
         api::cacheable_api::SimpleApi,
         db::{DbContext, DbEntity, PrimaryKey, StaticPgQuery},
         models::{ApiCache, ApiCacheKey, ItemParsedWithContext},
     },
     data_sources::nhl::{
-        api::{NhlApi, NhlStatsApi, NhlWebApi},
+        api::NhlApi,
         models::{
             NhlFranchise, NhlGame, NhlGameJson, NhlPlay, NhlPlayer, NhlPlayerJson,
-            NhlPlayoffSeries, NhlRosterSpot, NhlSeason, NhlTeam, NhlTeamJson,
+            NhlPlayoffSeries, NhlRosterSpot, NhlSeason, NhlShift, NhlTeam, NhlTeamJson,
         },
     },
 };
@@ -30,6 +30,7 @@ pub enum NhlPrimaryKey {
     Game(NhlGameKey),
     RosterSpot(NhlRosterSpotKey),
     Play(NhlPlayKey),
+    Shift(NhlShiftKey),
     PlayoffSeries(NhlPlayoffSeriesKey),
 }
 impl<'r> FromRow<'r, PgRow> for NhlPrimaryKey {
@@ -44,6 +45,7 @@ impl<'r> FromRow<'r, PgRow> for NhlPrimaryKey {
             "nhl_game" => Ok(NhlPrimaryKey::Game(NhlGameKey::from_row(row)?)),
             "nhl_roster_spot" => Ok(NhlPrimaryKey::RosterSpot(NhlRosterSpotKey::from_row(row)?)),
             "nhl_play" => Ok(NhlPrimaryKey::Play(NhlPlayKey::from_row(row)?)),
+            "nhl_shift" => Ok(NhlPrimaryKey::Shift(NhlShiftKey::from_row(row)?)),
             "nhl_playoff_series" => Ok(NhlPrimaryKey::PlayoffSeries(
                 NhlPlayoffSeriesKey::from_row(row)?,
             )),
@@ -71,6 +73,7 @@ impl PrimaryKey for NhlPrimaryKey {
             NhlPrimaryKey::Game(pk) => pk.create_select_query(),
             NhlPrimaryKey::RosterSpot(pk) => pk.create_select_query(),
             NhlPrimaryKey::Play(pk) => pk.create_select_query(),
+            NhlPrimaryKey::Shift(pk) => pk.create_select_query(),
             NhlPrimaryKey::PlayoffSeries(pk) => pk.create_select_query(),
         }
     }
@@ -110,6 +113,7 @@ impl NhlPrimaryKey {
             NhlPrimaryKey::Game(_) => NhlGame::verify_by_key(db_context, self).await,
             NhlPrimaryKey::RosterSpot(_) => NhlRosterSpot::verify_by_key(db_context, self).await,
             NhlPrimaryKey::Play(_) => NhlPlay::verify_by_key(db_context, self).await,
+            NhlPrimaryKey::Shift(_) => NhlShift::verify_by_key(db_context, self).await,
             NhlPrimaryKey::PlayoffSeries(_) => {
                 NhlPlayoffSeries::verify_by_key(db_context, self).await
             }
@@ -142,18 +146,23 @@ impl NhlPrimaryKey {
         NhlPrimaryKey::Game(NhlGameKey { id })
     }
 
-    pub fn roster_spot(game_id: i32, player_id: i32) -> Self {
+    pub fn _roster_spot(game_id: i32, player_id: i32) -> Self {
         NhlPrimaryKey::RosterSpot(NhlRosterSpotKey { game_id, player_id })
     }
 
-    pub fn play(game_id: i32, sort_order: i32) -> Self {
-        NhlPrimaryKey::Play(NhlPlayKey {
+    pub fn _play(game_id: i32, event_id: i32) -> Self {
+        NhlPrimaryKey::Play(NhlPlayKey { game_id, event_id })
+    }
+
+    pub fn _shift(game_id: i32, player_id: i32, shift_number: i32) -> Self {
+        NhlPrimaryKey::Shift(NhlShiftKey {
             game_id,
-            sort_order,
+            player_id,
+            shift_number,
         })
     }
 
-    pub fn playoff_series<S: AsRef<str>>(season_id: i32, series_letter: S) -> Self {
+    pub fn _playoff_series<S: AsRef<str>>(season_id: i32, series_letter: S) -> Self {
         NhlPrimaryKey::PlayoffSeries(NhlPlayoffSeriesKey {
             season_id,
             series_letter: series_letter.as_ref().to_string(),
@@ -281,13 +290,28 @@ impl NhlRosterSpotKey {
 #[derive(Clone, Debug, Eq, FromRow, Hash, PartialEq)]
 pub struct NhlPlayKey {
     pub game_id: i32,
-    pub sort_order: i32,
+    pub event_id: i32,
 }
 impl NhlPlayKey {
     fn create_select_query(&self) -> StaticPgQuery {
-        sqlx::query("SELECT * FROM nhl_play WHERE game_id=$1 AND sort_order=$2")
+        sqlx::query("SELECT * FROM nhl_play WHERE game_id=$1 AND event_id=$2")
             .bind(self.game_id)
-            .bind(self.sort_order)
+            .bind(self.event_id)
+    }
+}
+
+#[derive(Clone, Debug, Eq, FromRow, Hash, PartialEq)]
+pub struct NhlShiftKey {
+    pub game_id: i32,
+    pub player_id: i32,
+    pub shift_number: i32,
+}
+impl NhlShiftKey {
+    fn create_select_query(&self) -> StaticPgQuery {
+        sqlx::query("SELECT * from nhl_shift WHERE game_id=$1 AND player_id=$2 AND shift_number=$3")
+            .bind(self.game_id)
+            .bind(self.player_id)
+            .bind(self.shift_number)
     }
 }
 

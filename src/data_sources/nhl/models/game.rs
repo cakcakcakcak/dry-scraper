@@ -4,25 +4,20 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
-use super::super::{NhlGameKey, NhlPrimaryKey, NhlSeasonKey, NhlTeamKey};
+use super::super::{NhlGameKey, NhlPrimaryKey};
 use super::{
-    DefaultNhlContext, GameType, LocalizedNameJson, NhlPlayJson, NhlRosterSpotJson, NhlSeason,
-    NhlTeam, PeriodDescriptorJson, PeriodTypeJson,
+    DefaultNhlContext, GameType, LocalizedNameJson, NhlPlayJson, NhlRosterSpotJson,
+    PeriodDescriptorJson, PeriodTypeJson,
 };
 use crate::impl_pk_debug;
 use crate::{
     bind,
     common::{
-        db::{
-            DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs,
-        },
+        db::{DbContext, DbEntity, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs},
         errors::LPError,
-        models::{
-            ApiCache, ApiCacheKey,
-            traits::{DbStruct, IntoDbStruct},
-        },
+        models::traits::{DbStruct, IntoDbStruct},
     },
-    impl_has_type_name, sqlx_operation_with_retries, verify_fk,
+    impl_has_type_name, verify_fk,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -168,7 +163,6 @@ impl IntoDbStruct for NhlGameJson {
             reg_periods,
             endpoint,
             raw_json,
-            last_updated: None,
         }
     }
 }
@@ -213,7 +207,6 @@ pub struct NhlGame {
     pub reg_periods: i32,
     pub endpoint: String,
     pub raw_json: serde_json::Value,
-    pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl DbStruct for NhlGame {
     type IntoDbStruct = NhlGameJson;

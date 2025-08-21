@@ -1,15 +1,11 @@
 use std::fmt::Debug;
 
 use async_trait::async_trait;
-use sqlx::{
-    FromRow, Postgres,
-    postgres::{PgArguments, PgQueryResult},
-    query::QueryAs,
-};
+use sqlx::{FromRow, postgres::PgQueryResult};
 
 use crate::{
+    any_primary_key::AnyPrimaryKey,
     common::{
-        any_primary_key::AnyPrimaryKey,
         api::CacheableApi,
         db::{DbContext, DbPool, SqlxJobResult, StaticPgQuery, StaticPgQueryAs},
         errors::LPError,

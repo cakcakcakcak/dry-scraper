@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 use crate::{
+    any_primary_key::AnyPrimaryKey,
     bind,
     common::{
-        any_primary_key::AnyPrimaryKey,
         api::{CacheableApi, cacheable_api::SimpleApi},
         db::{DbContext, DbEntity, PrimaryKey, StaticPgQuery, StaticPgQueryAs},
         errors::LPError,
@@ -118,14 +118,6 @@ impl PrimaryKey for ApiCacheKey {
         };
         api_cache.upsert(db_context).await?;
         Ok(())
-    }
-}
-impl ApiCacheKey {
-    pub async fn verify_by_key(
-        self,
-        db_context: &DbContext,
-    ) -> Result<Option<ApiCacheKey>, LPError> {
-        ApiCache::verify_by_key(db_context, self).await
     }
 }
 

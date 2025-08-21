@@ -9,15 +9,13 @@ use crate::common::{
     },
     db::DbContext,
     errors::LPError,
-    models::{
-        ItemParsedWithContext,
-        traits::{HasTypeName, IntoDbStruct},
-    },
+    models::{ItemParsedWithContext, traits::IntoDbStruct},
     util::filter_results,
 };
 
 use super::super::models::{
-    DefaultNhlContext, NhlApiDataArrayResponse, NhlFranchiseJson, NhlSeasonJson, NhlTeamJson,
+    DefaultNhlContext, NhlApiDataArrayResponse, NhlFranchiseJson, NhlSeasonJson, NhlShiftJson,
+    NhlTeamJson,
 };
 
 #[derive(Clone)]
@@ -43,6 +41,7 @@ impl HasBaseUrl for NhlStatsApi {
         &self.base_url
     }
 }
+
 impl HasEndpoint for NhlSeasonJson {
     type Api = NhlStatsApi;
     type Params = ();
@@ -51,6 +50,7 @@ impl HasEndpoint for NhlSeasonJson {
         format!("{}/season", api.base_url())
     }
 }
+
 #[derive(Debug, Default)]
 pub struct NhlTeamParams {
     pub team_id: Option<i32>,
@@ -66,12 +66,29 @@ impl HasEndpoint for NhlTeamJson {
         }
     }
 }
+
 impl HasEndpoint for NhlFranchiseJson {
     type Api = NhlStatsApi;
     type Params = ();
 
     fn endpoint(api: &Self::Api, _params: Self::Params) -> String {
         format!("{}/franchise", api.base_url())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct NhlShiftParams {
+    pub game_id: i32,
+}
+impl HasEndpoint for NhlShiftJson {
+    type Api = NhlStatsApi;
+    type Params = NhlShiftParams;
+
+    fn endpoint(api: &Self::Api, params: Self::Params) -> String {
+        format!(
+            "{}/shiftcharts?cayenneExp=gameId={}",
+            api.base_url, params.game_id
+        )
     }
 }
 
@@ -113,6 +130,33 @@ impl NhlStatsApi {
             data_array_response.map_json_array_to_json_structs(&endpoint);
 
         Ok(filter_results::<ItemParsedWithContext<T>>(results))
+    }
+
+    #[tracing::instrument(skip(db_context))]
+    pub async fn get_nhl_shifts_in_game(
+        &self,
+        db_context: &DbContext,
+        game_id: i32,
+    ) -> Result<Vec<ItemParsedWithContext<NhlShiftJson>>, LPError> {
+        let endpoint: String = NhlShiftJson::endpoint(self, NhlShiftParams { game_id });
+        let raw_data: String = self.fetch_endpoint_cached(&db_context, &endpoint).await?;
+
+        let data_array_response: NhlApiDataArrayResponse = match serde_json::from_str(&raw_data) {
+            Ok(value) => value,
+            Err(e) => {
+                tracing::warn!(
+                    endpoint,
+                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
+                );
+                tracing::debug!(raw_data);
+                return Err(LPError::Serde(e));
+            }
+        };
+        let shift_json_results: Vec<Result<ItemParsedWithContext<NhlShiftJson>, LPError>> =
+            data_array_response.map_json_array_to_json_structs(&endpoint);
+        Ok(filter_results::<ItemParsedWithContext<NhlShiftJson>>(
+            shift_json_results,
+        ))
     }
 
     #[tracing::instrument(skip(db_context))]

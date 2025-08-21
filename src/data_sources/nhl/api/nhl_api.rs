@@ -10,7 +10,7 @@ use crate::{
         errors::LPError,
         models::{ItemParsedWithContext, traits::IntoDbStruct},
     },
-    data_sources::nhl::models::{DefaultNhlContext, NhlTeamJson},
+    data_sources::nhl::models::{DefaultNhlContext, NhlShiftJson, NhlTeamJson},
 };
 
 #[derive(Clone, Debug)]
@@ -52,6 +52,15 @@ impl NhlApi {
         self.nhl_stats_api.get_nhl_team(db_context, team_id).await
     }
 
+    pub async fn get_nhl_shifts_in_game(
+        &self,
+        db_context: &DbContext,
+        game_id: i32,
+    ) -> Result<Vec<ItemParsedWithContext<NhlShiftJson>>, LPError> {
+        self.nhl_stats_api
+            .get_nhl_shifts_in_game(db_context, game_id)
+            .await
+    }
     pub async fn fetch_by_id<T>(
         &self,
         db_context: &DbContext,

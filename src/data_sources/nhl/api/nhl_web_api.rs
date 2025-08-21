@@ -9,10 +9,7 @@ use crate::common::{
     },
     db::DbContext,
     errors::LPError,
-    models::{
-        ItemParsedWithContext,
-        traits::{HasTypeName, IntoDbStruct},
-    },
+    models::{ItemParsedWithContext, traits::IntoDbStruct},
 };
 
 use super::super::models::{DefaultNhlContext, NhlGameJson, NhlPlayerJson};

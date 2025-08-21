@@ -1,6 +1,7 @@
 use tokio;
 use tracing_subscriber;
 
+mod any_primary_key;
 mod common;
 mod config;
 mod data_sources;
@@ -29,10 +30,12 @@ async fn main() -> Result<(), LPError> {
     let nhl_api: NhlApi = NhlApi::new();
 
     let mut seasons: Vec<NhlSeason> = get_nhl_seasons(&db_context, &nhl_api).await?;
-    let franchises: Vec<NhlFranchise> = get_nhl_franchises(&db_context, &nhl_api).await?;
-    let teams: Vec<NhlTeam> = get_nhl_teams(&db_context, &nhl_api).await?;
+    _ = get_nhl_franchises(&db_context, &nhl_api).await?;
+    _ = get_nhl_teams(&db_context, &nhl_api).await?;
 
     seasons.sort_by_key(|season| season.id);
+    seasons.pop();
+    seasons.reverse();
 
     for season in seasons {
         let games: Vec<NhlGame> =
@@ -40,6 +43,7 @@ async fn main() -> Result<(), LPError> {
         for game in games {
             get_nhl_plays_in_game(&db_context, &nhl_api, &game).await?;
             get_nhl_roster_spots_in_game(&db_context, &nhl_api, &game).await?;
+            get_nhl_shifts_in_game(&db_context, &nhl_api, &game).await?;
         }
     }
 

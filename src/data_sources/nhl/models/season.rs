@@ -10,18 +10,12 @@ use super::DefaultNhlContext;
 use crate::{
     bind,
     common::{
-        db::{
-            DbContext, DbEntity, PrimaryKey, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs,
-        },
+        db::{DbContext, DbEntity, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs},
         errors::LPError,
-        models::{
-            ApiCache, ApiCacheKey,
-            traits::{DbStruct, IntoDbStruct},
-        },
+        models::traits::{DbStruct, IntoDbStruct},
         serde_helpers::JsonExt,
     },
-    impl_has_type_name, impl_pk_debug, make_deserialize_key_to_type, make_deserialize_to_type,
-    sqlx_operation_with_retries, verify_fk,
+    impl_has_type_name, impl_pk_debug, make_deserialize_to_type, verify_fk,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -120,7 +114,6 @@ impl IntoDbStruct for NhlSeasonJson {
             wildcard_in_use,
             endpoint,
             raw_json,
-            last_updated: None,
         }
     }
 }
@@ -152,7 +145,6 @@ pub struct NhlSeason {
     pub wildcard_in_use: bool,
     pub endpoint: String,
     pub raw_json: serde_json::Value,
-    pub last_updated: Option<chrono::NaiveDateTime>,
 }
 impl DbStruct for NhlSeason {
     type IntoDbStruct = NhlSeasonJson;
