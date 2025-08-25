@@ -4,7 +4,7 @@ use serde_json;
 use sqlx::FromRow;
 
 use super::super::primary_key::*;
-use super::{GameNhlContext, LocalizedNameJson};
+use super::{LocalizedNameJson, NhlGameContext};
 use crate::impl_pk_debug;
 use crate::{
     bind,
@@ -29,7 +29,7 @@ pub struct NhlRosterSpotJson {
 }
 impl IntoDbStruct for NhlRosterSpotJson {
     type DbStruct = NhlRosterSpot;
-    type Context = GameNhlContext;
+    type Context = NhlGameContext;
 
     fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlRosterSpotJson {
@@ -41,7 +41,7 @@ impl IntoDbStruct for NhlRosterSpotJson {
             position_code,
             headshot,
         } = self;
-        let GameNhlContext {
+        let NhlGameContext {
             endpoint,
             game_id,
             raw_json,
@@ -51,8 +51,8 @@ impl IntoDbStruct for NhlRosterSpotJson {
             game_id,
             player_id,
             team_id,
-            first_name: first_name.default,
-            last_name: last_name.default,
+            first_name: first_name.best_str(),
+            last_name: last_name.best_str(),
             sweater_number,
             position_code,
             headshot,

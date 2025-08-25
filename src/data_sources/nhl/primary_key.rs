@@ -15,7 +15,8 @@ use crate::{
         api::NhlApi,
         models::{
             NhlFranchise, NhlGame, NhlGameJson, NhlPlay, NhlPlayer, NhlPlayerJson,
-            NhlPlayoffSeries, NhlRosterSpot, NhlSeason, NhlShift, NhlTeam, NhlTeamJson,
+            NhlPlayoffBracketSeries, NhlPlayoffSeries, NhlPlayoffSeriesJson, NhlRosterSpot,
+            NhlSeason, NhlShift, NhlTeam, NhlTeamJson,
         },
     },
 };
@@ -31,7 +32,9 @@ pub enum NhlPrimaryKey {
     RosterSpot(NhlRosterSpotKey),
     Play(NhlPlayKey),
     Shift(NhlShiftKey),
+    PlayoffBracketSeries(NhlPlayoffBracketSeriesKey),
     PlayoffSeries(NhlPlayoffSeriesKey),
+    PlayoffSeriesGame(NhlPlayoffSeriesGameKey),
 }
 impl<'r> FromRow<'r, PgRow> for NhlPrimaryKey {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
@@ -46,9 +49,16 @@ impl<'r> FromRow<'r, PgRow> for NhlPrimaryKey {
             "nhl_roster_spot" => Ok(NhlPrimaryKey::RosterSpot(NhlRosterSpotKey::from_row(row)?)),
             "nhl_play" => Ok(NhlPrimaryKey::Play(NhlPlayKey::from_row(row)?)),
             "nhl_shift" => Ok(NhlPrimaryKey::Shift(NhlShiftKey::from_row(row)?)),
+            "nhl_playoff_bracket_series" => Ok(NhlPrimaryKey::PlayoffBracketSeries(
+                NhlPlayoffBracketSeriesKey::from_row(row)?,
+            )),
             "nhl_playoff_series" => Ok(NhlPrimaryKey::PlayoffSeries(
                 NhlPlayoffSeriesKey::from_row(row)?,
             )),
+            "nhl_playoff_series_game" => Ok(NhlPrimaryKey::PlayoffSeriesGame(
+                NhlPlayoffSeriesGameKey::from_row(row)?,
+            )),
+
             _ => Err(sqlx::Error::ColumnNotFound(
                 "Unknown table `{table_name}`".into(),
             )),
@@ -74,7 +84,9 @@ impl PrimaryKey for NhlPrimaryKey {
             NhlPrimaryKey::RosterSpot(pk) => pk.create_select_query(),
             NhlPrimaryKey::Play(pk) => pk.create_select_query(),
             NhlPrimaryKey::Shift(pk) => pk.create_select_query(),
+            NhlPrimaryKey::PlayoffBracketSeries(pk) => pk.create_select_query(),
             NhlPrimaryKey::PlayoffSeries(pk) => pk.create_select_query(),
+            NhlPrimaryKey::PlayoffSeriesGame(pk) => pk.create_select_query(),
         }
     }
 
@@ -92,7 +104,12 @@ impl PrimaryKey for NhlPrimaryKey {
             NhlPrimaryKey::Team(pk) => pk.upsert_from_api(db_context, api).await,
             NhlPrimaryKey::Player(pk) => pk.upsert_from_api(db_context, api).await,
             NhlPrimaryKey::Game(pk) => pk.upsert_from_api(db_context, api).await,
-            _ => Ok(()),
+            NhlPrimaryKey::PlayoffSeries(pk) => pk.upsert_from_api(db_context, api).await,
+            _ => {
+                let msg = format!("Unable to retrieve record based on key {:?}", self);
+                tracing::error!(msg);
+                Err(LPError::ApiCustom(msg))
+            }
         }
     }
 }
@@ -114,15 +131,21 @@ impl NhlPrimaryKey {
             NhlPrimaryKey::RosterSpot(_) => NhlRosterSpot::verify_by_key(db_context, self).await,
             NhlPrimaryKey::Play(_) => NhlPlay::verify_by_key(db_context, self).await,
             NhlPrimaryKey::Shift(_) => NhlShift::verify_by_key(db_context, self).await,
+            NhlPrimaryKey::PlayoffBracketSeries(_) => {
+                NhlPlayoffBracketSeries::verify_by_key(db_context, self).await
+            }
             NhlPrimaryKey::PlayoffSeries(_) => {
+                NhlPlayoffSeries::verify_by_key(db_context, self).await
+            }
+            NhlPrimaryKey::PlayoffSeriesGame(_) => {
                 NhlPlayoffSeries::verify_by_key(db_context, self).await
             }
         }
     }
 
-    pub fn api_cache<S: AsRef<str>>(endpoint: S) -> Self {
+    pub fn api_cache(endpoint: &str) -> Self {
         NhlPrimaryKey::ApiCache(ApiCacheKey {
-            endpoint: endpoint.as_ref().to_string(),
+            endpoint: endpoint.to_string(),
         })
     }
 
@@ -162,10 +185,17 @@ impl NhlPrimaryKey {
         })
     }
 
-    pub fn _playoff_series<S: AsRef<str>>(season_id: i32, series_letter: S) -> Self {
+    pub fn playoff_bracket_series(season_id: i32, series_letter: &str) -> Self {
+        NhlPrimaryKey::PlayoffBracketSeries(NhlPlayoffBracketSeriesKey {
+            season_id,
+            series_letter: series_letter.to_string(),
+        })
+    }
+
+    pub fn playoff_series(season_id: i32, series_letter: &str) -> Self {
         NhlPrimaryKey::PlayoffSeries(NhlPlayoffSeriesKey {
             season_id,
-            series_letter: series_letter.as_ref().to_string(),
+            series_letter: series_letter.to_string(),
         })
     }
 }
@@ -206,11 +236,12 @@ impl NhlTeamKey {
         let team_id = self.id;
 
         let team_json_with_context: ItemParsedWithContext<NhlTeamJson> =
-            nhl_api.get_nhl_team(db_context, team_id).await?;
+            nhl_api.teams().get(db_context, team_id).await?;
         let team = team_json_with_context.to_db_struct();
 
         tracing::debug!("Upserting team with id {team_id} into lp database.");
-        team.upsert(db_context).await?;
+        team.fix_relationships_and_upsert(db_context, nhl_api)
+            .await?;
         tracing::debug!("Upserted team with id {team_id} into lp database.");
         Ok(())
     }
@@ -232,13 +263,14 @@ impl NhlPlayerKey {
     ) -> Result<(), LPError> {
         let player_id = self.id;
 
-        let player_json_with_context: ItemParsedWithContext<NhlPlayerJson> = nhl_api
-            .fetch_by_id::<NhlPlayerJson>(db_context, player_id)
-            .await?;
+        let player_json_with_context: ItemParsedWithContext<NhlPlayerJson> =
+            nhl_api.players().get(db_context, player_id).await?;
         let player: NhlPlayer = player_json_with_context.to_db_struct();
 
         tracing::debug!("Upserting player with id {player_id} into lp database.");
-        player.upsert(db_context).await?;
+        player
+            .fix_relationships_and_upsert(db_context, nhl_api)
+            .await?;
         tracing::debug!("Upserted player with id {player_id} into lp database.");
 
         Ok(())
@@ -261,13 +293,13 @@ impl NhlGameKey {
     ) -> Result<(), LPError> {
         let game_id = self.id;
 
-        let game_json_with_context: ItemParsedWithContext<NhlGameJson> = nhl_api
-            .fetch_by_id::<NhlGameJson>(db_context, game_id)
-            .await?;
+        let game_json_with_context: ItemParsedWithContext<NhlGameJson> =
+            nhl_api.games().get(db_context, game_id).await?;
         let game: NhlGame = game_json_with_context.to_db_struct();
 
         tracing::debug!("Upserting game with id {game_id} into lp database.");
-        game.upsert(db_context).await?;
+        game.fix_relationships_and_upsert(db_context, nhl_api)
+            .await?;
         tracing::debug!("Upserted game with id {game_id} into lp database.");
 
         Ok(())
@@ -316,6 +348,21 @@ impl NhlShiftKey {
 }
 
 #[derive(Clone, Debug, Eq, FromRow, Hash, PartialEq)]
+pub struct NhlPlayoffBracketSeriesKey {
+    pub season_id: i32,
+    pub series_letter: String,
+}
+impl NhlPlayoffBracketSeriesKey {
+    fn create_select_query(&self) -> StaticPgQuery {
+        sqlx::query(
+            "SELECT * FROM nhl_playoff_bracket_series WHERE season_id=$1 AND series_letter=$2",
+        )
+        .bind(self.season_id)
+        .bind(self.series_letter.clone())
+    }
+}
+
+#[derive(Clone, Debug, Eq, FromRow, Hash, PartialEq)]
 pub struct NhlPlayoffSeriesKey {
     pub season_id: i32,
     pub series_letter: String,
@@ -325,5 +372,42 @@ impl NhlPlayoffSeriesKey {
         sqlx::query("SELECT * FROM nhl_playoff_series WHERE season_id=$1 AND series_letter=$2")
             .bind(self.season_id)
             .bind(self.series_letter.clone())
+    }
+
+    async fn upsert_from_api(
+        &self,
+        db_context: &DbContext,
+        nhl_api: &NhlApi,
+    ) -> Result<(), LPError> {
+        let season_id: i32 = self.season_id;
+        let series_letter: &str = &self.series_letter;
+
+        let series_json_with_context: ItemParsedWithContext<NhlPlayoffSeriesJson> = nhl_api
+            .playoff_series()
+            .get(db_context, season_id, series_letter)
+            .await?;
+        let series: NhlPlayoffSeries = series_json_with_context.to_db_struct();
+
+        tracing::debug!(
+            "Upserting series {series_letter} from {season_id} NHL season into lp database."
+        );
+        series
+            .fix_relationships_and_upsert(db_context, nhl_api)
+            .await?;
+        tracing::debug!(
+            "Upserted series {series_letter} from {season_id} NHL season into lp database."
+        );
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, FromRow, Hash, PartialEq)]
+pub struct NhlPlayoffSeriesGameKey {
+    pub id: i32,
+}
+impl NhlPlayoffSeriesGameKey {
+    fn create_select_query(&self) -> StaticPgQuery {
+        sqlx::query("SELECT * FROM nhl_playoff_series_game WHERE id=$1").bind(self.id)
     }
 }

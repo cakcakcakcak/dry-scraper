@@ -5,7 +5,7 @@ use sqlx::FromRow;
 use sqlx::postgres::types::PgInterval;
 
 use super::super::{NhlPlayKey, NhlPrimaryKey};
-use super::{DefendingSide, GameNhlContext, PeriodDescriptorJson, PeriodTypeJson};
+use super::{DefendingSide, NhlGameContext, PeriodDescriptorJson, PeriodTypeJson};
 use crate::impl_pk_debug;
 use crate::{
     bind,
@@ -36,7 +36,7 @@ pub struct NhlPlayJson {
 }
 impl IntoDbStruct for NhlPlayJson {
     type DbStruct = NhlPlay;
-    type Context = GameNhlContext;
+    type Context = NhlGameContext;
 
     fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlPlayJson {
@@ -51,7 +51,7 @@ impl IntoDbStruct for NhlPlayJson {
             sort_order,
             details,
         } = self;
-        let GameNhlContext {
+        let NhlGameContext {
             endpoint,
             game_id,
             raw_json,

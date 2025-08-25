@@ -4,7 +4,8 @@ use serde_json;
 use sqlx::FromRow;
 
 use super::super::primary_key::*;
-use super::{DefaultNhlContext, LocalizedNameJson};
+use super::{LocalizedNameJson, NhlDefaultContext};
+use crate::data_sources::models::LocalizedNameJsonExt;
 use crate::impl_pk_debug;
 use crate::{
     bind,
@@ -67,7 +68,7 @@ pub struct NhlPlayerJson {
 }
 impl IntoDbStruct for NhlPlayerJson {
     type DbStruct = NhlPlayer;
-    type Context = DefaultNhlContext;
+    type Context = NhlDefaultContext;
 
     fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlPlayerJson {
@@ -99,7 +100,7 @@ impl IntoDbStruct for NhlPlayerJson {
             in_top100_all_time,
             in_hhof,
         } = self;
-        let DefaultNhlContext { endpoint, raw_json } = context;
+        let NhlDefaultContext { endpoint, raw_json } = context;
         let (
             draft_year,
             draft_team_abbreviation,
@@ -116,22 +117,17 @@ impl IntoDbStruct for NhlPlayerJson {
             ),
             None => (None, None, None, None, None),
         };
-        let full_team_name = full_team_name.map(|name| name.default);
-        let team_common_name = team_common_name.map(|name| name.default);
-        let team_place_name_with_preposition =
-            team_place_name_with_preposition.map(|name| name.default);
-        let birth_city = birth_city.default;
-        let birth_state_province = birth_state_province.map(|name| name.default);
+
         NhlPlayer {
             id,
-            first_name: first_name.default,
-            last_name: last_name.default,
+            first_name: first_name.best_str(),
+            last_name: last_name.best_str(),
             is_active,
             current_team_id,
             current_team_abbrev,
-            full_team_name,
-            team_common_name,
-            team_place_name_with_preposition,
+            full_team_name: full_team_name.best_str_or_none(),
+            team_common_name: team_common_name.best_str_or_none(),
+            team_place_name_with_preposition: team_place_name_with_preposition.best_str_or_none(),
             team_logo,
             sweater_number,
             position,
@@ -142,8 +138,8 @@ impl IntoDbStruct for NhlPlayerJson {
             weight_in_pounds,
             weight_in_kilograms,
             birth_date,
-            birth_city,
-            birth_state_province,
+            birth_city: birth_city.best_str(),
+            birth_state_province: birth_state_province.best_str_or_none(),
             birth_country,
             shoots_catches,
             draft_year,

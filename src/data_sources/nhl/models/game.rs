@@ -6,7 +6,7 @@ use sqlx::FromRow;
 
 use super::super::{NhlGameKey, NhlPrimaryKey};
 use super::{
-    DefaultNhlContext, GameType, LocalizedNameJson, NhlPlayJson, NhlRosterSpotJson,
+    GameType, LocalizedNameJson, NhlDefaultContext, NhlPlayJson, NhlRosterSpotJson,
     PeriodDescriptorJson, PeriodTypeJson,
 };
 use crate::impl_pk_debug;
@@ -29,7 +29,7 @@ pub struct ClockJson {
     pub in_intermission: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TvBroadcastsJson {
     pub id: i32,
@@ -38,7 +38,7 @@ pub struct TvBroadcastsJson {
     pub network: String,
     pub sequence_number: i32,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameOutcomeJson {
     pub last_period_type: PeriodTypeJson,
@@ -84,7 +84,7 @@ pub struct NhlGameJson {
     #[serde(default)]
     pub clock: Option<ClockJson>,
     pub display_period: i32,
-    pub max_periods: i32,
+    pub max_periods: Option<i32>,
     pub game_outcome: GameOutcomeJson,
     pub plays: Vec<NhlPlayJson>,
     pub roster_spots: Vec<NhlRosterSpotJson>,
@@ -92,7 +92,7 @@ pub struct NhlGameJson {
 }
 impl IntoDbStruct for NhlGameJson {
     type DbStruct = NhlGame;
-    type Context = DefaultNhlContext;
+    type Context = NhlDefaultContext;
 
     fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlGameJson {
@@ -122,15 +122,15 @@ impl IntoDbStruct for NhlGameJson {
             roster_spots: _,
             reg_periods,
         } = self;
-        let DefaultNhlContext { endpoint, raw_json } = context;
+        let NhlDefaultContext { endpoint, raw_json } = context;
         NhlGame {
             id,
             season,
             game_type,
             limited_scoring,
             game_date,
-            venue: venue.default,
-            venue_location: venue_location.default,
+            venue: venue.best_str(),
+            venue_location: venue_location.best_str(),
             start_time_utc,
             eastern_utc_offset,
             venue_utc_offset,
@@ -138,23 +138,23 @@ impl IntoDbStruct for NhlGameJson {
             period_descriptor_type: period_descriptor.period_type,
             period_descriptor_max_regulation_periods: period_descriptor.max_regulation_periods,
             away_team_id: away_team.id,
-            away_team_name: away_team.common_name.default,
+            away_team_name: away_team.common_name.best_str(),
             away_team_abbrev: away_team.abbrev,
             away_team_score: away_team.score,
             away_team_sog: away_team.sog,
             away_team_logo: away_team.logo,
             away_team_dark_logo: away_team.dark_logo,
-            away_team_place_name: away_team.place_name.default,
-            away_team_place_name_with_preposition: away_team.place_name_with_preposition.default,
+            away_team_place_name: away_team.place_name.best_str(),
+            away_team_place_name_with_preposition: away_team.place_name_with_preposition.best_str(),
             home_team_id: home_team.id,
-            home_team_name: home_team.common_name.default,
+            home_team_name: home_team.common_name.best_str(),
             home_team_abbrev: home_team.abbrev,
             home_team_score: home_team.score,
             home_team_sog: home_team.sog,
             home_team_logo: home_team.logo,
             home_team_dark_logo: home_team.dark_logo,
-            home_team_place_name: home_team.place_name.default,
-            home_team_place_name_with_preposition: home_team.place_name_with_preposition.default,
+            home_team_place_name: home_team.place_name.best_str(),
+            home_team_place_name_with_preposition: home_team.place_name_with_preposition.best_str(),
             shootout_in_use,
             ot_in_use,
             display_period,
@@ -202,7 +202,7 @@ pub struct NhlGame {
     pub shootout_in_use: bool,
     pub ot_in_use: bool,
     pub display_period: i32,
-    pub max_periods: i32,
+    pub max_periods: Option<i32>,
     pub game_outcome_last_period_type: PeriodTypeJson,
     pub reg_periods: i32,
     pub endpoint: String,

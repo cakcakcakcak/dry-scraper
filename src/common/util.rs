@@ -37,6 +37,19 @@ macro_rules! with_progress_bar {
 }
 
 #[macro_export]
+macro_rules! with_spinner {
+    ($msg:expr, |$pb:ident| $body:block) => {{
+        let $pb = indicatif::ProgressBar::new_spinner();
+        $pb.set_message($msg);
+        $pb.enable_steady_tick(std::time::Duration::from_millis(100));
+        $pb.set_style($crate::config::CONFIG.spinner_style.clone());
+        let result = { $body };
+        $pb.finish_using_style();
+        result
+    }};
+}
+
+#[macro_export]
 macro_rules! sqlx_operation_with_retries {
     ($body:expr) => {
         $crate::common::util::sqlx_operation_with_retries(|| async { $body })
@@ -135,6 +148,16 @@ where
     .await
 }
 
-pub fn filter_results<T>(results: Vec<Result<T, LPError>>) -> Vec<T> {
-    results.into_iter().filter_map(Result::ok).collect()
+#[tracing::instrument(skip(results))]
+pub fn track_and_filter_errors<T>(results: Vec<Result<T, LPError>>) -> Vec<T> {
+    results
+        .into_iter()
+        .filter_map(|res| match res {
+            Ok(val) => Some(val),
+            Err(_e) => {
+                // TRACK ERROR IN DATABASE
+                None
+            }
+        })
+        .collect()
 }

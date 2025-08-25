@@ -1,20 +1,18 @@
 use std::fmt::Debug;
 
 use async_trait::async_trait;
+use serde::de::DeserializeOwned;
 
 use crate::common::{
-    api::{
-        api_common::{HasBaseUrl, HasEndpoint},
-        cacheable_api::CacheableApi,
-    },
+    api::cacheable_api::CacheableApi,
     db::DbContext,
     errors::LPError,
     models::{ItemParsedWithContext, traits::IntoDbStruct},
-    util::filter_results,
+    util::track_and_filter_errors,
 };
 
 use super::super::models::{
-    DefaultNhlContext, NhlApiDataArrayResponse, NhlFranchiseJson, NhlSeasonJson, NhlShiftJson,
+    NhlDefaultContext, NhlApiDataArrayResponse, NhlFranchiseJson, NhlSeasonJson, NhlShiftJson,
     NhlTeamJson,
 };
 
@@ -36,62 +34,6 @@ impl CacheableApi for NhlStatsApi {
         &self.client
     }
 }
-impl HasBaseUrl for NhlStatsApi {
-    fn base_url(&self) -> &str {
-        &self.base_url
-    }
-}
-
-impl HasEndpoint for NhlSeasonJson {
-    type Api = NhlStatsApi;
-    type Params = ();
-
-    fn endpoint(api: &Self::Api, _params: Self::Params) -> String {
-        format!("{}/season", api.base_url())
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct NhlTeamParams {
-    pub team_id: Option<i32>,
-}
-impl HasEndpoint for NhlTeamJson {
-    type Api = NhlStatsApi;
-    type Params = NhlTeamParams;
-
-    fn endpoint(api: &Self::Api, params: Self::Params) -> String {
-        match params.team_id {
-            Some(team_id) => format!("{}/team/id/{team_id}", api.base_url()),
-            None => format!("{}/team", api.base_url()),
-        }
-    }
-}
-
-impl HasEndpoint for NhlFranchiseJson {
-    type Api = NhlStatsApi;
-    type Params = ();
-
-    fn endpoint(api: &Self::Api, _params: Self::Params) -> String {
-        format!("{}/franchise", api.base_url())
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct NhlShiftParams {
-    pub game_id: i32,
-}
-impl HasEndpoint for NhlShiftJson {
-    type Api = NhlStatsApi;
-    type Params = NhlShiftParams;
-
-    fn endpoint(api: &Self::Api, params: Self::Params) -> String {
-        format!(
-            "{}/shiftcharts?cayenneExp=gameId={}",
-            api.base_url, params.game_id
-        )
-    }
-}
-
 impl NhlStatsApi {
     pub fn new() -> Self {
         Self {
@@ -100,100 +42,123 @@ impl NhlStatsApi {
         }
     }
 
-    #[tracing::instrument(skip(db_context))]
-    pub async fn fetch_nhl_api_data_array<T>(
+    pub fn seasons(&self) -> SeasonResource<'_> {
+        SeasonResource { api: self }
+    }
+
+    pub fn teams(&self) -> TeamResource<'_> {
+        TeamResource { api: self }
+    }
+
+    pub fn franchises(&self) -> FranchiseResource<'_> {
+        FranchiseResource { api: self }
+    }
+
+    pub fn shifts(&self) -> ShiftResource<'_> {
+        ShiftResource { api: self }
+    }
+
+    async fn fetch_and_parse<T>(
         &self,
+        endpoint: &str,
         db_context: &DbContext,
     ) -> Result<Vec<ItemParsedWithContext<T>>, LPError>
     where
-        T: serde::de::DeserializeOwned
-            + HasEndpoint<Api = NhlStatsApi>
-            + Debug
-            + IntoDbStruct<Context = DefaultNhlContext>,
+        T: DeserializeOwned + Debug + IntoDbStruct<Context = NhlDefaultContext>,
     {
-        let endpoint: String = T::endpoint(self, T::Params::default());
-        let raw_data: String = self.fetch_endpoint_cached(&db_context, &endpoint).await?;
+        let raw_data = self.fetch_endpoint_cached(db_context, endpoint).await?;
 
-        let data_array_response: NhlApiDataArrayResponse = match serde_json::from_str(&raw_data) {
-            Ok(value) => value,
-            Err(e) => {
+        let data_array_response: NhlApiDataArrayResponse = serde_json::from_str(&raw_data)
+            .map_err(|e| {
                 tracing::warn!(
                     endpoint,
-                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
+                    "Failed to parse into `NhlApiDataArrayResponse`: {e}"
                 );
                 tracing::debug!(raw_data);
-                return Err(LPError::Serde(e));
-            }
-        };
+                LPError::Serde(e)
+            })?;
 
-        let results: Vec<Result<ItemParsedWithContext<T>, LPError>> =
-            data_array_response.map_json_array_to_json_structs(&endpoint);
-
-        Ok(filter_results::<ItemParsedWithContext<T>>(results))
+        let results = data_array_response.map_json_array_to_json_structs(endpoint);
+        Ok(track_and_filter_errors(results))
     }
+}
 
-    #[tracing::instrument(skip(db_context))]
-    pub async fn get_nhl_shifts_in_game(
+pub struct SeasonResource<'a> {
+    api: &'a NhlStatsApi,
+}
+impl<'a> SeasonResource<'a> {
+    pub async fn list(
         &self,
         db_context: &DbContext,
-        game_id: i32,
-    ) -> Result<Vec<ItemParsedWithContext<NhlShiftJson>>, LPError> {
-        let endpoint: String = NhlShiftJson::endpoint(self, NhlShiftParams { game_id });
-        let raw_data: String = self.fetch_endpoint_cached(&db_context, &endpoint).await?;
+    ) -> Result<Vec<ItemParsedWithContext<NhlSeasonJson>>, LPError> {
+        let endpoint = format!("{}/season", self.api.base_url);
+        self.api
+            .fetch_and_parse(endpoint.as_str(), db_context)
+            .await
+    }
+}
 
-        let data_array_response: NhlApiDataArrayResponse = match serde_json::from_str(&raw_data) {
-            Ok(value) => value,
-            Err(e) => {
-                tracing::warn!(
-                    endpoint,
-                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
-                );
-                tracing::debug!(raw_data);
-                return Err(LPError::Serde(e));
-            }
-        };
-        let shift_json_results: Vec<Result<ItemParsedWithContext<NhlShiftJson>, LPError>> =
-            data_array_response.map_json_array_to_json_structs(&endpoint);
-        Ok(filter_results::<ItemParsedWithContext<NhlShiftJson>>(
-            shift_json_results,
-        ))
+pub struct TeamResource<'a> {
+    api: &'a NhlStatsApi,
+}
+impl<'a> TeamResource<'a> {
+    pub async fn list(
+        &self,
+        db_context: &DbContext,
+    ) -> Result<Vec<ItemParsedWithContext<NhlTeamJson>>, LPError> {
+        let endpoint = format!("{}/team", self.api.base_url);
+        self.api
+            .fetch_and_parse(endpoint.as_str(), db_context)
+            .await
     }
 
-    #[tracing::instrument(skip(db_context))]
-    pub async fn get_nhl_team(
+    pub async fn get(
         &self,
         db_context: &DbContext,
         team_id: i32,
     ) -> Result<ItemParsedWithContext<NhlTeamJson>, LPError> {
-        let endpoint: String = NhlTeamJson::endpoint(
-            self,
-            NhlTeamParams {
-                team_id: Some(team_id),
-            },
-        );
-        let raw_data: String = self.fetch_endpoint_cached(&db_context, &endpoint).await?;
+        let endpoint = format!("{}/team/id/{team_id}", self.api.base_url);
+        let mut results = self
+            .api
+            .fetch_and_parse(endpoint.as_str(), db_context)
+            .await?;
 
-        let data_array_response: NhlApiDataArrayResponse = match serde_json::from_str(&raw_data) {
-            Ok(value) => value,
-            Err(e) => {
-                tracing::warn!(
-                    endpoint,
-                    "Failed to parse `raw_data` into `serde_json::Value`: {e}"
-                );
-                tracing::debug!(raw_data);
-                return Err(LPError::Serde(e));
-            }
-        };
-
-        let results: Vec<Result<ItemParsedWithContext<NhlTeamJson>, LPError>> =
-            data_array_response.map_json_array_to_json_structs(&endpoint);
-        let mut filtered_results: Vec<ItemParsedWithContext<NhlTeamJson>> =
-            filter_results::<ItemParsedWithContext<NhlTeamJson>>(results);
-
-        let team_json: ItemParsedWithContext<NhlTeamJson> = filtered_results
+        results
             .pop()
-            .ok_or_else(|| LPError::ApiCustom(format!("NHL team with ID {team_id} not found.")))?;
+            .ok_or_else(|| LPError::ApiCustom(format!("NHL team with id {team_id} not found.")))
+    }
+}
 
-        Ok(team_json)
+pub struct FranchiseResource<'a> {
+    api: &'a NhlStatsApi,
+}
+impl<'a> FranchiseResource<'a> {
+    pub async fn list(
+        &self,
+        db_context: &DbContext,
+    ) -> Result<Vec<ItemParsedWithContext<NhlFranchiseJson>>, LPError> {
+        let endpoint = format!("{}/franchise", self.api.base_url);
+        self.api
+            .fetch_and_parse(endpoint.as_str(), db_context)
+            .await
+    }
+}
+
+pub struct ShiftResource<'a> {
+    api: &'a NhlStatsApi,
+}
+impl<'a> ShiftResource<'a> {
+    pub async fn list_shifts_for_game(
+        &self,
+        db_context: &DbContext,
+        game_id: i32,
+    ) -> Result<Vec<ItemParsedWithContext<NhlShiftJson>>, LPError> {
+        let endpoint = format!(
+            "{}/shiftcharts?cayenneExp=gameId={game_id}",
+            self.api.base_url,
+        );
+        self.api
+            .fetch_and_parse(endpoint.as_str(), db_context)
+            .await
     }
 }

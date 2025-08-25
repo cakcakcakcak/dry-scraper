@@ -31,6 +31,7 @@ pub struct Config {
     pub retry_max_interval_ms: u64,
     pub retries: usize,
     pub progress_bar_style: ProgressStyle,
+    pub spinner_style: ProgressStyle,
 }
 
 impl Config {
@@ -103,6 +104,9 @@ impl Config {
                 "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
             )
             .unwrap();
+        let spinner_style: ProgressStyle = ProgressStyle::default_spinner()
+            .template("{spinner:.green} [{elapsed}] {msg}")
+            .unwrap();
 
         Config {
             pg_host,
@@ -117,6 +121,7 @@ impl Config {
             retry_max_interval_ms,
             retries,
             progress_bar_style,
+            spinner_style,
         }
     }
 }

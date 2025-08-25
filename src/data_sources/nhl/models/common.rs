@@ -14,15 +14,27 @@ pub enum DefendingSide {
 }
 
 #[derive(Clone)]
-pub struct DefaultNhlContext {
-    pub endpoint: String,
+pub struct NhlDefaultContext {
     pub raw_json: serde_json::Value,
+    pub endpoint: String,
 }
 #[derive(Clone)]
-pub struct GameNhlContext {
-    pub game_id: i32,
-    pub endpoint: String,
+pub struct NhlSeasonContext {
+    pub season_id: i32,
     pub raw_json: serde_json::Value,
+    pub endpoint: String,
+}
+#[derive(Clone)]
+pub struct NhlGameContext {
+    pub game_id: i32,
+    pub raw_json: serde_json::Value,
+    pub endpoint: String,
+}
+#[derive(Clone)]
+pub struct NhlPlayoffSeriesContext {
+    pub series_letter: String,
+    pub raw_json: serde_json::Value,
+    pub endpoint: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Type, Serialize)]
@@ -65,7 +77,7 @@ pub enum PeriodTypeJson {
     Shootout = 3,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PeriodDescriptorJson {
     pub number: i32,
@@ -76,8 +88,38 @@ pub struct PeriodDescriptorJson {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalizedNameJson {
-    pub default: String,
+    pub default: Option<String>,
+    pub cs: Option<String>,
+    pub de: Option<String>,
+    pub sv: Option<String>,
+    pub fi: Option<String>,
+    pub sk: Option<String>,
+    pub en: Option<String>,
     pub fr: Option<String>,
+    pub es: Option<String>,
+}
+impl LocalizedNameJson {
+    pub fn best_str(self) -> String {
+        self.default
+            .or(self.en)
+            .or(self.fr)
+            .or(self.es)
+            .or(self.de)
+            .or(self.fi)
+            .or(self.sv)
+            .or(self.cs)
+            .or(self.sk)
+            .unwrap_or("".to_string())
+    }
+}
+pub trait LocalizedNameJsonExt {
+    fn best_str_or_none(self) -> Option<String>;
+}
+
+impl LocalizedNameJsonExt for Option<LocalizedNameJson> {
+    fn best_str_or_none(self) -> Option<String> {
+        self.map(|name| name.best_str())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -92,7 +134,7 @@ impl NhlApiDataArrayResponse {
         endpoint: &str,
     ) -> Vec<Result<ItemParsedWithContext<T>, LPError>>
     where
-        T: serde::de::DeserializeOwned + HasTypeName + IntoDbStruct<Context = DefaultNhlContext>,
+        T: serde::de::DeserializeOwned + HasTypeName + IntoDbStruct<Context = NhlDefaultContext>,
     {
         self.data
             .iter()
@@ -103,7 +145,7 @@ impl NhlApiDataArrayResponse {
                 match parsed {
                     Ok(item) => Ok(ItemParsedWithContext {
                         item,
-                        context: DefaultNhlContext{raw_json: json_value.clone(), endpoint: endpoint.to_string()}
+                        context: NhlDefaultContext{raw_json: json_value.clone(), endpoint: endpoint.to_string()}
                     }),
                     Err(e) => {
                         tracing::warn!(endpoint=%endpoint, error=%e, "Failed to parse item to `{}`.", T::type_name());

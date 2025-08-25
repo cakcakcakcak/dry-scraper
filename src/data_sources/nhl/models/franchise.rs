@@ -14,7 +14,7 @@ use crate::{
 };
 
 use super::super::{NhlFranchiseKey, NhlPrimaryKey};
-use super::DefaultNhlContext;
+use super::NhlDefaultContext;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,7 +26,7 @@ pub struct NhlFranchiseJson {
 }
 impl IntoDbStruct for NhlFranchiseJson {
     type DbStruct = NhlFranchise;
-    type Context = DefaultNhlContext;
+    type Context = NhlDefaultContext;
 
     fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlFranchiseJson {
@@ -35,7 +35,7 @@ impl IntoDbStruct for NhlFranchiseJson {
             team_common_name,
             team_place_name,
         } = self;
-        let DefaultNhlContext { endpoint, raw_json } = context;
+        let NhlDefaultContext { endpoint, raw_json } = context;
         NhlFranchise {
             id,
             full_name,

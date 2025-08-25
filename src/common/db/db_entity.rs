@@ -35,9 +35,7 @@ pub trait DbEntity:
     }
 
     fn fmt_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(Self::type_name())
-            .field("primary_key", &self.pk())
-            .finish()
+        Debug::fmt(&self.pk(), f)
     }
 
     async fn warm_key_cache(db_context: &DbContext) -> Result<(), LPError> {

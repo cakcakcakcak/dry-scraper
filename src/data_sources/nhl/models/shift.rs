@@ -6,7 +6,7 @@ use sqlx::postgres::types::PgInterval;
 
 use super::super::NhlPrimaryKey;
 use crate::data_sources::NhlShiftKey;
-use crate::data_sources::models::DefaultNhlContext;
+use crate::data_sources::models::NhlDefaultContext;
 use crate::impl_pk_debug;
 use crate::{
     bind,
@@ -45,7 +45,7 @@ pub struct NhlShiftJson {
 }
 impl IntoDbStruct for NhlShiftJson {
     type DbStruct = NhlShift;
-    type Context = DefaultNhlContext;
+    type Context = NhlDefaultContext;
 
     fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlShiftJson {
@@ -69,7 +69,7 @@ impl IntoDbStruct for NhlShiftJson {
             team_name,
             type_code,
         } = self;
-        let DefaultNhlContext { endpoint, raw_json } = context;
+        let NhlDefaultContext { endpoint, raw_json } = context;
         let duration: PgInterval =
             parse_mmss_to_pginterval(&duration.unwrap_or("0:00".to_string()));
         let end_time: PgInterval = parse_mmss_to_pginterval(&end_time);

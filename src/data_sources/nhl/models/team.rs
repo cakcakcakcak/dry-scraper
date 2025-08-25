@@ -4,7 +4,7 @@ use serde_json;
 use sqlx::FromRow;
 
 use super::super::primary_key::*;
-use super::DefaultNhlContext;
+use super::NhlDefaultContext;
 use crate::{
     bind,
     common::{
@@ -28,7 +28,7 @@ pub struct NhlTeamJson {
 }
 impl IntoDbStruct for NhlTeamJson {
     type DbStruct = NhlTeam;
-    type Context = DefaultNhlContext;
+    type Context = NhlDefaultContext;
 
     fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlTeamJson {
@@ -39,7 +39,7 @@ impl IntoDbStruct for NhlTeamJson {
             raw_tricode,
             tricode,
         } = self;
-        let DefaultNhlContext { endpoint, raw_json } = context;
+        let NhlDefaultContext { endpoint, raw_json } = context;
         NhlTeam {
             id,
             franchise_id,

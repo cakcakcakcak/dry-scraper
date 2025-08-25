@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS nhl_playoff_series (
+CREATE TABLE IF NOT EXISTS nhl_playoff_bracket_series (
     season_id INTEGER NOT NULL REFERENCES nhl_season (id),
     series_letter CHAR(1) NOT NULL,
     series_url TEXT NOT NULL,
@@ -15,14 +15,14 @@ CREATE TABLE IF NOT EXISTS nhl_playoff_series (
     losing_team_id INTEGER REFERENCES nhl_team (id),
     top_seed_team_id INTEGER REFERENCES nhl_team (id) NOT NULL,
     top_seed_team_abbrev CHAR(3) NOT NULL,
-    top_seed_team_name TEXT NOT NULL,
+    top_seed_team_name TEXT,
     top_seed_team_common_name TEXT NOT NULL,
     top_seed_team_place_name_with_preposition TEXT NOT NULL,
     top_seed_team_logo TEXT NOT NULL,
     top_seed_team_dark_logo TEXT NOT NULL,
     bottom_seed_team_id INTEGER REFERENCES nhl_team (id) NOT NULL,
     bottom_seed_team_abbrev CHAR(3) NOT NULL,
-    bottom_seed_team_name TEXT NOT NULL,
+    bottom_seed_team_name TEXT,
     bottom_seed_team_common_name TEXT NOT NULL,
     bottom_seed_team_place_name_with_preposition TEXT NOT NULL,
     bottom_seed_team_logo TEXT NOT NULL,

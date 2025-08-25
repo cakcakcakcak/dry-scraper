@@ -75,7 +75,19 @@ pub async fn init_db() -> Result<DbPool, LPError> {
     if CONFIG.reset_db {
         tracing::warn!("RESET_DB enabled: dropping tables and enums for clean state");
         sqlx_operation_with_retries!(
+            sqlx::query("DROP TABLE IF EXISTS nhl_playoff_series_game")
+                .execute(&pool)
+                .await
+        )
+        .await?;
+        sqlx_operation_with_retries!(
             sqlx::query("DROP TABLE IF EXISTS nhl_playoff_series")
+                .execute(&pool)
+                .await
+        )
+        .await?;
+        sqlx_operation_with_retries!(
+            sqlx::query("DROP TABLE IF EXISTS nhl_playoff_bracket_series")
                 .execute(&pool)
                 .await
         )

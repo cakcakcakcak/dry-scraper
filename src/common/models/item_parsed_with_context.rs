@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use crate::common::models::traits::IntoDbStruct;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ItemParsedWithContext<T: IntoDbStruct> {
     pub item: T,
     pub context: T::Context,

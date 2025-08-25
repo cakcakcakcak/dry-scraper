@@ -6,7 +6,7 @@ use serde_json;
 use sqlx::FromRow;
 
 use super::super::primary_key::*;
-use super::DefaultNhlContext;
+use super::NhlDefaultContext;
 use crate::{
     bind,
     common::{
@@ -59,7 +59,7 @@ pub struct NhlSeasonJson {
 }
 impl IntoDbStruct for NhlSeasonJson {
     type DbStruct = NhlSeason;
-    type Context = DefaultNhlContext;
+    type Context = NhlDefaultContext;
 
     fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlSeasonJson {
@@ -87,7 +87,7 @@ impl IntoDbStruct for NhlSeasonJson {
             total_regular_season_games,
             wildcard_in_use,
         } = self;
-        let DefaultNhlContext { endpoint, raw_json } = context;
+        let NhlDefaultContext { endpoint, raw_json } = context;
         NhlSeason {
             id,
             all_star_game_in_use,
