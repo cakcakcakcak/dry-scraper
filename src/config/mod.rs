@@ -8,8 +8,9 @@ use once_cell::sync::Lazy;
 use cli_args::CliArgs;
 use env_vars::EnvironmentVariables;
 
+const DEFAULT_API_CONCURRENCY_LIMIT: usize = 32;
 const DEFAULT_MAX_DB_CONNECTIONS: u32 = 16;
-const DEFAULT_UPSERT_CONCURRENCY: usize = 16;
+const DEFAULT_DB_CONCURRENCY_LIMIT: usize = 16;
 const DEFAULT_DB_QUERY_BATCH_SIZE: usize = 1_000;
 const DEFAULT_DB_QUERY_BATCH_TIMEOUT_MS: u64 = 100;
 const DEFAULT_RETRY_INTERVAL_MS: u64 = 100;
@@ -22,8 +23,9 @@ pub struct Config {
     pub pg_host: String,
     pub pg_user: String,
     pub pg_pass: String,
+    pub api_concurrency_limit: usize,
     pub max_db_connections: u32,
-    pub upsert_concurrency: usize,
+    pub db_concurrency_limit: usize,
     pub db_query_batch_size: usize,
     pub db_query_batch_timeout_ms: u64,
     pub reset_db: bool,
@@ -62,15 +64,20 @@ impl Config {
             )
         });
 
+        let api_concurrency_limit: usize = cli_args
+            .api_concurrency_limit
+            .or(env_vars.api_concurrency_limit)
+            .unwrap_or(DEFAULT_API_CONCURRENCY_LIMIT);
+
         let max_db_connections: u32 = cli_args
             .max_db_connections
             .or(env_vars.max_db_connections)
             .unwrap_or(DEFAULT_MAX_DB_CONNECTIONS);
 
-        let upsert_concurrency: usize = cli_args
-            .upsert_concurrency
-            .or(env_vars.upsert_concurrency)
-            .unwrap_or(DEFAULT_UPSERT_CONCURRENCY);
+        let db_concurrency_limit: usize = cli_args
+            .db_concurrency_limit
+            .or(env_vars.db_concurrency_limit)
+            .unwrap_or(DEFAULT_DB_CONCURRENCY_LIMIT);
 
         let db_query_batch_size: usize = cli_args
             .db_query_batch_size
@@ -112,8 +119,9 @@ impl Config {
             pg_host,
             pg_user,
             pg_pass,
+            api_concurrency_limit,
             max_db_connections,
-            upsert_concurrency,
+            db_concurrency_limit,
             db_query_batch_size,
             db_query_batch_timeout_ms,
             reset_db,

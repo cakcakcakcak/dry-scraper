@@ -213,7 +213,7 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
                         item.fix_relationships_and_upsert(db_context, api).await
                     }
                 })
-                .buffer_unordered(CONFIG.upsert_concurrency)
+                .buffer_unordered(CONFIG.db_concurrency_limit)
                 .collect::<Vec<_>>()
                 .await
         });

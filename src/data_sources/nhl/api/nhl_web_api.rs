@@ -128,7 +128,7 @@ impl<'a> PlayerResource<'a> {
         with_progress_bar!(player_ids.len(), |pb| {
             stream::iter(player_ids)
                 .map(|player_id| self.get(db_context, player_id))
-                .buffer_unordered(CONFIG.upsert_concurrency)
+                .buffer_unordered(CONFIG.db_concurrency_limit)
                 .collect()
                 .await
         })
@@ -158,7 +158,7 @@ impl<'a> GameResource<'a> {
         with_progress_bar!(game_ids.len(), |pb| {
             stream::iter(game_ids)
                 .map(|game_id| self.get(db_context, game_id))
-                .buffer_unordered(CONFIG.upsert_concurrency)
+                .buffer_unordered(CONFIG.api_concurrency_limit)
                 .inspect(|_| pb.inc(1))
                 .collect()
                 .await
