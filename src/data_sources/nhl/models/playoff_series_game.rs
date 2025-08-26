@@ -11,9 +11,8 @@ use crate::{
         models::traits::{DbStruct, IntoDbStruct},
     },
     data_sources::models::{
-        GameOutcomeJson, GameType, LocalizedNameJson, LocalizedNameJsonExt, NhlDefaultContext,
-        NhlPlayoffSeriesContext, NhlSeasonContext, PeriodDescriptorJson, PeriodTypeJson,
-        TvBroadcastsJson,
+        GameOutcomeJson, GameType, LocalizedNameJson, LocalizedNameJsonExt,
+        NhlPlayoffSeriesContext, PeriodDescriptorJson, PeriodTypeJson, TvBroadcastsJson,
     },
     impl_has_type_name, impl_pk_debug, verify_fk,
 };
@@ -67,7 +66,7 @@ impl IntoDbStruct for NhlPlayoffSeriesGameJson {
     type DbStruct = NhlPlayoffSeriesGame;
     type Context = NhlPlayoffSeriesContext;
 
-    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
+    fn into_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlPlayoffSeriesGameJson {
             id,
             season: season_id,
@@ -80,8 +79,8 @@ impl IntoDbStruct for NhlPlayoffSeriesGameJson {
             eastern_utc_offset,
             venue_utc_offset,
             venue_timezone,
-            game_state,
-            game_schedule_state,
+            game_state: _,
+            game_schedule_state: _,
             tv_broadcasts: _,
             away_team,
             home_team,

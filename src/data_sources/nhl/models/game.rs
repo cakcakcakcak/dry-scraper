@@ -24,7 +24,7 @@ use crate::{
 #[serde(rename_all = "camelCase")]
 pub struct ClockJson {
     pub time_remaining: Option<String>,
-    pub seconds_remaining: i32,
+    pub seconds_remaining: Option<i32>,
     pub running: bool,
     pub in_intermission: bool,
 }
@@ -94,7 +94,7 @@ impl IntoDbStruct for NhlGameJson {
     type DbStruct = NhlGame;
     type Context = NhlDefaultContext;
 
-    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
+    fn into_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlGameJson {
             id,
             season,

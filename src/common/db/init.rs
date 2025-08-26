@@ -153,6 +153,12 @@ pub async fn init_db() -> Result<DbPool, LPError> {
         )
         .await?;
         sqlx_operation_with_retries!(
+            sqlx::query("DROP TABLE IF EXISTS data_source_error")
+                .execute(&pool)
+                .await
+        )
+        .await?;
+        sqlx_operation_with_retries!(
             sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations")
                 .execute(&pool)
                 .await

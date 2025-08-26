@@ -8,7 +8,7 @@ pub trait IntoDbStruct: HasTypeName + Debug + Serialize + Sized + for<'a> Deseri
     type DbStruct: DbStruct;
     type Context;
 
-    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct;
+    fn into_db_struct(self, context: Self::Context) -> Self::DbStruct;
 }
 
 pub trait DbStruct: Debug + DbEntity + HasTypeName {

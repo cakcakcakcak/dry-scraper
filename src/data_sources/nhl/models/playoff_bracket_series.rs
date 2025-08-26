@@ -57,7 +57,7 @@ impl IntoDbStruct for NhlPlayoffBracketSeriesJson {
     type DbStruct = NhlPlayoffBracketSeries;
     type Context = NhlSeasonContext;
 
-    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
+    fn into_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlPlayoffBracketSeriesJson {
             series_letter,
             series_url,

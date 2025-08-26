@@ -120,7 +120,7 @@ impl<'a> PlayerResource<'a> {
             .await
     }
 
-    pub async fn get_many(
+    pub async fn _get_many(
         &self,
         db_context: &DbContext,
         player_ids: Vec<i32>,

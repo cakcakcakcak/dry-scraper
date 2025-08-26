@@ -31,7 +31,7 @@ impl IntoDbStruct for NhlRosterSpotJson {
     type DbStruct = NhlRosterSpot;
     type Context = NhlGameContext;
 
-    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
+    fn into_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlRosterSpotJson {
             player_id,
             team_id,

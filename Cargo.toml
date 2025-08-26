@@ -7,6 +7,7 @@ edition = "2024"
 async-trait = "0.1.88"
 chrono = {version = "0.4.41", features = ["serde"] }
 clap = { version = "4.5.40", features = ["derive"] }
+console-subscriber = "0.4.1"
 dashmap = "6.1.0"
 dotenvy = "0.15.7"
 futures = "0.3.31"
@@ -25,3 +26,6 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 [dev-dependencies]
 serial_test = "3.2.0"
+
+[profile.release]
+debug = true

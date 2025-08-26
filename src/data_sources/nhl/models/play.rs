@@ -38,7 +38,7 @@ impl IntoDbStruct for NhlPlayJson {
     type DbStruct = NhlPlay;
     type Context = NhlGameContext;
 
-    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
+    fn into_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlPlayJson {
             event_id,
             period_descriptor,

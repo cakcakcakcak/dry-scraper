@@ -1,4 +1,4 @@
-use rand::seq::SliceRandom;
+// use rand::seq::SliceRandom;
 use tokio;
 use tracing_subscriber;
 
@@ -20,6 +20,7 @@ use data_sources::nhl::{api::*, models::*, orchestrator::*};
 async fn main() -> Result<(), LPError> {
     _ = dotenvy::dotenv();
 
+    // console_subscriber::init();
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_env("LOG_LEVEL"))
         .init();
@@ -34,19 +35,18 @@ async fn main() -> Result<(), LPError> {
     _ = get_nhl_franchises(&db_context, &nhl_api).await?;
     _ = get_nhl_teams(&db_context, &nhl_api).await?;
 
-    // seasons.sort_by_key(|season| season.id);
-    // seasons.reverse();
-    let mut rng: rand::prelude::ThreadRng = rand::rng();
-    seasons.shuffle(&mut rng);
+    seasons.sort_by_key(|season| season.id);
+    seasons.pop();
+    seasons.reverse();
 
     for season in seasons {
-        // let games: Vec<NhlGame> =
-        //     get_nhl_all_games_in_season(&db_context, &nhl_api, &season).await?;
-        // for game in games {
-        //     get_nhl_plays_in_game(&db_context, &nhl_api, &game).await?;
-        //     get_nhl_roster_spots_in_game(&db_context, &nhl_api, &game).await?;
-        //     get_nhl_shifts_in_game(&db_context, &nhl_api, game.id).await?;
-        // }
+        let games: Vec<NhlGame> =
+            get_nhl_all_games_in_season(&db_context, &nhl_api, &season).await?;
+        for game in games {
+            get_nhl_plays_in_game(&db_context, &nhl_api, &game).await?;
+            get_nhl_roster_spots_in_game(&db_context, &nhl_api, &game).await?;
+            get_nhl_shifts_in_game(&db_context, &nhl_api, game.id).await?;
+        }
         let playoff_bracket_series: Vec<NhlPlayoffBracketSeries> =
             get_nhl_playoff_bracket_series(&db_context, &nhl_api, &season).await?;
         for bracket_series in playoff_bracket_series {

@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS nhl_player (
     birth_city TEXT NOT NULL,
     birth_state_province TEXT,
     birth_country TEXT NOT NULL,
-    shoots_catches TEXT NOT NULL,
+    shoots_catches TEXT,
     draft_year INTEGER,
     draft_team_abbreviation CHAR(3),
     draft_round INTEGER,

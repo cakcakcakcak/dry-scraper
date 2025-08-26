@@ -11,7 +11,7 @@ use env_vars::EnvironmentVariables;
 const DEFAULT_MAX_DB_CONNECTIONS: u32 = 16;
 const DEFAULT_UPSERT_CONCURRENCY: usize = 16;
 const DEFAULT_DB_QUERY_BATCH_SIZE: usize = 1_000;
-const DEFAULT_DB_QUERY_BATCH_TIMEOUT_MS: u64 = 1_000;
+const DEFAULT_DB_QUERY_BATCH_TIMEOUT_MS: u64 = 100;
 const DEFAULT_RETRY_INTERVAL_MS: u64 = 100;
 const DEFAULT_RETRY_MAX_INTERVAL_MS: u64 = 10_000;
 const DEFAULT_RETRIES: usize = 5;
@@ -31,7 +31,7 @@ pub struct Config {
     pub retry_max_interval_ms: u64,
     pub retries: usize,
     pub progress_bar_style: ProgressStyle,
-    pub spinner_style: ProgressStyle,
+    pub _spinner_style: ProgressStyle,
 }
 
 impl Config {
@@ -104,7 +104,7 @@ impl Config {
                 "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
             )
             .unwrap();
-        let spinner_style: ProgressStyle = ProgressStyle::default_spinner()
+        let _spinner_style: ProgressStyle = ProgressStyle::default_spinner()
             .template("{spinner:.green} [{elapsed}] {msg}")
             .unwrap();
 
@@ -121,7 +121,7 @@ impl Config {
             retry_max_interval_ms,
             retries,
             progress_bar_style,
-            spinner_style,
+            _spinner_style,
         }
     }
 }

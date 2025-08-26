@@ -12,7 +12,7 @@ use crate::common::{
 };
 
 use super::super::models::{
-    NhlDefaultContext, NhlApiDataArrayResponse, NhlFranchiseJson, NhlSeasonJson, NhlShiftJson,
+    NhlApiDataArrayResponse, NhlDefaultContext, NhlFranchiseJson, NhlSeasonJson, NhlShiftJson,
     NhlTeamJson,
 };
 
@@ -79,7 +79,7 @@ impl NhlStatsApi {
             })?;
 
         let results = data_array_response.map_json_array_to_json_structs(endpoint);
-        Ok(track_and_filter_errors(results))
+        Ok(track_and_filter_errors(results, db_context).await)
     }
 }
 

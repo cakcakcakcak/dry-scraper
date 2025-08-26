@@ -12,7 +12,6 @@ use crate::{
     },
     data_sources::models::{
         LocalizedNameJson, LocalizedNameJsonExt, NhlDefaultContext, NhlPlayoffSeriesGameJson,
-        NhlSeasonContext,
     },
     impl_has_type_name, impl_pk_debug, verify_fk,
 };
@@ -61,7 +60,7 @@ impl IntoDbStruct for NhlPlayoffSeriesJson {
     type DbStruct = NhlPlayoffSeries;
     type Context = NhlDefaultContext;
 
-    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
+    fn into_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlPlayoffSeriesJson {
             round_abbrev,
             round,

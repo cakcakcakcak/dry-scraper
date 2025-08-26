@@ -48,15 +48,15 @@ pub struct NhlPlayerJson {
     pub position: String,
     pub headshot: String,
     pub hero_image: String,
-    pub height_in_inches: i32,
-    pub height_in_centimeters: i32,
-    pub weight_in_pounds: i32,
-    pub weight_in_kilograms: i32,
+    pub height_in_inches: Option<i32>,
+    pub height_in_centimeters: Option<i32>,
+    pub weight_in_pounds: Option<i32>,
+    pub weight_in_kilograms: Option<i32>,
     pub birth_date: chrono::NaiveDate,
     pub birth_city: LocalizedNameJson,
     pub birth_state_province: Option<LocalizedNameJson>,
     pub birth_country: String,
-    pub shoots_catches: String,
+    pub shoots_catches: Option<String>,
     pub draft_details: Option<DraftDetailsJson>,
     pub player_slug: String,
     #[serde(default)]
@@ -70,7 +70,7 @@ impl IntoDbStruct for NhlPlayerJson {
     type DbStruct = NhlPlayer;
     type Context = NhlDefaultContext;
 
-    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
+    fn into_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlPlayerJson {
             id,
             first_name,
@@ -172,15 +172,15 @@ pub struct NhlPlayer {
     pub position: String,
     pub headshot: String,
     pub hero_image: String,
-    pub height_in_inches: i32,
-    pub height_in_centimeters: i32,
-    pub weight_in_pounds: i32,
-    pub weight_in_kilograms: i32,
+    pub height_in_inches: Option<i32>,
+    pub height_in_centimeters: Option<i32>,
+    pub weight_in_pounds: Option<i32>,
+    pub weight_in_kilograms: Option<i32>,
     pub birth_date: chrono::NaiveDate,
     pub birth_city: String,
     pub birth_state_province: Option<String>,
     pub birth_country: String,
-    pub shoots_catches: String,
+    pub shoots_catches: Option<String>,
     pub draft_year: Option<i32>,
     pub draft_team_abbreviation: Option<String>,
     pub draft_round: Option<i32>,

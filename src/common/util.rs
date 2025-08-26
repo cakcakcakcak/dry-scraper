@@ -3,7 +3,10 @@ use tokio_retry::{
     strategy::{ExponentialBackoff, jitter},
 };
 
-use crate::{common::errors::LPError, config::CONFIG};
+use crate::{
+    common::{db::DbContext, errors::LPError, models::DataSourceError},
+    config::CONFIG,
+};
 
 #[macro_export]
 macro_rules! bind {
@@ -148,16 +151,26 @@ where
     .await
 }
 
-#[tracing::instrument(skip(results))]
-pub fn track_and_filter_errors<T>(results: Vec<Result<T, LPError>>) -> Vec<T> {
-    results
-        .into_iter()
-        .filter_map(|res| match res {
-            Ok(val) => Some(val),
-            Err(_e) => {
-                // TRACK ERROR IN DATABASE
-                None
+#[tracing::instrument(skip(results, db_context))]
+pub async fn track_and_filter_errors<T>(
+    results: Vec<Result<T, LPError>>,
+    db_context: &DbContext,
+) -> Vec<T> {
+    let futures = results.into_iter().map(|res| {
+        let db_context = db_context;
+        async move {
+            match res {
+                Ok(val) => Some(val),
+                Err(e) => {
+                    DataSourceError::track_error(e, db_context).await;
+                    None
+                }
             }
-        })
+        }
+    });
+    futures::future::join_all(futures)
+        .await
+        .into_iter()
+        .filter_map(|x| x)
         .collect()
 }

@@ -47,7 +47,7 @@ impl IntoDbStruct for NhlShiftJson {
     type DbStruct = NhlShift;
     type Context = NhlDefaultContext;
 
-    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
+    fn into_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlShiftJson {
             id,
             detail_code,

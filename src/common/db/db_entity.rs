@@ -1,3 +1,4 @@
+use futures::stream::{self, StreamExt};
 use std::fmt::Debug;
 
 use async_trait::async_trait;
@@ -10,8 +11,10 @@ use crate::{
         db::{DbContext, DbPool, SqlxJobResult, StaticPgQuery, StaticPgQueryAs},
         errors::LPError,
         models::traits::HasTypeName,
+        util::track_and_filter_errors,
     },
-    sqlx_operation_with_retries,
+    config::CONFIG,
+    sqlx_operation_with_retries, with_progress_bar,
 };
 
 #[async_trait]
@@ -181,6 +184,40 @@ pub trait DbEntity:
             Ok(Err(e)) => Err(LPError::DatabaseCustom(format!("Upsert failed: {e}"))),
             Err(_) => Err(LPError::DatabaseCustom("Worker dropped".to_string())),
         }
+    }
+}
+
+pub trait DbEntityVecExt<T: DbEntity> {
+    async fn upsert_all(
+        &self,
+        db_context: &DbContext,
+        api: &<<T as DbEntity>::Pk as PrimaryKey>::Api,
+    ) -> Vec<Option<PgQueryResult>>;
+}
+impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
+    #[tracing::instrument(skip(self, db_context, api))]
+    async fn upsert_all(
+        &self,
+        db_context: &DbContext,
+        api: &<<T as DbEntity>::Pk as PrimaryKey>::Api,
+    ) -> Vec<Option<PgQueryResult>> {
+        let items: Vec<T> = self.clone();
+        let results = with_progress_bar!(items.len(), |pb| {
+            stream::iter(items.into_iter())
+                .map(|item| {
+                    let db_context = db_context;
+                    let api = api;
+                    let pb_clone = pb.clone();
+                    async move {
+                        pb_clone.inc(1);
+                        item.fix_relationships_and_upsert(db_context, api).await
+                    }
+                })
+                .buffer_unordered(CONFIG.upsert_concurrency)
+                .collect::<Vec<_>>()
+                .await
+        });
+        track_and_filter_errors(results, db_context).await
     }
 }
 

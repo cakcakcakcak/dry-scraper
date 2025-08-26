@@ -61,7 +61,7 @@ impl IntoDbStruct for NhlSeasonJson {
     type DbStruct = NhlSeason;
     type Context = NhlDefaultContext;
 
-    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
+    fn into_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlSeasonJson {
             id,
             all_star_game_in_use,

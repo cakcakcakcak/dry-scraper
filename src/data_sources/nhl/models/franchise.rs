@@ -28,7 +28,7 @@ impl IntoDbStruct for NhlFranchiseJson {
     type DbStruct = NhlFranchise;
     type Context = NhlDefaultContext;
 
-    fn to_db_struct(self, context: Self::Context) -> Self::DbStruct {
+    fn into_db_struct(self, context: Self::Context) -> Self::DbStruct {
         let NhlFranchiseJson {
             id,
             full_name,
