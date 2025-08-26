@@ -24,7 +24,7 @@ use crate::common::serde_helpers::parse_mmss_to_pginterval;
 #[serde(rename_all = "camelCase")]
 pub struct NhlShiftJson {
     pub id: i32,
-    pub detail_code: i32,
+    pub detail_code: Option<i32>,
     pub duration: Option<String>,
     pub end_time: String,
     pub event_description: Option<String>,
@@ -103,7 +103,7 @@ impl IntoDbStruct for NhlShiftJson {
 #[derive(Clone, FromRow)]
 pub struct NhlShift {
     pub id: i32,
-    pub detail_code: i32,
+    pub detail_code: Option<i32>,
     pub duration: PgInterval,
     pub end_time: PgInterval,
     pub event_description: Option<String>,

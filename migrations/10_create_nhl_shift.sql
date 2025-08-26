@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS nhl_shift (
     id INTEGER NOT NULL UNIQUE,
-    detail_code INTEGER NOT NULL,
+    detail_code INTEGER,
     duration INTERVAL NOT NULL,
     end_time INTERVAL NOT NULL,
     event_description TEXT,
