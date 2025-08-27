@@ -6,6 +6,9 @@ use sqlx::postgres::types::PgInterval;
 
 use super::super::{NhlPlayKey, NhlPrimaryKey};
 use super::{DefendingSide, NhlGameContext, PeriodDescriptorJson, PeriodTypeJson};
+use crate::any_primary_key::AnyPrimaryKey;
+use crate::common::db::db_entity::PrimaryKeyExt;
+use crate::config::CONFIG;
 use crate::impl_pk_debug;
 use crate::{
     bind,
@@ -121,20 +124,11 @@ impl DbEntity for NhlPlay {
         )
     }
 
-    #[tracing::instrument(skip(self, db_context))]
-    async fn verify_relationships(
-        &self,
-        db_context: &DbContext,
-    ) -> Result<RelationshipIntegrity<Self::Pk>, LPError> {
-        let mut missing: Vec<Self::Pk> = vec![];
-
-        verify_fk!(missing, db_context, Self::Pk::api_cache(&self.endpoint));
-        verify_fk!(missing, db_context, Self::Pk::game(self.game_id));
-
-        match missing.len() {
-            0 => Ok(RelationshipIntegrity::AllValid),
-            _ => Ok(RelationshipIntegrity::Missing(missing)),
-        }
+    fn foreign_keys(&self) -> Vec<Self::Pk> {
+        vec![
+            Self::Pk::api_cache(&self.endpoint),
+            Self::Pk::game(self.game_id),
+        ]
     }
 
     fn upsert_query(&self) -> StaticPgQuery {

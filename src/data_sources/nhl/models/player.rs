@@ -207,22 +207,12 @@ impl DbEntity for NhlPlayer {
         sqlx::query_as::<_, Self::Pk>("SELECT 'nhl_player' AS table_name, id from nhl_player")
     }
 
-    #[tracing::instrument(skip(self, db_context))]
-    async fn verify_relationships(
-        &self,
-        db_context: &DbContext,
-    ) -> Result<RelationshipIntegrity<Self::Pk>, LPError> {
-        let mut missing: Vec<Self::Pk> = vec![];
-
+    fn foreign_keys(&self) -> Vec<Self::Pk> {
+        let mut keys = vec![Self::Pk::api_cache(&self.endpoint)];
         if let Some(current_team_id) = self.current_team_id {
-            verify_fk!(missing, db_context, Self::Pk::team(current_team_id))
+            keys.push(Self::Pk::team(current_team_id));
         }
-        verify_fk!(missing, db_context, Self::Pk::api_cache(&self.endpoint));
-
-        match missing.len() {
-            0 => Ok(RelationshipIntegrity::AllValid),
-            _ => Ok(RelationshipIntegrity::Missing(missing)),
-        }
+        keys
     }
 
     fn upsert_query(&self) -> StaticPgQuery {

@@ -22,9 +22,7 @@ macro_rules! bind {
 #[macro_export]
 macro_rules! verify_fk {
     ($missing:ident, $db_context:expr, $key:expr) => {
-        if let Some(pk) = $key.verify_by_key($db_context).await? {
-            $missing.push(pk);
-        }
+        ()
     };
 }
 

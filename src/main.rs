@@ -16,6 +16,8 @@ use common::{
 
 use data_sources::nhl::{api::*, models::*, orchestrator::*};
 
+use crate::data_sources::orchestrator;
+
 #[tokio::main]
 async fn main() -> Result<(), LPError> {
     _ = dotenvy::dotenv();
@@ -40,26 +42,7 @@ async fn main() -> Result<(), LPError> {
     seasons.reverse();
 
     for season in seasons {
-        let games: Vec<NhlGame> =
-            get_nhl_all_games_in_season(&db_context, &nhl_api, &season).await?;
-        for game in games {
-            get_nhl_plays_in_game(&db_context, &nhl_api, &game).await?;
-            get_nhl_roster_spots_in_game(&db_context, &nhl_api, &game).await?;
-            get_nhl_shifts_in_game(&db_context, &nhl_api, game.id).await?;
-        }
-        let playoff_bracket_series: Vec<NhlPlayoffBracketSeries> =
-            get_nhl_playoff_bracket_series(&db_context, &nhl_api, &season).await?;
-        for bracket_series in playoff_bracket_series {
-            let series: NhlPlayoffSeries =
-                get_nhl_playoff_series(&db_context, &nhl_api, &bracket_series).await?;
-            let games: Vec<NhlGame> =
-                get_nhl_games_in_playoff_series(&db_context, &nhl_api, &series).await?;
-            for game in games {
-                get_nhl_plays_in_game(&db_context, &nhl_api, &game).await?;
-                get_nhl_roster_spots_in_game(&db_context, &nhl_api, &game).await?;
-                get_nhl_shifts_in_game(&db_context, &nhl_api, game.id).await?;
-            }
-        }
+        get_nhl_everything_in_season(&db_context, &nhl_api, &season).await?;
     }
 
     Ok(())

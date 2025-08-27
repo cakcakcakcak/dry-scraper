@@ -187,26 +187,13 @@ impl DbEntity for NhlPlayoffBracketSeries {
         )
     }
 
-    #[tracing::instrument(skip(self, db_context))]
-    async fn verify_relationships(
-        &self,
-        db_context: &DbContext,
-    ) -> Result<RelationshipIntegrity<Self::Pk>, LPError> {
-        let mut missing: Vec<Self::Pk> = vec![];
-
-        verify_fk!(missing, db_context, Self::Pk::season(self.season_id));
-        verify_fk!(missing, db_context, Self::Pk::team(self.top_seed_team_id));
-        verify_fk!(
-            missing,
-            db_context,
-            Self::Pk::team(self.bottom_seed_team_id)
-        );
-        verify_fk!(missing, db_context, Self::Pk::api_cache(&self.endpoint));
-
-        match missing.len() {
-            0 => Ok(RelationshipIntegrity::AllValid),
-            _ => Ok(RelationshipIntegrity::Missing(missing)),
-        }
+    fn foreign_keys(&self) -> Vec<Self::Pk> {
+        vec![
+            Self::Pk::api_cache(&self.endpoint),
+            Self::Pk::season(self.season_id),
+            Self::Pk::team(self.top_seed_team_id),
+            Self::Pk::team(self.bottom_seed_team_id),
+        ]
     }
 
     fn upsert_query(&self) -> StaticPgQuery {

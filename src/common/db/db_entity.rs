@@ -37,6 +37,10 @@ pub trait DbEntity:
         self.pk().any_pk()
     }
 
+    fn foreign_keys(&self) -> Vec<Self::Pk> {
+        vec![]
+    }
+
     fn fmt_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.pk(), f)
     }
@@ -104,12 +108,12 @@ pub trait DbEntity:
         }
     }
 
-    #[tracing::instrument(skip(_db_context, self))]
+    #[tracing::instrument(skip(db_context))]
     async fn verify_relationships(
         &self,
-        _db_context: &DbContext,
+        db_context: &DbContext,
     ) -> Result<RelationshipIntegrity<Self::Pk>, LPError> {
-        Ok(RelationshipIntegrity::AllValid)
+        self.foreign_keys().verify_keys(db_context).await
     }
 
     #[tracing::instrument(skip(db_context, api))]
@@ -121,9 +125,11 @@ pub trait DbEntity:
         match self.verify_relationships(db_context).await? {
             RelationshipIntegrity::AllValid => (),
             RelationshipIntegrity::Missing(keys) => {
-                for key in keys {
-                    key.upsert_from_api(db_context, api).await?
-                }
+                stream::iter(keys)
+                    .map(|key| async move { key.upsert_from_api(&db_context, &api).await })
+                    .buffer_unordered(CONFIG.db_concurrency_limit)
+                    .collect::<Vec<_>>()
+                    .await;
             }
         }
 
@@ -239,4 +245,40 @@ pub trait PrimaryKey:
 
     async fn upsert_from_api(&self, db_context: &DbContext, api: &Self::Api)
     -> Result<(), LPError>;
+
+    async fn verify_by_key(self, db_context: &DbContext) -> Result<Option<Self>, LPError>;
+}
+
+#[async_trait]
+pub trait PrimaryKeyExt<K: PrimaryKey> {
+    async fn verify_keys(self, db_context: &DbContext)
+    -> Result<RelationshipIntegrity<K>, LPError>;
+}
+#[async_trait]
+impl<K: PrimaryKey> PrimaryKeyExt<K> for Vec<K> {
+    async fn verify_keys(
+        self,
+        db_context: &DbContext,
+    ) -> Result<RelationshipIntegrity<K>, LPError> {
+        let mut missing: Vec<K> = vec![];
+
+        let results = stream::iter(self)
+            .map(|fk| async move { fk.verify_by_key(db_context).await })
+            .buffer_unordered(CONFIG.db_concurrency_limit)
+            .collect::<Vec<_>>()
+            .await;
+        results
+            .into_iter()
+            .map(|res| {
+                if let Ok(Some(pk)) = res {
+                    missing.push(pk)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        match missing.len() {
+            0 => Ok(RelationshipIntegrity::AllValid),
+            _ => Ok(RelationshipIntegrity::Missing(missing)),
+        }
+    }
 }

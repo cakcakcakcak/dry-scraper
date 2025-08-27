@@ -162,19 +162,8 @@ impl DbEntity for NhlSeason {
         sqlx::query_as::<_, Self::Pk>("SELECT 'nhl_season' AS table_name, id from nhl_season")
     }
 
-    #[tracing::instrument(skip(self, db_context))]
-    async fn verify_relationships(
-        &self,
-        db_context: &DbContext,
-    ) -> Result<RelationshipIntegrity<Self::Pk>, LPError> {
-        let mut missing: Vec<Self::Pk> = vec![];
-
-        verify_fk!(missing, db_context, Self::Pk::api_cache(&self.endpoint));
-
-        match missing.len() {
-            0 => Ok(RelationshipIntegrity::AllValid),
-            _ => Ok(RelationshipIntegrity::Missing(missing)),
-        }
+    fn foreign_keys(&self) -> Vec<Self::Pk> {
+        vec![Self::Pk::api_cache(&self.endpoint)]
     }
 
     fn upsert_query(&self) -> StaticPgQuery {

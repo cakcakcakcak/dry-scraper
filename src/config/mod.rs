@@ -9,8 +9,8 @@ use cli_args::CliArgs;
 use env_vars::EnvironmentVariables;
 
 const DEFAULT_API_CONCURRENCY_LIMIT: usize = 32;
-const DEFAULT_MAX_DB_CONNECTIONS: u32 = 16;
-const DEFAULT_DB_CONCURRENCY_LIMIT: usize = 16;
+const DEFAULT_MAX_DB_CONNECTIONS: u32 = 100;
+const DEFAULT_DB_CONCURRENCY_LIMIT: usize = 50;
 const DEFAULT_DB_QUERY_BATCH_SIZE: usize = 1_000;
 const DEFAULT_DB_QUERY_BATCH_TIMEOUT_MS: u64 = 100;
 const DEFAULT_RETRY_INTERVAL_MS: u64 = 100;
@@ -33,7 +33,7 @@ pub struct Config {
     pub retry_max_interval_ms: u64,
     pub retries: usize,
     pub progress_bar_style: ProgressStyle,
-    pub _spinner_style: ProgressStyle,
+    pub spinner_style: ProgressStyle,
 }
 
 impl Config {
@@ -111,7 +111,7 @@ impl Config {
                 "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
             )
             .unwrap();
-        let _spinner_style: ProgressStyle = ProgressStyle::default_spinner()
+        let spinner_style: ProgressStyle = ProgressStyle::default_spinner()
             .template("{spinner:.green} [{elapsed}] {msg}")
             .unwrap();
 
@@ -129,7 +129,7 @@ impl Config {
             retry_max_interval_ms,
             retries,
             progress_bar_style,
-            _spinner_style,
+            spinner_style,
         }
     }
 }

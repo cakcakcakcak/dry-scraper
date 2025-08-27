@@ -112,12 +112,8 @@ impl PrimaryKey for NhlPrimaryKey {
             }
         }
     }
-}
-impl NhlPrimaryKey {
-    pub async fn verify_by_key(
-        self,
-        db_context: &DbContext,
-    ) -> Result<Option<NhlPrimaryKey>, LPError> {
+
+    async fn verify_by_key(self, db_context: &DbContext) -> Result<Option<NhlPrimaryKey>, LPError> {
         match self {
             NhlPrimaryKey::ApiCache(pk) => match ApiCache::verify_by_key(db_context, pk).await? {
                 Some(pk) => Ok(Some(NhlPrimaryKey::ApiCache(pk))),
@@ -142,7 +138,8 @@ impl NhlPrimaryKey {
             }
         }
     }
-
+}
+impl NhlPrimaryKey {
     pub fn api_cache(endpoint: &str) -> Self {
         NhlPrimaryKey::ApiCache(ApiCacheKey {
             endpoint: endpoint.to_string(),
@@ -169,7 +166,7 @@ impl NhlPrimaryKey {
         NhlPrimaryKey::Game(NhlGameKey { id })
     }
 
-    pub fn _roster_spot(game_id: i32, player_id: i32) -> Self {
+    pub fn roster_spot(game_id: i32, player_id: i32) -> Self {
         NhlPrimaryKey::RosterSpot(NhlRosterSpotKey { game_id, player_id })
     }
 

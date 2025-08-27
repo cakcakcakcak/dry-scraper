@@ -119,6 +119,10 @@ impl PrimaryKey for ApiCacheKey {
         api_cache.upsert(db_context).await?;
         Ok(())
     }
+
+    async fn verify_by_key(self, db_context: &DbContext) -> Result<Option<Self>, LPError> {
+        ApiCache::verify_by_key(db_context, self).await
+    }
 }
 
 impl_has_type_name!(ApiCache);

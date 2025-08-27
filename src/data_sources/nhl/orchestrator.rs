@@ -1,15 +1,20 @@
+use futures::stream::{self, StreamExt};
 use sqlx::postgres::PgQueryResult;
 
 use super::super::primary_key::*;
 use super::{api::NhlApi, models::*};
-use crate::common::{
-    db::{DbContext, DbEntity, DbEntityVecExt},
-    errors::LPError,
-    models::{
-        ApiCache, ItemParsedWithContext, ItemParsedWithContextVecExt,
-        traits::{DbStruct, HasTypeName, IntoDbStruct},
+
+use crate::{
+    CONFIG,
+    common::{
+        db::{DbContext, DbEntity, DbEntityVecExt},
+        errors::LPError,
+        models::{
+            ApiCache, ItemParsedWithContext, ItemParsedWithContextVecExt,
+            traits::{DbStruct, HasTypeName, IntoDbStruct},
+        },
+        util::track_and_filter_errors,
     },
-    util::track_and_filter_errors,
 };
 
 pub async fn get_resource<J, D, Fut>(
@@ -79,6 +84,44 @@ pub async fn get_nhl_shifts_in_game(
         nhl_api.shifts().list_shifts_for_game(db_context, game_id),
     )
     .await
+}
+
+#[tracing::instrument(skip(db_context, nhl_api))]
+pub async fn get_nhl_everything_in_season(
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
+    season: &NhlSeason,
+) -> Result<(), LPError> {
+    let mut games: Vec<NhlGame> = get_nhl_all_games_in_season(db_context, nhl_api, season).await?;
+
+    let playoff_bracket_series: Vec<NhlPlayoffBracketSeries> =
+        get_nhl_playoff_bracket_series(db_context, nhl_api, season).await?;
+
+    for bracket_series in playoff_bracket_series {
+        let series: NhlPlayoffSeries =
+            get_nhl_playoff_series(db_context, nhl_api, &bracket_series).await?;
+        let mut playoff_games: Vec<NhlGame> =
+            get_nhl_games_in_playoff_series(db_context, nhl_api, &series).await?;
+        games.append(&mut playoff_games);
+    }
+
+    stream::iter(games)
+        .map(|game| {
+            let db_context = db_context.clone();
+            let nhl_api = nhl_api.clone();
+            async move {
+                let _ = tokio::try_join!(
+                    get_nhl_plays_in_game(&db_context, &nhl_api, &game),
+                    get_nhl_roster_spots_in_game(&db_context, &nhl_api, &game),
+                    get_nhl_shifts_in_game(&db_context, &nhl_api, game.id),
+                );
+            }
+        })
+        .buffer_unordered(CONFIG.api_concurrency_limit)
+        .collect::<Vec<_>>()
+        .await;
+
+    Ok(())
 }
 
 #[tracing::instrument(skip(db_context, nhl_api))]
@@ -320,16 +363,25 @@ pub async fn get_nhl_games_in_playoff_series(
 }
 
 pub async fn warm_nhl_key_cache(db_context: &DbContext) -> Result<(), LPError> {
+    let db_context = &db_context.clone();
+
     tracing::info!("Warming NHL database key cache.");
-    ApiCache::warm_key_cache(db_context).await?;
-    NhlSeason::warm_key_cache(db_context).await?;
-    NhlFranchise::warm_key_cache(db_context).await?;
-    NhlTeam::warm_key_cache(db_context).await?;
-    NhlPlayer::warm_key_cache(db_context).await?;
-    NhlGame::warm_key_cache(db_context).await?;
-    NhlRosterSpot::warm_key_cache(db_context).await?;
-    NhlPlay::warm_key_cache(db_context).await?;
-    NhlPlayoffBracketSeries::warm_key_cache(db_context).await?;
+    let cache_warmers = vec![
+        ApiCache::warm_key_cache(db_context),
+        NhlSeason::warm_key_cache(db_context),
+        NhlFranchise::warm_key_cache(db_context),
+        NhlTeam::warm_key_cache(db_context),
+        NhlPlayer::warm_key_cache(db_context),
+        NhlGame::warm_key_cache(db_context),
+        NhlRosterSpot::warm_key_cache(db_context),
+        NhlPlay::warm_key_cache(db_context),
+        NhlPlayoffBracketSeries::warm_key_cache(db_context),
+    ];
+    stream::iter(cache_warmers)
+        .map(|fut| fut)
+        .buffer_unordered(CONFIG.db_concurrency_limit)
+        .collect::<Vec<_>>()
+        .await;
     tracing::info!("Warmed NHL database key cache.");
     Ok(())
 }
