@@ -35,7 +35,8 @@ where
     let json_struct_count: usize = json_structs.len();
     tracing::info!("Successfully fetched {json_struct_count} `{j_name}`s from NHL API",);
 
-    let db_structs: Vec<D> = json_structs.into_db_structs();
+    let db_structs: Vec<D> =
+        json_structs.into_db_structs(&format!("Parsing `{j_name}`s into `{d_name}`s."));
     let db_struct_count: usize = db_structs.len();
     tracing::info!("Parsed {db_struct_count}/{json_struct_count} `{j_name}`s into `{d_name}`s.",);
 
@@ -86,7 +87,7 @@ pub async fn get_nhl_shifts_in_game(
     .await
 }
 
-#[tracing::instrument(skip(db_context, nhl_api))]
+#[tracing::instrument(skip(db_context, nhl_api, season))]
 pub async fn get_nhl_everything_in_season(
     db_context: &DbContext,
     nhl_api: &NhlApi,
@@ -141,7 +142,7 @@ pub async fn get_nhl_all_games_in_season(
         })
         .collect();
 
-    tracing::info!("Fetching {number_of_games} games from NHL API or cache.");
+    tracing::info!("Fetching {number_of_games} `NhlGameJson`s from NHL API or cache.");
     let json_results: Vec<Result<ItemParsedWithContext<NhlGameJson>, LPError>> =
         nhl_api.games().get_many(db_context, game_ids).await;
     let ok_json_results: Vec<ItemParsedWithContext<NhlGameJson>> =
@@ -151,7 +152,8 @@ pub async fn get_nhl_all_games_in_season(
         "Successfully fetched {ok_json_result_count}/{number_of_games} games from NHL API or cache."
     );
 
-    let games: Vec<NhlGame> = ok_json_results.into_db_structs();
+    let games: Vec<NhlGame> = ok_json_results
+        .into_db_structs(&format!("Parsing `NhlGameJson`s from {season_id} season."));
     let game_count = games.len();
     tracing::info!("Parsed {game_count}/{number_of_games} games into lp database structs.");
 
@@ -169,6 +171,7 @@ pub async fn get_nhl_roster_spots_in_game(
     nhl_api: &NhlApi,
     game: &NhlGame,
 ) -> Result<Vec<NhlRosterSpot>, LPError> {
+    let game_id: i32 = game.id;
     let game_json: NhlGameJson = serde_json::from_value(game.raw_json.clone())?;
 
     let roster_spot_jsons: Vec<NhlRosterSpotJson> = game_json.roster_spots;
@@ -196,7 +199,8 @@ pub async fn get_nhl_roster_spots_in_game(
             })
             .collect();
 
-    let roster_spots: Vec<NhlRosterSpot> = roster_spot_jsons_with_context.into_db_structs();
+    let roster_spots: Vec<NhlRosterSpot> = roster_spot_jsons_with_context
+        .into_db_structs(&format!("Parsing `NhlRosterSpotJson`s from {game_id}."));
     let roster_spot_count = roster_spots.len();
     tracing::info!("Parsed {roster_spot_count} roster spots into lp database structs.");
 
@@ -214,6 +218,7 @@ pub async fn get_nhl_plays_in_game(
     nhl_api: &NhlApi,
     game: &NhlGame,
 ) -> Result<Vec<NhlPlay>, LPError> {
+    let game_id: i32 = game.id;
     let game_json: NhlGameJson = serde_json::from_value(game.raw_json.clone())?;
 
     let play_jsons: Vec<NhlPlayJson> = game_json.plays;
@@ -240,7 +245,8 @@ pub async fn get_nhl_plays_in_game(
             })
             .collect();
 
-    let plays: Vec<NhlPlay> = play_jsons_with_context.into_db_structs();
+    let plays: Vec<NhlPlay> =
+        play_jsons_with_context.into_db_structs(&format!("Parsing `NhlPlayJson`s from {game_id}."));
     let play_count = plays.len();
     tracing::info!("Parsed {play_count} plays into lp database structs.",);
 
@@ -288,9 +294,9 @@ pub async fn get_nhl_playoff_series(
 
     tracing::info!("Upserting playoff series into lp database.",);
 
-    series
-        .fix_relationships_and_upsert(db_context, nhl_api)
-        .await?;
+    // series
+    //     .fix_relationships_and_upsert(db_context, nhl_api)
+    //     .await?;
     tracing::info!("Upserted playoff series into lp database.",);
 
     let series_game_jsons: Vec<ItemParsedWithContext<NhlPlayoffSeriesGameJson>> = series_json
@@ -316,7 +322,9 @@ pub async fn get_nhl_playoff_series(
             },
         }})
         .collect();
-    let series_games: Vec<NhlPlayoffSeriesGame> = series_game_jsons.into_db_structs();
+    let series_games: Vec<NhlPlayoffSeriesGame> = series_game_jsons.into_db_structs(&format!(
+        "Parsing `NhlPlayoffSeriesGameJson`s from Series {series_letter} from {season_id} season."
+    ));
     let series_game_count = series_games.len();
     tracing::info!("Parsed {series_game_count} games into lp database structs.",);
 
@@ -336,6 +344,8 @@ pub async fn get_nhl_games_in_playoff_series(
 ) -> Result<Vec<NhlGame>, LPError> {
     let game_ids: Vec<i32> = series.game_ids.to_vec();
     let number_of_games: usize = game_ids.len();
+    let series_letter: &str = &series.series_letter;
+    let season_id: i32 = series.season_id;
 
     tracing::info!("Fetching {number_of_games} game play-by-play reports from NHL API or cache.");
     let game_json_results: Vec<Result<ItemParsedWithContext<NhlGameJson>, LPError>> =
@@ -346,7 +356,9 @@ pub async fn get_nhl_games_in_playoff_series(
     tracing::info!(
         "Fetched {ok_game_json_count}/{number_of_games} game play-by-play reports from NHL API or cache."
     );
-    let games: Vec<NhlGame> = game_jsons.into_db_structs();
+    let games: Vec<NhlGame> = game_jsons.into_db_structs(&format!(
+        "Parsing `NhlPlayoffSeriesGameJson`s from Series {series_letter} from {season_id} season."
+    ));
     let ok_game_count: usize = games.len();
     tracing::info!(
         "Parsed {ok_game_count}/{number_of_games} game play-by-play reports lp database structs."

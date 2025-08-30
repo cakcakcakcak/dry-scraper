@@ -87,7 +87,7 @@ pub trait CacheableApi: Debug {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SimpleApi {
     pub client: reqwest::Client,
 }

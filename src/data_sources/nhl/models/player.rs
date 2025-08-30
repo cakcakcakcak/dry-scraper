@@ -10,12 +10,11 @@ use crate::impl_pk_debug;
 use crate::{
     bind,
     common::{
-        db::{DbContext, DbEntity, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs},
-        errors::LPError,
+        db::{DbEntity, StaticPgQuery, StaticPgQueryAs},
         models::traits::{DbStruct, IntoDbStruct},
         serde_helpers::JsonExt,
     },
-    impl_has_type_name, make_deserialize_to_type, verify_fk,
+    impl_has_type_name, make_deserialize_to_type,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

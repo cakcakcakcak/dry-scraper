@@ -6,15 +6,14 @@ use super::super::primary_key::*;
 use crate::{
     bind,
     common::{
-        db::{DbContext, DbEntity, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs},
-        errors::LPError,
+        db::{DbEntity, StaticPgQuery, StaticPgQueryAs},
         models::traits::{DbStruct, IntoDbStruct},
     },
     data_sources::models::{
         GameOutcomeJson, GameType, LocalizedNameJson, LocalizedNameJsonExt,
         NhlPlayoffSeriesContext, PeriodDescriptorJson, PeriodTypeJson, TvBroadcastsJson,
     },
-    impl_has_type_name, impl_pk_debug, verify_fk,
+    impl_has_type_name, impl_pk_debug,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

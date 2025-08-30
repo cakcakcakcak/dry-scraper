@@ -74,7 +74,7 @@ impl NhlStatsApi {
                     endpoint,
                     "Failed to parse into `NhlApiDataArrayResponse`: {e}"
                 );
-                tracing::debug!(raw_data);
+                tracing::info!(raw_data);
                 LPError::Serde(e)
             })?;
 

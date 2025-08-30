@@ -166,7 +166,7 @@ impl NhlPrimaryKey {
         NhlPrimaryKey::Game(NhlGameKey { id })
     }
 
-    pub fn roster_spot(game_id: i32, player_id: i32) -> Self {
+    pub fn _roster_spot(game_id: i32, player_id: i32) -> Self {
         NhlPrimaryKey::RosterSpot(NhlRosterSpotKey { game_id, player_id })
     }
 
@@ -236,10 +236,10 @@ impl NhlTeamKey {
             nhl_api.teams().get(db_context, team_id).await?;
         let team = team_json_with_context.into_db_struct();
 
-        tracing::debug!("Upserting team with id {team_id} into lp database.");
+        tracing::info!("Upserting team with id {team_id} into lp database.");
         team.fix_relationships_and_upsert(db_context, nhl_api)
             .await?;
-        tracing::debug!("Upserted team with id {team_id} into lp database.");
+        tracing::info!("Upserted team with id {team_id} into lp database.");
         Ok(())
     }
 }
@@ -264,11 +264,11 @@ impl NhlPlayerKey {
             nhl_api.players().get(db_context, player_id).await?;
         let player: NhlPlayer = player_json_with_context.into_db_struct();
 
-        tracing::debug!("Upserting player with id {player_id} into lp database.");
+        tracing::info!("Upserting player with id {player_id} into lp database.");
         player
             .fix_relationships_and_upsert(db_context, nhl_api)
             .await?;
-        tracing::debug!("Upserted player with id {player_id} into lp database.");
+        tracing::info!("Upserted player with id {player_id} into lp database.");
 
         Ok(())
     }
@@ -294,10 +294,10 @@ impl NhlGameKey {
             nhl_api.games().get(db_context, game_id).await?;
         let game: NhlGame = game_json_with_context.into_db_struct();
 
-        tracing::debug!("Upserting game with id {game_id} into lp database.");
+        tracing::info!("Upserting game with id {game_id} into lp database.");
         game.fix_relationships_and_upsert(db_context, nhl_api)
             .await?;
-        tracing::debug!("Upserted game with id {game_id} into lp database.");
+        tracing::info!("Upserted game with id {game_id} into lp database.");
 
         Ok(())
     }
@@ -385,13 +385,13 @@ impl NhlPlayoffSeriesKey {
             .await?;
         let series: NhlPlayoffSeries = series_json_with_context.into_db_struct();
 
-        tracing::debug!(
+        tracing::info!(
             "Upserting series {series_letter} from {season_id} NHL season into lp database."
         );
         series
             .fix_relationships_and_upsert(db_context, nhl_api)
             .await?;
-        tracing::debug!(
+        tracing::info!(
             "Upserted series {series_letter} from {season_id} NHL season into lp database."
         );
 

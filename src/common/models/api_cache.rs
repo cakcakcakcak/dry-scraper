@@ -47,14 +47,14 @@ impl DbEntity for ApiCache {
         .await
         {
             Ok(Some(record)) => {
-                tracing::debug!(
+                tracing::info!(
                     "Record found in lp table api_cache for endpoint {}",
                     id.endpoint
                 );
                 Ok(Some(record))
             }
             Ok(None) => {
-                tracing::debug!(
+                tracing::info!(
                     "Record NOT found in lp table api_cache for endpoint {}",
                     id.endpoint
                 );
@@ -108,15 +108,8 @@ impl PrimaryKey for ApiCacheKey {
         db_context: &DbContext,
         api: &SimpleApi,
     ) -> Result<(), LPError> {
-        let raw_data = api
-            .fetch_endpoint_cached(db_context, &self.endpoint)
+        api.fetch_endpoint_cached(db_context, &self.endpoint)
             .await?;
-        let api_cache = ApiCache {
-            endpoint: self.endpoint.to_string(),
-            raw_data,
-            last_updated: None,
-        };
-        api_cache.upsert(db_context).await?;
         Ok(())
     }
 

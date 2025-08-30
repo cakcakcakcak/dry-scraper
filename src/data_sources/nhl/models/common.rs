@@ -149,7 +149,7 @@ impl NhlApiDataArrayResponse {
                     }),
                     Err(e) => {
                         tracing::warn!(endpoint=%endpoint, error=%e, "Failed to parse item to `{}`.", T::type_name());
-                        tracing::debug!(raw_data);
+                        tracing::info!(raw_data);
                         Err(e)
                     }
                 }

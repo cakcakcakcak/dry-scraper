@@ -14,7 +14,7 @@ use crate::{
         util::track_and_filter_errors,
     },
     config::CONFIG,
-    sqlx_operation_with_retries, with_progress_bar,
+    sqlx_operation_with_retries, with_progress,
 };
 
 #[async_trait]
@@ -208,7 +208,7 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
         api: &<<T as DbEntity>::Pk as PrimaryKey>::Api,
     ) -> Vec<Option<PgQueryResult>> {
         let items: Vec<T> = self.clone();
-        let results = with_progress_bar!(items.len(), |pb| {
+        let results = with_progress!(items.len(), "Upserting whatever", |pb| {
             stream::iter(items.into_iter())
                 .map(|item| {
                     let db_context = db_context;
@@ -267,14 +267,11 @@ impl<K: PrimaryKey> PrimaryKeyExt<K> for Vec<K> {
             .buffer_unordered(CONFIG.db_concurrency_limit)
             .collect::<Vec<_>>()
             .await;
-        results
-            .into_iter()
-            .map(|res| {
-                if let Ok(Some(pk)) = res {
-                    missing.push(pk)
-                }
-            })
-            .collect::<Vec<_>>();
+        for result in results {
+            if let Ok(Some(pk)) = result {
+                missing.push(pk)
+            }
+        }
 
         match missing.len() {
             0 => Ok(RelationshipIntegrity::AllValid),

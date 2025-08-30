@@ -57,7 +57,7 @@ impl EnvironmentVariables {
                 }
             },
             Err(std::env::VarError::NotPresent) => {
-                tracing::debug!(
+                tracing::info!(
                     "Environment variable {key} not set: `std::env::VarError::NotPresent`"
                 );
                 None

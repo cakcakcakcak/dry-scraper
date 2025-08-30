@@ -21,6 +21,5 @@ CREATE TABLE IF NOT EXISTS nhl_shift (
     raw_json JSONB NOT NULL,
     endpoint TEXT NOT NULL REFERENCES api_cache (endpoint),
     last_updated TIMESTAMP DEFAULT now() NOT NULL,
-    PRIMARY KEY (game_id, player_id, shift_number),
-    FOREIGN KEY (game_id, player_id) REFERENCES nhl_roster_spot (game_id, player_id)
+    PRIMARY KEY (game_id, player_id, shift_number)
 )

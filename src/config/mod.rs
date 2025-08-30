@@ -1,18 +1,20 @@
-pub mod cli_args;
-pub mod env_vars;
+use std::sync::Arc;
 
 use clap::Parser;
-use indicatif::ProgressStyle;
+use indicatif::{MultiProgress, ProgressStyle};
 use once_cell::sync::Lazy;
+
+pub mod cli_args;
+pub mod env_vars;
 
 use cli_args::CliArgs;
 use env_vars::EnvironmentVariables;
 
 const DEFAULT_API_CONCURRENCY_LIMIT: usize = 32;
-const DEFAULT_MAX_DB_CONNECTIONS: u32 = 100;
-const DEFAULT_DB_CONCURRENCY_LIMIT: usize = 50;
+const DEFAULT_MAX_DB_CONNECTIONS: u32 = 32;
+const DEFAULT_DB_CONCURRENCY_LIMIT: usize = 16;
 const DEFAULT_DB_QUERY_BATCH_SIZE: usize = 1_000;
-const DEFAULT_DB_QUERY_BATCH_TIMEOUT_MS: u64 = 100;
+const DEFAULT_DB_QUERY_BATCH_TIMEOUT_MS: u64 = 2_000;
 const DEFAULT_RETRY_INTERVAL_MS: u64 = 100;
 const DEFAULT_RETRY_MAX_INTERVAL_MS: u64 = 10_000;
 const DEFAULT_RETRIES: usize = 5;
@@ -32,8 +34,9 @@ pub struct Config {
     pub retry_interval_ms: u64,
     pub retry_max_interval_ms: u64,
     pub retries: usize,
+    pub multi_progress_bar: Arc<MultiProgress>,
     pub progress_bar_style: ProgressStyle,
-    pub spinner_style: ProgressStyle,
+    pub _spinner_style: ProgressStyle,
 }
 
 impl Config {
@@ -108,7 +111,7 @@ impl Config {
 
         let progress_bar_style: ProgressStyle = ProgressStyle::default_bar()
             .template(
-                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {msg}",
             )
             .unwrap();
         let spinner_style: ProgressStyle = ProgressStyle::default_spinner()
@@ -128,8 +131,9 @@ impl Config {
             retry_interval_ms,
             retry_max_interval_ms,
             retries,
+            multi_progress_bar: Arc::new(MultiProgress::new()),
             progress_bar_style,
-            spinner_style,
+            _spinner_style: spinner_style,
         }
     }
 }

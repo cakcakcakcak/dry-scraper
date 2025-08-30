@@ -12,6 +12,8 @@ pub enum LPError {
     DatabaseCustom(String),
     #[error("Failed to send SQLx Job: {0}")]
     SqlxJobSend(#[from] tokio::sync::mpsc::error::SendError<SqlxJob>),
+    #[error("Failed to receive result of SQLx Job: {0}")]
+    SqlxJobRecv(#[from] tokio::sync::oneshot::error::RecvError),
     #[error("Database migration error: {0}")]
     Migration(#[from] sqlx::migrate::MigrateError),
     #[error("API error: {0}")]

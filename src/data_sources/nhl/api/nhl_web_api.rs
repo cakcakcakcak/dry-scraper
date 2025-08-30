@@ -13,7 +13,7 @@ use crate::{
         models::{ItemParsedWithContext, traits::IntoDbStruct},
     },
     data_sources::models::NhlSeasonContext,
-    with_progress_bar,
+    with_progress,
 };
 
 use super::super::models::{
@@ -78,7 +78,7 @@ impl NhlWebApi {
                     endpoint,
                     "Failed to parse `raw_data` into `serde_json::Value`: {e}"
                 );
-                tracing::debug!(raw_data);
+                tracing::info!(raw_data);
                 return Err(LPError::Serde(e));
             }
         };
@@ -90,7 +90,7 @@ impl NhlWebApi {
                     "Failed to parse `raw_data` into `{}`: {e}",
                     T::type_name()
                 );
-                tracing::debug!(raw_data);
+                tracing::info!(raw_data);
                 return Err(LPError::Serde(e));
             }
         };
@@ -125,13 +125,17 @@ impl<'a> PlayerResource<'a> {
         db_context: &DbContext,
         player_ids: Vec<i32>,
     ) -> Vec<Result<ItemParsedWithContext<NhlPlayerJson>, LPError>> {
-        with_progress_bar!(player_ids.len(), |pb| {
-            stream::iter(player_ids)
-                .map(|player_id| self.get(db_context, player_id))
-                .buffer_unordered(CONFIG.db_concurrency_limit)
-                .collect()
-                .await
-        })
+        with_progress!(
+            player_ids.len(),
+            &format!("Fetching many `NhlPlayerJson`s"),
+            |pb| {
+                stream::iter(player_ids)
+                    .map(|player_id| self.get(db_context, player_id))
+                    .buffer_unordered(CONFIG.db_concurrency_limit)
+                    .collect()
+                    .await
+            }
+        )
     }
 }
 
@@ -155,7 +159,7 @@ impl<'a> GameResource<'a> {
         db_context: &DbContext,
         game_ids: Vec<i32>,
     ) -> Vec<Result<ItemParsedWithContext<NhlGameJson>, LPError>> {
-        with_progress_bar!(game_ids.len(), |pb| {
+        with_progress!(game_ids.len(), &format!("Fetching `NhlGameJson`s."), |pb| {
             stream::iter(game_ids)
                 .map(|game_id| self.get(db_context, game_id))
                 .buffer_unordered(CONFIG.api_concurrency_limit)
@@ -186,7 +190,7 @@ impl<'a> PlayoffBracketResource<'a> {
                 endpoint,
                 "Failed to parse into `NhlPlayoffBracketJson`: {e}"
             );
-            tracing::debug!(raw_data);
+            tracing::info!(raw_data);
             LPError::Serde(e)
         })?;
 

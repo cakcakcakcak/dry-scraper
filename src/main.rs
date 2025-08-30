@@ -16,8 +16,6 @@ use common::{
 
 use data_sources::nhl::{api::*, models::*, orchestrator::*};
 
-use crate::data_sources::orchestrator;
-
 #[tokio::main]
 async fn main() -> Result<(), LPError> {
     _ = dotenvy::dotenv();

@@ -20,25 +20,19 @@ macro_rules! bind {
 }
 
 #[macro_export]
-macro_rules! verify_fk {
-    ($missing:ident, $db_context:expr, $key:expr) => {
-        ()
-    };
-}
-
-#[macro_export]
-macro_rules! with_progress_bar {
-    ($count:expr, |$pb:ident| $body:block) => {{
-        let $pb = indicatif::ProgressBar::new($count as u64);
+macro_rules! with_progress {
+    // progress bar
+    ($count:expr, $msg:expr, |$pb:ident| $body:block) => {{
+        let $pb = CONFIG
+            .multi_progress_bar
+            .add(indicatif::ProgressBar::new($count as u64));
+        $pb.set_message($msg.to_string());
         $pb.set_style($crate::config::CONFIG.progress_bar_style.clone());
         let result = { $body };
         $pb.finish_using_style();
         result
     }};
-}
-
-#[macro_export]
-macro_rules! with_spinner {
+    // spinner
     ($msg:expr, |$pb:ident| $body:block) => {{
         let $pb = indicatif::ProgressBar::new_spinner();
         $pb.set_message($msg);

@@ -6,18 +6,14 @@ use sqlx::postgres::types::PgInterval;
 
 use super::super::{NhlPlayKey, NhlPrimaryKey};
 use super::{DefendingSide, NhlGameContext, PeriodDescriptorJson, PeriodTypeJson};
-use crate::any_primary_key::AnyPrimaryKey;
-use crate::common::db::db_entity::PrimaryKeyExt;
-use crate::config::CONFIG;
 use crate::impl_pk_debug;
 use crate::{
     bind,
     common::{
-        db::{DbContext, DbEntity, RelationshipIntegrity, StaticPgQuery, StaticPgQueryAs},
-        errors::LPError,
+        db::{DbEntity, StaticPgQuery, StaticPgQueryAs},
         models::traits::{DbStruct, IntoDbStruct},
     },
-    impl_has_type_name, make_deserialize_to_type, verify_fk,
+    impl_has_type_name, make_deserialize_to_type,
 };
 
 use crate::common::serde_helpers::{JsonExt, parse_mmss_to_pginterval};

@@ -2,7 +2,8 @@ use std::fmt::Debug;
 
 use crate::{
     common::models::traits::{DbStruct, IntoDbStruct},
-    with_progress_bar,
+    config::CONFIG,
+    with_progress,
 };
 
 #[derive(Clone, Debug)]
@@ -24,7 +25,7 @@ where
     J: IntoDbStruct,
     J::DbStruct: DbStruct,
 {
-    fn into_db_structs(self) -> Vec<J::DbStruct>;
+    fn into_db_structs(self, pb_msg: &str) -> Vec<J::DbStruct>;
 }
 
 impl<J> ItemParsedWithContextVecExt<J> for Vec<ItemParsedWithContext<J>>
@@ -32,8 +33,8 @@ where
     J: IntoDbStruct,
     J::DbStruct: DbStruct,
 {
-    fn into_db_structs(self) -> Vec<J::DbStruct> {
-        with_progress_bar!(self.len(), |pb| {
+    fn into_db_structs(self, pb_msg: &str) -> Vec<J::DbStruct> {
+        with_progress!(self.len(), pb_msg, |pb| {
             self.into_iter()
                 .map(|game_json| game_json.into_db_struct())
                 .inspect(|_| pb.inc(1))
