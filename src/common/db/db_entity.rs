@@ -8,7 +8,10 @@ use crate::{
     any_primary_key::AnyPrimaryKey,
     common::{
         api::CacheableApi,
-        db::{DbContext, DbPool, SqlxJobResult, StaticPgQuery, StaticPgQueryAs},
+        db::{
+            DbContext, DbPool, SqlxJob, SqlxJobOrFlush, SqlxJobResult, StaticPgQuery,
+            StaticPgQueryAs,
+        },
         errors::LPError,
         models::traits::HasTypeName,
         util::track_and_filter_errors,
@@ -152,7 +155,7 @@ pub trait DbEntity:
 
         let self_clone: Self = self.clone();
 
-        let job = Box::pin(async move {
+        let future = Box::pin(async move {
             crate::common::util::sqlx_operation_with_retries(|| async {
                 let query: StaticPgQuery = self_clone.upsert_query();
                 tracing::debug!("Attempting upsert for {:?}", self_clone.pk());
@@ -178,7 +181,7 @@ pub trait DbEntity:
 
         db_context
             .sqlx_tx
-            .send((job, result_tx))
+            .send(SqlxJobOrFlush::Job(SqlxJob { future, result_tx }))
             .await
             .map_err(|e| LPError::DatabaseCustom(format!("Worker channel send failed: {e}")))?;
 
@@ -208,21 +211,15 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
         api: &<<T as DbEntity>::Pk as PrimaryKey>::Api,
     ) -> Vec<Option<PgQueryResult>> {
         let items: Vec<T> = self.clone();
-        let results = with_progress!(items.len(), "Upserting whatever", |pb| {
-            stream::iter(items.into_iter())
-                .map(|item| {
-                    let db_context = db_context;
-                    let api = api;
-                    let pb_clone = pb.clone();
-                    async move {
-                        pb_clone.inc(1);
-                        item.fix_relationships_and_upsert(db_context, api).await
-                    }
-                })
-                .buffer_unordered(CONFIG.db_concurrency_limit)
-                .collect::<Vec<_>>()
-                .await
-        });
+        let results = stream::iter(items.into_iter())
+            .map(|item| {
+                let db_context = db_context;
+                let api = api;
+                async move { item.fix_relationships_and_upsert(db_context, api).await }
+            })
+            .buffer_unordered(CONFIG.db_concurrency_limit)
+            .collect::<Vec<_>>()
+            .await;
         track_and_filter_errors(results, db_context).await
     }
 }

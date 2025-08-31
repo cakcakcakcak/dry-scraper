@@ -4,12 +4,12 @@ use tokio::{
 };
 
 use crate::{
-    common::db::{DbPool, SqlxJob, SqlxJobResult, SqlxJobSender},
+    common::db::{DbPool, SqlxJob, SqlxJobOrFlush, SqlxJobResult, SqlxJobSender},
     config::CONFIG,
 };
 
 pub fn start_sqlx_worker(pool: DbPool) -> SqlxJobSender {
-    let (tx, mut rx) = mpsc::channel::<SqlxJob>(CONFIG.db_query_batch_size);
+    let (tx, mut rx) = mpsc::channel::<SqlxJobOrFlush>(CONFIG.db_query_batch_size);
 
     tokio::spawn(async move {
         tracing::info!("Spawned SQLx worker.");
@@ -22,7 +22,8 @@ pub fn start_sqlx_worker(pool: DbPool) -> SqlxJobSender {
             )
             .await
             {
-                Ok(Some(job)) => batch.push(job),
+                Ok(Some(SqlxJobOrFlush::Job(job))) => batch.push(job),
+                Ok(Some(SqlxJobOrFlush::Flush)) => break,
                 Ok(None) => break,
                 Err(_) => {}
             }
@@ -38,9 +39,9 @@ pub fn start_sqlx_worker(pool: DbPool) -> SqlxJobSender {
                         continue;
                     }
                 };
-                for (job, result_tx) in batch.drain(..) {
-                    let res: SqlxJobResult = job.await;
-                    let _ = result_tx.send(res);
+                for job in batch.drain(..) {
+                    let res: SqlxJobResult = job.future.await;
+                    let _ = job.result_tx.send(res);
                 }
                 if let Err(e) = tx_db.commit().await {
                     tracing::error!("Failed to commit transaction: {e}");
