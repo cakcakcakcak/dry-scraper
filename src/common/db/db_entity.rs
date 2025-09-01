@@ -1,5 +1,10 @@
 use futures::stream::{self, StreamExt};
-use std::fmt::Debug;
+use std::{
+    cmp::{Eq, min},
+    collections::HashSet,
+    fmt::Debug,
+    hash::Hash,
+};
 
 use async_trait::async_trait;
 use sqlx::{FromRow, postgres::PgQueryResult};
@@ -8,10 +13,7 @@ use crate::{
     any_primary_key::AnyPrimaryKey,
     common::{
         api::CacheableApi,
-        db::{
-            DbContext, DbPool, SqlxJob, SqlxJobOrFlush, SqlxJobResult, StaticPgQuery,
-            StaticPgQueryAs,
-        },
+        db::{DbContext, SqlxJob, SqlxJobOrFlush, SqlxJobResult, StaticPgQuery, StaticPgQueryAs},
         errors::LPError,
         models::traits::HasTypeName,
         util::track_and_filter_errors,
@@ -149,41 +151,13 @@ pub trait DbEntity:
 
     #[tracing::instrument(skip(self, db_context))]
     async fn upsert(&self, db_context: &DbContext) -> Result<PgQueryResult, LPError> {
-        let pool: DbPool = db_context.pool.clone();
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel::<SqlxJobResult>();
 
-        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
-
-        let self_clone: Self = self.clone();
-
-        let future = Box::pin(async move {
-            crate::common::util::sqlx_operation_with_retries(|| async {
-                let query: StaticPgQuery = self_clone.upsert_query();
-                tracing::debug!("Attempting upsert for {:?}", self_clone.pk());
-
-                let res: SqlxJobResult = match query.execute(&pool).await {
-                    Ok(pg_result) => {
-                        tracing::debug!(
-                            "Upsert for {:?} affected {:?}",
-                            self_clone.pk(),
-                            pg_result
-                        );
-                        Ok(pg_result)
-                    }
-                    Err(e) => {
-                        tracing::warn!("Upsert attempt for {:?} failed: {:?}", self_clone.pk(), e);
-                        Err(e)
-                    }
-                };
-                res
-            })
-            .await
-        });
-
-        db_context
-            .sqlx_tx
-            .send(SqlxJobOrFlush::Job(SqlxJob { future, result_tx }))
-            .await
-            .map_err(|e| LPError::DatabaseCustom(format!("Worker channel send failed: {e}")))?;
+        let query = self.upsert_query();
+        let job = SqlxJob { query, result_tx };
+        if let Err(e) = db_context.sqlx_tx.send(SqlxJobOrFlush::Job(job)).await {
+            tracing::warn!("Failed to send job: {e:?}");
+        }
 
         match result_rx.await {
             Ok(Ok(pg_result)) => {
@@ -210,16 +184,99 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
         db_context: &DbContext,
         api: &<<T as DbEntity>::Pk as PrimaryKey>::Api,
     ) -> Vec<Option<PgQueryResult>> {
+        if self.is_empty() {
+            tracing::debug!("No items to upsert, returning early");
+            return Vec::new();
+        }
+
         let items: Vec<T> = self.clone();
-        let results = stream::iter(items.into_iter())
-            .map(|item| {
-                let db_context = db_context;
-                let api = api;
-                async move { item.fix_relationships_and_upsert(db_context, api).await }
-            })
-            .buffer_unordered(CONFIG.db_concurrency_limit)
+        let type_name = T::type_name();
+
+        tracing::debug!(
+            "Determining missing foreign keys for {} `{type_name}`s.",
+            items.len()
+        );
+        let mut missing_keys: HashSet<<T as DbEntity>::Pk> = HashSet::new();
+        for item in &items {
+            if db_context.key_cache.contains(&item.any_pk()) {
+                continue;
+            }
+            for fk in item.foreign_keys() {
+                if !db_context.key_cache.contains(&fk.any_pk()) {
+                    missing_keys.insert(fk);
+                }
+            }
+        }
+
+        let missing_keys: Vec<<T as DbEntity>::Pk> = missing_keys.into_iter().collect();
+        tracing::debug!(
+            "Collected {} unique foreign keys to verify",
+            missing_keys.len()
+        );
+
+        tracing::debug!("Upserting {} missing foreign keys", missing_keys.len());
+        stream::iter(missing_keys)
+            .map(|key| async move { key.upsert_from_api(db_context, api).await })
+            .buffer_unordered(min(
+                CONFIG.api_concurrency_limit,
+                CONFIG.db_concurrency_limit,
+            ))
             .collect::<Vec<_>>()
             .await;
+
+        tracing::debug!(
+            "Phase 4: Upserting {} `{type_name}`s to lp database",
+            items.len()
+        );
+        let mut receivers = Vec::new();
+
+        with_progress!(items.len(), "Dispatching upsert queries...", |pb| {
+            for item in items {
+                if db_context.key_cache.contains(&item.any_pk()) {
+                    tracing::debug!("Key cache contains {:?}, skipping upsert.", item.pk());
+                    pb.inc(1);
+                    continue;
+                }
+                for fk in item.foreign_keys() {
+                    if !db_context.key_cache.contains(&fk.any_pk()) {
+                        continue;
+                    }
+                }
+
+                let (result_tx, result_rx) = tokio::sync::oneshot::channel::<SqlxJobResult>();
+                let query = item.upsert_query();
+                let job = SqlxJob { query, result_tx };
+
+                if let Err(e) = db_context.sqlx_tx.send(SqlxJobOrFlush::Job(job)).await {
+                    tracing::warn!("Failed to send job: {e:?}");
+                    continue;
+                }
+
+                receivers.push((item, result_rx));
+                pb.inc(1);
+            }
+        });
+
+        let _ = db_context.sqlx_tx.send(SqlxJobOrFlush::Flush).await;
+
+        // 3. Then wait for all results in parallel
+        let results = with_progress!("Awaiting upsert results...", |pb| {
+            stream::iter(receivers)
+                .map(|(item, rx)| async move {
+                    match rx.await {
+                        Ok(Ok(pg_result)) => {
+                            db_context.key_cache.insert(item.any_pk());
+                            Ok(Some(pg_result))
+                        }
+                        Ok(Err(e)) => Err(LPError::DatabaseCustom(format!("Upsert failed: {e}"))),
+                        Err(_) => Err(LPError::DatabaseCustom("Worker dropped".to_string())),
+                    }
+                })
+                .buffer_unordered(CONFIG.db_concurrency_limit)
+                .collect::<Vec<_>>()
+                .await
+        });
+
         track_and_filter_errors(results, db_context).await
     }
 }
@@ -232,7 +289,7 @@ pub enum RelationshipIntegrity<Pk: PrimaryKey> {
 
 #[async_trait]
 pub trait PrimaryKey:
-    Debug + Send + Sync + Unpin + for<'a> FromRow<'a, sqlx::postgres::PgRow>
+    Debug + Eq + Hash + Send + Sync + Unpin + for<'a> FromRow<'a, sqlx::postgres::PgRow>
 {
     type Api: CacheableApi + Send + Sync;
 

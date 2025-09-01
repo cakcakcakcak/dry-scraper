@@ -30,21 +30,21 @@ where
     let j_name: &'static str = J::type_name();
     let d_name: &'static str = D::type_name();
 
-    tracing::info!("Fetching all available `{j_name}`s from NHL API.");
+    tracing::debug!("Fetching all available `{j_name}`s from NHL API.");
     let json_structs: Vec<ItemParsedWithContext<J>> = fetch_fn.await?;
     let json_struct_count: usize = json_structs.len();
-    tracing::info!("Successfully fetched {json_struct_count} `{j_name}`s from NHL API",);
+    tracing::debug!("Successfully fetched {json_struct_count} `{j_name}`s from NHL API",);
 
     let db_structs: Vec<D> =
         json_structs.into_db_structs(&format!("Parsing `{j_name}`s into `{d_name}`s."));
     let db_struct_count: usize = db_structs.len();
-    tracing::info!("Parsed {db_struct_count}/{json_struct_count} `{j_name}`s into `{d_name}`s.",);
+    tracing::debug!("Parsed {db_struct_count}/{json_struct_count} `{j_name}`s into `{d_name}`s.",);
 
-    tracing::info!("Upserting {db_struct_count} `{d_name}`s into lp database.",);
+    tracing::debug!("Upserting {db_struct_count} `{d_name}`s into lp database.",);
     let upsert_results: Vec<Option<PgQueryResult>> =
         db_structs.upsert_all(db_context, nhl_api).await;
     let ok_upsert_count: usize = upsert_results.len();
-    tracing::info!("Upserted {ok_upsert_count}/{db_struct_count} `{d_name}`s into lp database.");
+    tracing::debug!("Upserted {ok_upsert_count}/{db_struct_count} `{d_name}`s into lp database.");
 
     Ok(db_structs)
 }
@@ -106,21 +106,16 @@ pub async fn get_nhl_everything_in_season(
         games.append(&mut playoff_games);
     }
 
-    stream::iter(games)
-        .map(|game| {
-            let db_context = db_context.clone();
-            let nhl_api = nhl_api.clone();
-            async move {
-                let _ = tokio::try_join!(
-                    get_nhl_plays_in_game(&db_context, &nhl_api, &game),
-                    get_nhl_roster_spots_in_game(&db_context, &nhl_api, &game),
-                    get_nhl_shifts_in_game(&db_context, &nhl_api, game.id),
-                );
-            }
-        })
-        .buffer_unordered(CONFIG.api_concurrency_limit)
-        .collect::<Vec<_>>()
-        .await;
+    for game in games {
+        let (plays_res, roster_res, shifts_res) = tokio::join!(
+            get_nhl_plays_in_game(&db_context, &nhl_api, &game),
+            get_nhl_roster_spots_in_game(&db_context, &nhl_api, &game),
+            get_nhl_shifts_in_game(&db_context, &nhl_api, game.id),
+        );
+        plays_res?;
+        roster_res?;
+        shifts_res?;
+    }
 
     Ok(())
 }

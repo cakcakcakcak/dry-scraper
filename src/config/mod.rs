@@ -36,7 +36,7 @@ pub struct Config {
     pub retries: usize,
     pub multi_progress_bar: Arc<MultiProgress>,
     pub progress_bar_style: ProgressStyle,
-    pub _spinner_style: ProgressStyle,
+    pub spinner_style: ProgressStyle,
 }
 
 impl Config {
@@ -133,7 +133,7 @@ impl Config {
             retries,
             multi_progress_bar: Arc::new(MultiProgress::new()),
             progress_bar_style,
-            _spinner_style: spinner_style,
+            spinner_style: spinner_style,
         }
     }
 }

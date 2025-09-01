@@ -132,15 +132,6 @@ macro_rules! make_deserialize_nested_key_to_type {
 
 pub trait AsLogged: Sized {
     fn as_logged(value: &serde_json::Value) -> Option<Self>;
-    fn _get_key_as_logged(value: &serde_json::Value, key: &str) -> Option<Self> {
-        match value.get(&key) {
-            Some(v) => v.as_logged::<Self>(),
-            None => {
-                tracing::info!("Key `{key}` not found in json object: {value:?}");
-                None
-            }
-        }
-    }
 }
 impl AsLogged for serde_json::Value {
     fn as_logged(value: &serde_json::Value) -> Option<Self> {
@@ -200,9 +191,7 @@ impl AsLogged for bool {
             Value::Number(n) => {
                 let number_val = n.as_i64();
                 if number_val != Some(0) && number_val != Some(1) {
-                    tracing::info!(
-                        "Unexpected value {n} (expected 0 or 1), converting to `true`."
-                    );
+                    tracing::info!("Unexpected value {n} (expected 0 or 1), converting to `true`.");
                 }
                 Some(number_val != Some(0))
             }
@@ -222,15 +211,11 @@ impl AsLogged for bool {
 
 pub trait JsonExt {
     fn as_logged<T: AsLogged>(&self) -> Option<T>;
-    fn _get_key_as_logged<T: AsLogged>(&self, key: &str) -> Option<T>;
 }
 
 impl JsonExt for serde_json::Value {
     fn as_logged<T: AsLogged>(&self) -> Option<T> {
         T::as_logged(self)
-    }
-    fn _get_key_as_logged<T: AsLogged>(&self, key: &str) -> Option<T> {
-        T::_get_key_as_logged(self, key)
     }
 }
 
