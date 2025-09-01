@@ -98,7 +98,8 @@ pub fn is_transient_sqlx_error(e: &sqlx::Error) -> bool {
 }
 
 fn is_transient_reqwest_error(e: &reqwest::Error) -> bool {
-    let is_transient = e.is_timeout() || e.is_connect();
+    let is_transient =
+        e.is_timeout() || e.is_connect() || e.to_string().contains("IncompleteMessage");
     if is_transient {
         tracing::warn!("Retrying reqwest operation after transient error: {:?}", e);
     }
