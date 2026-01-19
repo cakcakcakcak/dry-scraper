@@ -5,7 +5,7 @@ use thiserror::Error;
 use crate::SqlxJob;
 
 #[derive(Error, Debug)]
-pub enum LPError {
+pub enum DSError {
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
     #[error("Database error: {0}")]

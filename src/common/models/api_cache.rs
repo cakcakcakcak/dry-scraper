@@ -8,7 +8,7 @@ use crate::{
     common::{
         api::{CacheableApi, cacheable_api::SimpleApi},
         db::{DbContext, DbEntity, PrimaryKey, StaticPgQuery, StaticPgQueryAs},
-        errors::LPError,
+        errors::DSError,
     },
     impl_has_type_name, impl_pk_debug, sqlx_operation_with_retries,
 };
@@ -37,7 +37,7 @@ impl DbEntity for ApiCache {
     async fn fetch_from_db_by_key(
         db_context: &DbContext,
         id: &Self::Pk,
-    ) -> Result<Option<Self>, LPError> {
+    ) -> Result<Option<Self>, DSError> {
         match sqlx_operation_with_retries!(
             sqlx::query_as::<_, Self>(r#"SELECT * FROM api_cache WHERE endpoint=$1"#)
                 .bind(&id.endpoint.clone())
@@ -65,7 +65,7 @@ impl DbEntity for ApiCache {
                     "Error encountered while querying api_cache for endpoint {}",
                     id.endpoint
                 );
-                Err(LPError::Database(e))
+                Err(DSError::Database(e))
             }
         }
     }
@@ -107,13 +107,13 @@ impl PrimaryKey for ApiCacheKey {
         &self,
         db_context: &DbContext,
         api: &SimpleApi,
-    ) -> Result<(), LPError> {
+    ) -> Result<(), DSError> {
         api.fetch_endpoint_cached(db_context, &self.endpoint)
             .await?;
         Ok(())
     }
 
-    async fn verify_by_key(self, db_context: &DbContext) -> Result<Option<Self>, LPError> {
+    async fn verify_by_key(self, db_context: &DbContext) -> Result<Option<Self>, DSError> {
         ApiCache::verify_by_key(db_context, self).await
     }
 }

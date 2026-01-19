@@ -11,13 +11,13 @@ use config::CONFIG;
 
 use common::{
     db::{SqlxJob, init_db_context},
-    errors::LPError,
+    errors::DSError,
 };
 
 use data_sources::nhl::{api::*, models::*, orchestrator::*};
 
 #[tokio::main]
-async fn main() -> Result<(), LPError> {
+async fn main() -> Result<(), DSError> {
     _ = dotenvy::dotenv();
 
     // console_subscriber::init();

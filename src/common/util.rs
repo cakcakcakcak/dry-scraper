@@ -4,7 +4,7 @@ use tokio_retry::{
 };
 
 use crate::{
-    common::{db::DbContext, errors::LPError, models::DataSourceError},
+    common::{db::DbContext, errors::DSError, models::DataSourceError},
     config::CONFIG,
 };
 
@@ -146,7 +146,7 @@ where
 
 #[tracing::instrument(skip(results, db_context))]
 pub async fn track_and_filter_errors<T>(
-    results: Vec<Result<T, LPError>>,
+    results: Vec<Result<T, DSError>>,
     db_context: &DbContext,
 ) -> Vec<T> {
     let futures = results.into_iter().map(|res| {

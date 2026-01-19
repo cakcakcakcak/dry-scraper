@@ -14,7 +14,7 @@ use crate::{
     common::{
         api::CacheableApi,
         db::{DbContext, SqlxJob, SqlxJobOrFlush, SqlxJobResult, StaticPgQuery, StaticPgQueryAs},
-        errors::LPError,
+        errors::DSError,
         models::traits::HasTypeName,
         util::track_and_filter_errors,
     },
@@ -50,7 +50,7 @@ pub trait DbEntity:
         Debug::fmt(&self.pk(), f)
     }
 
-    async fn warm_key_cache(db_context: &DbContext) -> Result<(), LPError> {
+    async fn warm_key_cache(db_context: &DbContext) -> Result<(), DSError> {
         let select_query: StaticPgQueryAs<Self::Pk> = Self::select_key_query();
         let key_vec: Vec<Self::Pk> = select_query.fetch_all(&db_context.pool).await?;
         for entity in key_vec {
@@ -67,7 +67,7 @@ pub trait DbEntity:
     async fn verify_by_key(
         db_context: &DbContext,
         id: Self::Pk,
-    ) -> Result<Option<Self::Pk>, LPError> {
+    ) -> Result<Option<Self::Pk>, DSError> {
         if db_context.key_cache.contains(&id.any_pk()) {
             return Ok(None);
         }
@@ -82,7 +82,7 @@ pub trait DbEntity:
     async fn fetch_from_db_by_key(
         db_context: &DbContext,
         id: &Self::Pk,
-    ) -> Result<Option<Self>, LPError> {
+    ) -> Result<Option<Self>, DSError> {
         match sqlx_operation_with_retries!(
             id.create_select_query()
                 .fetch_optional(&db_context.pool)
@@ -96,7 +96,7 @@ pub trait DbEntity:
                     id
                 );
                 db_context.key_cache.insert(id.any_pk());
-                Self::from_row(&row).map(Some).map_err(LPError::from)
+                Self::from_row(&row).map(Some).map_err(DSError::from)
             }
             Ok(None) => {
                 tracing::debug!("Record not found in lp database for key {:?}", id);
@@ -108,7 +108,7 @@ pub trait DbEntity:
                     id,
                     e
                 );
-                Err(LPError::from(e))
+                Err(DSError::from(e))
             }
         }
     }
@@ -117,7 +117,7 @@ pub trait DbEntity:
     async fn verify_relationships(
         &self,
         db_context: &DbContext,
-    ) -> Result<RelationshipIntegrity<Self::Pk>, LPError> {
+    ) -> Result<RelationshipIntegrity<Self::Pk>, DSError> {
         self.foreign_keys().verify_keys(db_context).await
     }
 
@@ -126,7 +126,7 @@ pub trait DbEntity:
         &self,
         db_context: &DbContext,
         api: &<Self::Pk as PrimaryKey>::Api,
-    ) -> Result<Option<PgQueryResult>, LPError> {
+    ) -> Result<Option<PgQueryResult>, DSError> {
         match self.verify_relationships(db_context).await? {
             RelationshipIntegrity::AllValid => (),
             RelationshipIntegrity::Missing(keys) => {
@@ -150,7 +150,7 @@ pub trait DbEntity:
     }
 
     #[tracing::instrument(skip(self, db_context))]
-    async fn upsert(&self, db_context: &DbContext) -> Result<PgQueryResult, LPError> {
+    async fn upsert(&self, db_context: &DbContext) -> Result<PgQueryResult, DSError> {
         let (result_tx, result_rx) = tokio::sync::oneshot::channel::<SqlxJobResult>();
 
         let query = self.upsert_query();
@@ -164,8 +164,8 @@ pub trait DbEntity:
                 db_context.key_cache.insert(self.any_pk());
                 Ok(pg_result)
             }
-            Ok(Err(e)) => Err(LPError::DatabaseCustom(format!("Upsert failed: {e}"))),
-            Err(_) => Err(LPError::DatabaseCustom("Worker dropped".to_string())),
+            Ok(Err(e)) => Err(DSError::DatabaseCustom(format!("Upsert failed: {e}"))),
+            Err(_) => Err(DSError::DatabaseCustom("Worker dropped".to_string())),
         }
     }
 }
@@ -268,8 +268,8 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
                             db_context.key_cache.insert(item.any_pk());
                             Ok(Some(pg_result))
                         }
-                        Ok(Err(e)) => Err(LPError::DatabaseCustom(format!("Upsert failed: {e}"))),
-                        Err(_) => Err(LPError::DatabaseCustom("Worker dropped".to_string())),
+                        Ok(Err(e)) => Err(DSError::DatabaseCustom(format!("Upsert failed: {e}"))),
+                        Err(_) => Err(DSError::DatabaseCustom("Worker dropped".to_string())),
                     }
                 })
                 .buffer_unordered(CONFIG.db_concurrency_limit)
@@ -298,22 +298,22 @@ pub trait PrimaryKey:
     fn create_select_query(&self) -> StaticPgQuery;
 
     async fn upsert_from_api(&self, db_context: &DbContext, api: &Self::Api)
-    -> Result<(), LPError>;
+    -> Result<(), DSError>;
 
-    async fn verify_by_key(self, db_context: &DbContext) -> Result<Option<Self>, LPError>;
+    async fn verify_by_key(self, db_context: &DbContext) -> Result<Option<Self>, DSError>;
 }
 
 #[async_trait]
 pub trait PrimaryKeyExt<K: PrimaryKey> {
     async fn verify_keys(self, db_context: &DbContext)
-    -> Result<RelationshipIntegrity<K>, LPError>;
+    -> Result<RelationshipIntegrity<K>, DSError>;
 }
 #[async_trait]
 impl<K: PrimaryKey> PrimaryKeyExt<K> for Vec<K> {
     async fn verify_keys(
         self,
         db_context: &DbContext,
-    ) -> Result<RelationshipIntegrity<K>, LPError> {
+    ) -> Result<RelationshipIntegrity<K>, DSError> {
         let mut missing: Vec<K> = vec![];
 
         let results = stream::iter(self)

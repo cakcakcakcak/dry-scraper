@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use sqlx::{FromRow, Row, postgres::PgRow};
 
 use crate::{
-    LPError,
+    DSError,
     any_primary_key::AnyPrimaryKey,
     common::{
         api::cacheable_api::SimpleApi,
@@ -90,7 +90,7 @@ impl PrimaryKey for NhlPrimaryKey {
         }
     }
 
-    async fn upsert_from_api(&self, db_context: &DbContext, api: &NhlApi) -> Result<(), LPError> {
+    async fn upsert_from_api(&self, db_context: &DbContext, api: &NhlApi) -> Result<(), DSError> {
         match self {
             NhlPrimaryKey::ApiCache(pk) => {
                 pk.upsert_from_api(
@@ -108,12 +108,12 @@ impl PrimaryKey for NhlPrimaryKey {
             _ => {
                 let msg = format!("Unable to retrieve record based on key {:?}", self);
                 tracing::error!(msg);
-                Err(LPError::ApiCustom(msg))
+                Err(DSError::ApiCustom(msg))
             }
         }
     }
 
-    async fn verify_by_key(self, db_context: &DbContext) -> Result<Option<NhlPrimaryKey>, LPError> {
+    async fn verify_by_key(self, db_context: &DbContext) -> Result<Option<NhlPrimaryKey>, DSError> {
         match self {
             NhlPrimaryKey::ApiCache(pk) => match ApiCache::verify_by_key(db_context, pk).await? {
                 Some(pk) => Ok(Some(NhlPrimaryKey::ApiCache(pk))),
@@ -229,7 +229,7 @@ impl NhlTeamKey {
         &self,
         db_context: &DbContext,
         nhl_api: &NhlApi,
-    ) -> Result<(), LPError> {
+    ) -> Result<(), DSError> {
         let team_id = self.id;
 
         let team_json_with_context: ItemParsedWithContext<NhlTeamJson> =
@@ -257,7 +257,7 @@ impl NhlPlayerKey {
         &self,
         db_context: &DbContext,
         nhl_api: &NhlApi,
-    ) -> Result<(), LPError> {
+    ) -> Result<(), DSError> {
         let player_id = self.id;
 
         let player_json_with_context: ItemParsedWithContext<NhlPlayerJson> =
@@ -287,7 +287,7 @@ impl NhlGameKey {
         &self,
         db_context: &DbContext,
         nhl_api: &NhlApi,
-    ) -> Result<(), LPError> {
+    ) -> Result<(), DSError> {
         let game_id = self.id;
 
         let game_json_with_context: ItemParsedWithContext<NhlGameJson> =
@@ -375,7 +375,7 @@ impl NhlPlayoffSeriesKey {
         &self,
         db_context: &DbContext,
         nhl_api: &NhlApi,
-    ) -> Result<(), LPError> {
+    ) -> Result<(), DSError> {
         let season_id: i32 = self.season_id;
         let series_letter: &str = &self.series_letter;
 
