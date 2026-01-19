@@ -8,7 +8,7 @@ use crate::{
     CONFIG,
     common::{
         db::{DbContext, DbEntity, DbEntityVecExt},
-        errors::LPError,
+        errors::DSError,
         models::{
             ApiCache, ItemParsedWithContext, ItemParsedWithContextVecExt,
             traits::{DbStruct, HasTypeName, IntoDbStruct},
@@ -21,11 +21,11 @@ pub async fn get_resource<J, D, Fut>(
     db_context: &DbContext,
     nhl_api: &NhlApi,
     fetch_fn: Fut,
-) -> Result<Vec<D>, LPError>
+) -> Result<Vec<D>, DSError>
 where
     J: IntoDbStruct<DbStruct = D>,
     D: DbStruct + DbEntity<Pk = NhlPrimaryKey> + HasTypeName,
-    Fut: std::future::Future<Output = Result<Vec<ItemParsedWithContext<J>>, LPError>>,
+    Fut: std::future::Future<Output = Result<Vec<ItemParsedWithContext<J>>, DSError>>,
 {
     let j_name: &'static str = J::type_name();
     let d_name: &'static str = D::type_name();
@@ -53,7 +53,7 @@ where
 pub async fn get_nhl_seasons(
     db_context: &DbContext,
     nhl_api: &NhlApi,
-) -> Result<Vec<NhlSeason>, LPError> {
+) -> Result<Vec<NhlSeason>, DSError> {
     get_resource(db_context, nhl_api, nhl_api.seasons().list(db_context)).await
 }
 
@@ -61,7 +61,7 @@ pub async fn get_nhl_seasons(
 pub async fn get_nhl_franchises(
     db_context: &DbContext,
     nhl_api: &NhlApi,
-) -> Result<Vec<NhlFranchise>, LPError> {
+) -> Result<Vec<NhlFranchise>, DSError> {
     get_resource(db_context, nhl_api, nhl_api.franchises().list(db_context)).await
 }
 
@@ -69,7 +69,7 @@ pub async fn get_nhl_franchises(
 pub async fn get_nhl_teams(
     db_context: &DbContext,
     nhl_api: &NhlApi,
-) -> Result<Vec<NhlTeam>, LPError> {
+) -> Result<Vec<NhlTeam>, DSError> {
     get_resource(db_context, nhl_api, nhl_api.teams().list(db_context)).await
 }
 
@@ -78,7 +78,7 @@ pub async fn get_nhl_shifts_in_game(
     db_context: &DbContext,
     nhl_api: &NhlApi,
     game_id: i32,
-) -> Result<Vec<NhlShift>, LPError> {
+) -> Result<Vec<NhlShift>, DSError> {
     get_resource(
         db_context,
         nhl_api,
@@ -92,7 +92,7 @@ pub async fn get_nhl_everything_in_season(
     db_context: &DbContext,
     nhl_api: &NhlApi,
     season: &NhlSeason,
-) -> Result<(), LPError> {
+) -> Result<(), DSError> {
     let mut games: Vec<NhlGame> = get_nhl_all_games_in_season(db_context, nhl_api, season).await?;
 
     let playoff_bracket_series: Vec<NhlPlayoffBracketSeries> =
@@ -125,7 +125,7 @@ pub async fn get_nhl_all_games_in_season(
     db_context: &DbContext,
     nhl_api: &NhlApi,
     season: &NhlSeason,
-) -> Result<Vec<NhlGame>, LPError> {
+) -> Result<Vec<NhlGame>, DSError> {
     let number_of_games: i32 = season.total_regular_season_games;
     let season_id: String = season.id.to_string();
 
@@ -138,7 +138,7 @@ pub async fn get_nhl_all_games_in_season(
         .collect();
 
     tracing::info!("Fetching {number_of_games} `NhlGameJson`s from NHL API or cache.");
-    let json_results: Vec<Result<ItemParsedWithContext<NhlGameJson>, LPError>> =
+    let json_results: Vec<Result<ItemParsedWithContext<NhlGameJson>, DSError>> =
         nhl_api.games().get_many(db_context, game_ids).await;
     let ok_json_results: Vec<ItemParsedWithContext<NhlGameJson>> =
         track_and_filter_errors(json_results, db_context).await;
@@ -165,7 +165,7 @@ pub async fn get_nhl_roster_spots_in_game(
     db_context: &DbContext,
     nhl_api: &NhlApi,
     game: &NhlGame,
-) -> Result<Vec<NhlRosterSpot>, LPError> {
+) -> Result<Vec<NhlRosterSpot>, DSError> {
     let game_id: i32 = game.id;
     let game_json: NhlGameJson = serde_json::from_value(game.raw_json.clone())?;
 
@@ -212,7 +212,7 @@ pub async fn get_nhl_plays_in_game(
     db_context: &DbContext,
     nhl_api: &NhlApi,
     game: &NhlGame,
-) -> Result<Vec<NhlPlay>, LPError> {
+) -> Result<Vec<NhlPlay>, DSError> {
     let game_id: i32 = game.id;
     let game_json: NhlGameJson = serde_json::from_value(game.raw_json.clone())?;
 
@@ -258,7 +258,7 @@ pub async fn get_nhl_playoff_bracket_series(
     db_context: &DbContext,
     nhl_api: &NhlApi,
     season: &NhlSeason,
-) -> Result<Vec<NhlPlayoffBracketSeries>, LPError> {
+) -> Result<Vec<NhlPlayoffBracketSeries>, DSError> {
     let season_id: i32 = season.id;
     let year_id: i32 = season_id.to_string()[4..].parse::<i32>().unwrap();
     get_resource(
@@ -276,7 +276,7 @@ pub async fn get_nhl_playoff_series(
     db_context: &DbContext,
     nhl_api: &NhlApi,
     bracket_series: &NhlPlayoffBracketSeries,
-) -> Result<NhlPlayoffSeries, LPError> {
+) -> Result<NhlPlayoffSeries, DSError> {
     let season_id: i32 = bracket_series.season_id;
     let series_letter: &str = &bracket_series.series_letter;
     let series_json: ItemParsedWithContext<NhlPlayoffSeriesJson> = nhl_api
@@ -336,14 +336,14 @@ pub async fn get_nhl_games_in_playoff_series(
     db_context: &DbContext,
     nhl_api: &NhlApi,
     series: &NhlPlayoffSeries,
-) -> Result<Vec<NhlGame>, LPError> {
+) -> Result<Vec<NhlGame>, DSError> {
     let game_ids: Vec<i32> = series.game_ids.to_vec();
     let number_of_games: usize = game_ids.len();
     let series_letter: &str = &series.series_letter;
     let season_id: i32 = series.season_id;
 
     tracing::info!("Fetching {number_of_games} game play-by-play reports from NHL API or cache.");
-    let game_json_results: Vec<Result<ItemParsedWithContext<NhlGameJson>, LPError>> =
+    let game_json_results: Vec<Result<ItemParsedWithContext<NhlGameJson>, DSError>> =
         nhl_api.games().get_many(db_context, game_ids).await;
     let game_jsons: Vec<ItemParsedWithContext<NhlGameJson>> =
         track_and_filter_errors(game_json_results, db_context).await;
@@ -369,7 +369,7 @@ pub async fn get_nhl_games_in_playoff_series(
     Ok(games)
 }
 
-pub async fn warm_nhl_key_cache(db_context: &DbContext) -> Result<(), LPError> {
+pub async fn warm_nhl_key_cache(db_context: &DbContext) -> Result<(), DSError> {
     let db_context = &db_context.clone();
 
     tracing::info!("Warming NHL database key cache.");

@@ -6,7 +6,7 @@ use serde::de::DeserializeOwned;
 use crate::common::{
     api::cacheable_api::CacheableApi,
     db::DbContext,
-    errors::LPError,
+    errors::DSError,
     models::{ItemParsedWithContext, traits::IntoDbStruct},
     util::track_and_filter_errors,
 };
@@ -62,7 +62,7 @@ impl NhlStatsApi {
         &self,
         endpoint: &str,
         db_context: &DbContext,
-    ) -> Result<Vec<ItemParsedWithContext<T>>, LPError>
+    ) -> Result<Vec<ItemParsedWithContext<T>>, DSError>
     where
         T: DeserializeOwned + Debug + IntoDbStruct<Context = NhlDefaultContext>,
     {
@@ -75,7 +75,7 @@ impl NhlStatsApi {
                     "Failed to parse into `NhlApiDataArrayResponse`: {e}"
                 );
                 tracing::info!(raw_data);
-                LPError::Serde(e)
+                DSError::Serde(e)
             })?;
 
         let results = data_array_response.map_json_array_to_json_structs(endpoint);
@@ -90,7 +90,7 @@ impl<'a> SeasonResource<'a> {
     pub async fn list(
         &self,
         db_context: &DbContext,
-    ) -> Result<Vec<ItemParsedWithContext<NhlSeasonJson>>, LPError> {
+    ) -> Result<Vec<ItemParsedWithContext<NhlSeasonJson>>, DSError> {
         let endpoint = format!("{}/season", self.api.base_url);
         self.api
             .fetch_and_parse(endpoint.as_str(), db_context)
@@ -105,7 +105,7 @@ impl<'a> TeamResource<'a> {
     pub async fn list(
         &self,
         db_context: &DbContext,
-    ) -> Result<Vec<ItemParsedWithContext<NhlTeamJson>>, LPError> {
+    ) -> Result<Vec<ItemParsedWithContext<NhlTeamJson>>, DSError> {
         let endpoint = format!("{}/team", self.api.base_url);
         self.api
             .fetch_and_parse(endpoint.as_str(), db_context)
@@ -116,7 +116,7 @@ impl<'a> TeamResource<'a> {
         &self,
         db_context: &DbContext,
         team_id: i32,
-    ) -> Result<ItemParsedWithContext<NhlTeamJson>, LPError> {
+    ) -> Result<ItemParsedWithContext<NhlTeamJson>, DSError> {
         let endpoint = format!("{}/team/id/{team_id}", self.api.base_url);
         let mut results = self
             .api
@@ -125,7 +125,7 @@ impl<'a> TeamResource<'a> {
 
         results
             .pop()
-            .ok_or_else(|| LPError::ApiCustom(format!("NHL team with id {team_id} not found.")))
+            .ok_or_else(|| DSError::ApiCustom(format!("NHL team with id {team_id} not found.")))
     }
 }
 
@@ -136,7 +136,7 @@ impl<'a> FranchiseResource<'a> {
     pub async fn list(
         &self,
         db_context: &DbContext,
-    ) -> Result<Vec<ItemParsedWithContext<NhlFranchiseJson>>, LPError> {
+    ) -> Result<Vec<ItemParsedWithContext<NhlFranchiseJson>>, DSError> {
         let endpoint = format!("{}/franchise", self.api.base_url);
         self.api
             .fetch_and_parse(endpoint.as_str(), db_context)
@@ -152,7 +152,7 @@ impl<'a> ShiftResource<'a> {
         &self,
         db_context: &DbContext,
         game_id: i32,
-    ) -> Result<Vec<ItemParsedWithContext<NhlShiftJson>>, LPError> {
+    ) -> Result<Vec<ItemParsedWithContext<NhlShiftJson>>, DSError> {
         let endpoint = format!(
             "{}/shiftcharts?cayenneExp=gameId={game_id}",
             self.api.base_url,

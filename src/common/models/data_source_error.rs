@@ -2,7 +2,7 @@ use chrono;
 
 use crate::{
     bind,
-    common::{db::DbContext, errors::LPError},
+    common::{db::DbContext, errors::DSError},
 };
 
 #[derive(Clone)]
@@ -11,7 +11,7 @@ pub struct DataSourceError {
     pub occurred_at: chrono::NaiveDateTime,
 }
 impl DataSourceError {
-    pub fn new(error: LPError) -> Self {
+    pub fn new(error: DSError) -> Self {
         DataSourceError {
             error_message: error.to_string(),
             occurred_at: chrono::Local::now().naive_local(),
@@ -31,7 +31,7 @@ impl DataSourceError {
             .await;
         });
     }
-    pub async fn track_error(error: LPError, db_context: &DbContext) {
+    pub async fn track_error(error: DSError, db_context: &DbContext) {
         Self::new(error).upsert_fire_and_forget(db_context).await
     }
 }

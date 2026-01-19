@@ -1,7 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize, de};
 use sqlx::Type;
 
-use crate::LPError;
+use crate::DSError;
 use crate::common::models::ItemParsedWithContext;
 use crate::common::models::traits::{HasTypeName, IntoDbStruct};
 
@@ -132,7 +132,7 @@ impl NhlApiDataArrayResponse {
     pub fn map_json_array_to_json_structs<T>(
         self,
         endpoint: &str,
-    ) -> Vec<Result<ItemParsedWithContext<T>, LPError>>
+    ) -> Vec<Result<ItemParsedWithContext<T>, DSError>>
     where
         T: serde::de::DeserializeOwned + HasTypeName + IntoDbStruct<Context = NhlDefaultContext>,
     {
@@ -140,8 +140,8 @@ impl NhlApiDataArrayResponse {
             .iter()
             .map(|json_value| {
                 let raw_data: String = json_value.to_string();
-                let parsed: Result<T, LPError> =
-                    serde_json::from_value(json_value.clone()).map_err(LPError::from);
+                let parsed: Result<T, DSError> =
+                    serde_json::from_value(json_value.clone()).map_err(DSError::from);
                 match parsed {
                     Ok(item) => Ok(ItemParsedWithContext {
                         item,

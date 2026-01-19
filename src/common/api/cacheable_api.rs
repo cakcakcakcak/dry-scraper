@@ -7,7 +7,7 @@ use tracing::instrument;
 use crate::{
     common::{
         db::{DbContext, DbEntity},
-        errors::LPError,
+        errors::DSError,
         models::ApiCache,
     },
     reqwest_with_retries, sqlx_operation_with_retries,
@@ -22,7 +22,7 @@ pub trait CacheableApi: Debug {
         &self,
         db_context: &DbContext,
         endpoint: &str,
-    ) -> Result<String, LPError> {
+    ) -> Result<String, DSError> {
         tracing::debug!("Querying api_cache for the endpoint we seek...");
         match sqlx_operation_with_retries!(
             sqlx::query("SELECT raw_data from api_cache WHERE endpoint = $1")
@@ -56,7 +56,7 @@ pub trait CacheableApi: Debug {
                         error = %e,
                         "Error encountered while fetching from API."
                     );
-                    LPError::Api(e)
+                    DSError::Api(e)
                 })?
                 .error_for_status()
                 .map_err(|e| {
@@ -64,7 +64,7 @@ pub trait CacheableApi: Debug {
                         error = %e,
                         "HTTP response code not 2xx."
                     );
-                    LPError::Api(e)
+                    DSError::Api(e)
                 })?;
 
         tracing::debug!("Response received. Parsing and inserting into cache...");
@@ -73,7 +73,7 @@ pub trait CacheableApi: Debug {
                 error = %e,
                 "Failed to parse response into text."
             );
-            LPError::Api(e)
+            DSError::Api(e)
         })?;
         let cache_record = ApiCache {
             endpoint: endpoint.to_string(),

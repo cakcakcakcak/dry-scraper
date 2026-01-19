@@ -8,7 +8,7 @@ use crate::{
     any_primary_key::AnyPrimaryKey,
     common::{
         db::{DbPool, SqlxJobSender, start_sqlx_worker},
-        errors::LPError,
+        errors::DSError,
         util::{default_retry_strategy, is_transient_sqlx_error},
     },
     config::CONFIG,
@@ -22,7 +22,7 @@ pub struct DbContext {
     pub key_cache: Arc<DashSet<AnyPrimaryKey>>,
 }
 
-pub async fn init_db_context() -> Result<DbContext, LPError> {
+pub async fn init_db_context() -> Result<DbContext, DSError> {
     let pool = init_db().await?;
     let sqlx_tx = start_sqlx_worker(pool.clone());
     Ok(DbContext {
@@ -33,7 +33,7 @@ pub async fn init_db_context() -> Result<DbContext, LPError> {
 }
 
 #[tracing::instrument]
-pub async fn init_db() -> Result<DbPool, LPError> {
+pub async fn init_db() -> Result<DbPool, DSError> {
     let db_url: String = database_url()?;
     tracing::debug!(db_url);
 
@@ -175,7 +175,7 @@ pub async fn init_db() -> Result<DbPool, LPError> {
     Ok(pool)
 }
 
-fn database_url() -> Result<String, LPError> {
+fn database_url() -> Result<String, DSError> {
     let pg_host: &str = &*CONFIG.pg_host;
     let pg_user: &str = &*CONFIG.pg_user;
     let pg_pass: &str = &*CONFIG.pg_pass;

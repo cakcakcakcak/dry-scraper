@@ -9,7 +9,7 @@ use crate::{
     common::{
         api::cacheable_api::CacheableApi,
         db::DbContext,
-        errors::LPError,
+        errors::DSError,
         models::{ItemParsedWithContext, traits::IntoDbStruct},
     },
     data_sources::models::NhlSeasonContext,
@@ -66,7 +66,7 @@ impl NhlWebApi {
         &self,
         endpoint: &str,
         db_context: &DbContext,
-    ) -> Result<ItemParsedWithContext<T>, LPError>
+    ) -> Result<ItemParsedWithContext<T>, DSError>
     where
         T: DeserializeOwned + Debug + IntoDbStruct<Context = NhlDefaultContext>,
     {
@@ -79,7 +79,7 @@ impl NhlWebApi {
                     "Failed to parse `raw_data` into `serde_json::Value`: {e}"
                 );
                 tracing::info!(raw_data);
-                return Err(LPError::Serde(e));
+                return Err(DSError::Serde(e));
             }
         };
         let item: T = match serde_json::from_str(&raw_data) {
@@ -91,7 +91,7 @@ impl NhlWebApi {
                     T::type_name()
                 );
                 tracing::info!(raw_data);
-                return Err(LPError::Serde(e));
+                return Err(DSError::Serde(e));
             }
         };
 
@@ -113,7 +113,7 @@ impl<'a> PlayerResource<'a> {
         &self,
         db_context: &DbContext,
         player_id: i32,
-    ) -> Result<ItemParsedWithContext<NhlPlayerJson>, LPError> {
+    ) -> Result<ItemParsedWithContext<NhlPlayerJson>, DSError> {
         let endpoint = format!("{}/player/{}/landing", self.api.base_url, player_id);
         self.api
             .fetch_and_parse::<NhlPlayerJson>(&endpoint, db_context)
@@ -124,7 +124,7 @@ impl<'a> PlayerResource<'a> {
         &self,
         db_context: &DbContext,
         player_ids: Vec<i32>,
-    ) -> Vec<Result<ItemParsedWithContext<NhlPlayerJson>, LPError>> {
+    ) -> Vec<Result<ItemParsedWithContext<NhlPlayerJson>, DSError>> {
         with_progress!(
             player_ids.len(),
             &format!("Fetching many `NhlPlayerJson`s"),
@@ -147,7 +147,7 @@ impl<'a> GameResource<'a> {
         &self,
         db_context: &DbContext,
         game_id: i32,
-    ) -> Result<ItemParsedWithContext<NhlGameJson>, LPError> {
+    ) -> Result<ItemParsedWithContext<NhlGameJson>, DSError> {
         let endpoint: String = format!("{}/gamecenter/{}/play-by-play", self.api.base_url, game_id);
         self.api
             .fetch_and_parse::<NhlGameJson>(&endpoint, db_context)
@@ -158,7 +158,7 @@ impl<'a> GameResource<'a> {
         &self,
         db_context: &DbContext,
         game_ids: Vec<i32>,
-    ) -> Vec<Result<ItemParsedWithContext<NhlGameJson>, LPError>> {
+    ) -> Vec<Result<ItemParsedWithContext<NhlGameJson>, DSError>> {
         with_progress!(game_ids.len(), &format!("Fetching `NhlGameJson`s."), |pb| {
             stream::iter(game_ids)
                 .map(|game_id| self.get(db_context, game_id))
@@ -178,7 +178,7 @@ impl<'a> PlayoffBracketResource<'a> {
         &self,
         db_context: &DbContext,
         year_id: i32,
-    ) -> Result<Vec<ItemParsedWithContext<NhlPlayoffBracketSeriesJson>>, LPError> {
+    ) -> Result<Vec<ItemParsedWithContext<NhlPlayoffBracketSeriesJson>>, DSError> {
         let endpoint: String = format!("{}/playoff-bracket/{}", self.api.base_url, year_id);
 
         let raw_data = self
@@ -191,7 +191,7 @@ impl<'a> PlayoffBracketResource<'a> {
                 "Failed to parse into `NhlPlayoffBracketJson`: {e}"
             );
             tracing::info!(raw_data);
-            LPError::Serde(e)
+            DSError::Serde(e)
         })?;
 
         let season_id: i32 = format!("{}{}", year_id - 1, year_id)
@@ -224,7 +224,7 @@ impl<'a> PlayoffSeriesResource<'a> {
         db_context: &DbContext,
         season_id: i32,
         series_letter: &str,
-    ) -> Result<ItemParsedWithContext<NhlPlayoffSeriesJson>, LPError> {
+    ) -> Result<ItemParsedWithContext<NhlPlayoffSeriesJson>, DSError> {
         let endpoint: String = format!(
             "{}/schedule/playoff-series/{}/{}",
             self.api.base_url, season_id, series_letter
