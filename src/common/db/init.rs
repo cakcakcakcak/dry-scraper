@@ -7,7 +7,7 @@ use tokio_retry::RetryIf;
 use crate::{
     any_primary_key::AnyPrimaryKey,
     common::{
-        db::{DbPool, SqlxJobSender, start_sqlx_worker},
+        db::{start_sqlx_worker, DbPool, SqlxJobSender},
         errors::DSError,
         util::{default_retry_strategy, is_transient_sqlx_error},
     },
@@ -21,15 +21,16 @@ pub struct DbContext {
     pub sqlx_tx: SqlxJobSender,
     pub key_cache: Arc<DashSet<AnyPrimaryKey>>,
 }
-
-pub async fn init_db_context() -> Result<DbContext, DSError> {
-    let pool = init_db().await?;
-    let sqlx_tx = start_sqlx_worker(pool.clone());
-    Ok(DbContext {
-        pool,
-        sqlx_tx,
-        key_cache: Arc::new(DashSet::new()),
-    })
+impl DbContext {
+    pub async fn connect() -> Result<DbContext, DSError> {
+        let pool = init_db().await?;
+        let sqlx_tx = start_sqlx_worker(pool.clone());
+        Ok(DbContext {
+            pool,
+            sqlx_tx,
+            key_cache: Arc::new(DashSet::new()),
+        })
+    }
 }
 
 #[tracing::instrument]

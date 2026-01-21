@@ -7,10 +7,10 @@ mod common;
 mod config;
 mod data_sources;
 
-use config::CONFIG;
+use config::{AppContext, CONFIG, UI_CONFIG};
 
 use common::{
-    db::{SqlxJob, init_db_context},
+    db::{DbContext, SqlxJob},
     errors::DSError,
 };
 
@@ -26,21 +26,23 @@ async fn main() -> Result<(), DSError> {
         .init();
 
     _ = &*CONFIG;
+    _ = &*UI_CONFIG;
 
-    let db_context = init_db_context().await?;
-    warm_nhl_key_cache(&db_context).await?;
+    let db_context: DbContext = DbContext::connect().await?;
+    let app_context: AppContext = AppContext::new();
+    warm_nhl_key_cache(&app_context, &db_context).await?;
     let nhl_api: NhlApi = NhlApi::new();
 
-    let mut seasons: Vec<NhlSeason> = get_nhl_seasons(&db_context, &nhl_api).await?;
-    _ = get_nhl_franchises(&db_context, &nhl_api).await?;
-    _ = get_nhl_teams(&db_context, &nhl_api).await?;
+    let mut seasons: Vec<NhlSeason> = get_nhl_seasons(&app_context, &db_context, &nhl_api).await?;
+    _ = get_nhl_franchises(&app_context, &db_context, &nhl_api).await?;
+    _ = get_nhl_teams(&app_context, &db_context, &nhl_api).await?;
 
     seasons.sort_by_key(|season| season.id);
     seasons.pop();
     seasons.reverse();
 
     for season in seasons {
-        get_nhl_everything_in_season(&db_context, &nhl_api, &season).await?;
+        get_nhl_everything_in_season(&app_context, &db_context, &nhl_api, &season).await?;
     }
 
     Ok(())

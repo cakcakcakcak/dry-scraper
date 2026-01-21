@@ -5,15 +5,15 @@ use futures::stream::{self, StreamExt};
 use serde::de::DeserializeOwned;
 
 use crate::{
-    CONFIG,
     common::{
         api::cacheable_api::CacheableApi,
         db::DbContext,
         errors::DSError,
-        models::{ItemParsedWithContext, traits::IntoDbStruct},
+        models::{traits::IntoDbStruct, ItemParsedWithContext},
     },
+    config::AppContext,
     data_sources::models::NhlSeasonContext,
-    with_progress,
+    with_progress, CONFIG,
 };
 
 use super::super::models::{
@@ -122,10 +122,12 @@ impl<'a> PlayerResource<'a> {
 
     pub async fn _get_many(
         &self,
+        app_context: &AppContext,
         db_context: &DbContext,
         player_ids: Vec<i32>,
     ) -> Vec<Result<ItemParsedWithContext<NhlPlayerJson>, DSError>> {
         with_progress!(
+            app_context.multi_progress_bar.clone(),
             player_ids.len(),
             &format!("Fetching many `NhlPlayerJson`s"),
             |pb| {
@@ -156,17 +158,23 @@ impl<'a> GameResource<'a> {
 
     pub async fn get_many(
         &self,
+        app_context: &AppContext,
         db_context: &DbContext,
         game_ids: Vec<i32>,
     ) -> Vec<Result<ItemParsedWithContext<NhlGameJson>, DSError>> {
-        with_progress!(game_ids.len(), &format!("Fetching `NhlGameJson`s."), |pb| {
-            stream::iter(game_ids)
-                .map(|game_id| self.get(db_context, game_id))
-                .buffer_unordered(CONFIG.api_concurrency_limit)
-                .inspect(|_| pb.inc(1))
-                .collect()
-                .await
-        })
+        with_progress!(
+            app_context.multi_progress_bar.clone(),
+            game_ids.len(),
+            &format!("Fetching `NhlGameJson`s."),
+            |pb| {
+                stream::iter(game_ids)
+                    .map(|game_id| self.get(db_context, game_id))
+                    .buffer_unordered(CONFIG.api_concurrency_limit)
+                    .inspect(|_| pb.inc(1))
+                    .collect()
+                    .await
+            }
+        )
     }
 }
 

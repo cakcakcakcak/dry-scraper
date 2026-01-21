@@ -1,12 +1,10 @@
 use tokio_retry::{
+    strategy::{jitter, ExponentialBackoff},
     RetryIf,
-    strategy::{ExponentialBackoff, jitter},
 };
 
-use crate::{
-    common::{db::DbContext, errors::DSError, models::DataSourceError},
-    config::CONFIG,
-};
+use crate::common::{db::DbContext, errors::DSError, models::DataSourceError};
+use crate::config::CONFIG;
 
 #[macro_export]
 macro_rules! bind {
@@ -22,22 +20,20 @@ macro_rules! bind {
 #[macro_export]
 macro_rules! with_progress {
     // progress bar
-    ($count:expr, $msg:expr, |$pb:ident| $body:block) => {{
-        let $pb = CONFIG
-            .multi_progress_bar
-            .add(indicatif::ProgressBar::new($count as u64));
+    ($mp_bar:expr, $count:expr, $msg:expr, |$pb:ident| $body:block) => {{
+        let $pb = $mp_bar.add(indicatif::ProgressBar::new($count as u64));
         $pb.set_message($msg.to_string());
-        $pb.set_style($crate::config::CONFIG.progress_bar_style.clone());
+        $pb.set_style($crate::config::UI_CONFIG.progress_bar_style.clone());
         let result = { $body };
         $pb.finish_using_style();
         result
     }};
     // spinner
-    ($msg:expr, |$pb:ident| $body:block) => {{
-        let $pb = indicatif::ProgressBar::new_spinner();
+    ($mp_bar:expr, $msg:expr, |$pb:ident| $body:block) => {{
+        let $pb = $mp_bar.add(indicatif::ProgressBar::new_spinner());
         $pb.set_message($msg);
         $pb.enable_steady_tick(std::time::Duration::from_millis(100));
-        $pb.set_style($crate::config::CONFIG.spinner_style.clone());
+        $pb.set_style($crate::config::UI_CONFIG.progress_spinner_style.clone());
         let result = { $body };
         $pb.finish_using_style();
         result

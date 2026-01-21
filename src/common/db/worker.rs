@@ -1,6 +1,6 @@
 use tokio::{
     sync::mpsc::{self, Receiver},
-    time::{Duration, timeout},
+    time::{timeout, Duration},
 };
 
 use crate::{

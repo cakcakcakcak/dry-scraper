@@ -14,6 +14,8 @@ pub struct EnvironmentVariables {
     pub retry_interval_ms: Option<u64>,
     pub retry_max_interval_ms: Option<u64>,
     pub retries: Option<usize>,
+    pub progress_bar_style_format: Option<String>,
+    pub progress_spinner_style_format: Option<String>,
 }
 impl EnvironmentVariables {
     pub fn from_env() -> Self {
@@ -23,15 +25,21 @@ impl EnvironmentVariables {
             pg_pass: Self::get_parsed_env_var_with_log("PG_PASS"),
             api_concurrency_limit: Self::get_parsed_env_var_with_log("API_CONCURRENCY_LIMIT"),
             max_db_connections: Self::get_parsed_env_var_with_log("MAX_DB_CONNECTIONS"),
-            db_concurrency_limit: Self::get_parsed_env_var_with_log("UPSERT_CONCURRENCY"),
+            db_concurrency_limit: Self::get_parsed_env_var_with_log("DB_CONCURRENCY_LIMIT"),
             db_query_batch_size: Self::get_parsed_env_var_with_log("DB_QUERY_BATCH_SIZE"),
             db_query_batch_timeout_ms: Self::get_parsed_env_var_with_log(
-                "DB_QUERY_BATCH_TIMOUT_MS",
+                "DB_QUERY_BATCH_TIMEOUT_MS",
             ),
             reset_db: Self::get_parsed_env_var_with_log("RESET_DB"),
-            retry_interval_ms: Self::get_parsed_env_var_with_log("retry_interval_ms"),
-            retry_max_interval_ms: Self::get_parsed_env_var_with_log("retry_max_interval_ms"),
+            retry_interval_ms: Self::get_parsed_env_var_with_log("RETRY_INTERVAL_MS"),
+            retry_max_interval_ms: Self::get_parsed_env_var_with_log("RETRY_MAX_INTERVAL_MS"),
             retries: Self::get_parsed_env_var_with_log("RETRIES"),
+            progress_bar_style_format: Self::get_parsed_env_var_with_log(
+                "PROGRESS_BAR_STYLE_FORMAT",
+            ),
+            progress_spinner_style_format: Self::get_parsed_env_var_with_log(
+                "PROGRESS_SPINNER_STYLE_FORMAT",
+            ),
         }
     }
 
@@ -57,7 +65,7 @@ impl EnvironmentVariables {
                 }
             },
             Err(std::env::VarError::NotPresent) => {
-                tracing::info!(
+                tracing::debug!(
                     "Environment variable {key} not set: `std::env::VarError::NotPresent`"
                 );
                 None

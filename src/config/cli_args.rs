@@ -27,4 +27,8 @@ pub struct CliArgs {
     pub retry_max_interval_ms: Option<u64>,
     #[arg(long)]
     pub retries: Option<usize>,
+    #[arg(long)]
+    pub progress_bar_style_format: Option<String>,
+    #[arg(long)]
+    pub progress_spinner_style_format: Option<String>,
 }

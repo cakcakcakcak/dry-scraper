@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use sqlx::FromRow;
 use sqlx::postgres::types::PgInterval;
+use sqlx::FromRow;
 
 use super::super::{NhlPlayKey, NhlPrimaryKey};
 use super::{DefendingSide, NhlGameContext, PeriodDescriptorJson, PeriodTypeJson};
@@ -16,7 +16,7 @@ use crate::{
     impl_has_type_name, make_deserialize_to_type,
 };
 
-use crate::common::serde_helpers::{JsonExt, parse_mmss_to_pginterval};
+use crate::common::serde_helpers::{parse_mmss_to_pginterval, JsonExt};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

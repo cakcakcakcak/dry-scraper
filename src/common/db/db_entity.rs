@@ -1,13 +1,13 @@
 use futures::stream::{self, StreamExt};
 use std::{
-    cmp::{Eq, min},
+    cmp::{min, Eq},
     collections::HashSet,
     fmt::Debug,
     hash::Hash,
 };
 
 use async_trait::async_trait;
-use sqlx::{FromRow, postgres::PgQueryResult};
+use sqlx::{postgres::PgQueryResult, FromRow};
 
 use crate::{
     any_primary_key::AnyPrimaryKey,
@@ -18,7 +18,7 @@ use crate::{
         models::traits::HasTypeName,
         util::track_and_filter_errors,
     },
-    config::CONFIG,
+    config::{AppContext, CONFIG},
     sqlx_operation_with_retries, with_progress,
 };
 
@@ -173,14 +173,16 @@ pub trait DbEntity:
 pub trait DbEntityVecExt<T: DbEntity> {
     async fn upsert_all(
         &self,
+        app_context: &AppContext,
         db_context: &DbContext,
         api: &<<T as DbEntity>::Pk as PrimaryKey>::Api,
     ) -> Vec<Option<PgQueryResult>>;
 }
 impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
-    #[tracing::instrument(skip(self, db_context, api))]
+    #[tracing::instrument(skip(self, app_context, db_context, api))]
     async fn upsert_all(
         &self,
+        app_context: &AppContext,
         db_context: &DbContext,
         api: &<<T as DbEntity>::Pk as PrimaryKey>::Api,
     ) -> Vec<Option<PgQueryResult>> {
@@ -230,52 +232,62 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
         );
         let mut receivers = Vec::new();
 
-        with_progress!(items.len(), "Dispatching upsert queries...", |pb| {
-            for item in items {
-                if db_context.key_cache.contains(&item.any_pk()) {
-                    tracing::debug!("Key cache contains {:?}, skipping upsert.", item.pk());
-                    pb.inc(1);
-                    continue;
-                }
-                for fk in item.foreign_keys() {
-                    if !db_context.key_cache.contains(&fk.any_pk()) {
+        with_progress!(
+            app_context.multi_progress_bar.clone(),
+            "Dispatching upsert queries...",
+            |pb| {
+                for item in items {
+                    if db_context.key_cache.contains(&item.any_pk()) {
+                        tracing::debug!("Key cache contains {:?}, skipping upsert.", item.pk());
+                        pb.inc(1);
                         continue;
                     }
+                    for fk in item.foreign_keys() {
+                        if !db_context.key_cache.contains(&fk.any_pk()) {
+                            continue;
+                        }
+                    }
+
+                    let (result_tx, result_rx) = tokio::sync::oneshot::channel::<SqlxJobResult>();
+                    let query = item.upsert_query();
+                    let job = SqlxJob { query, result_tx };
+
+                    if let Err(e) = db_context.sqlx_tx.send(SqlxJobOrFlush::Job(job)).await {
+                        tracing::warn!("Failed to send job: {e:?}");
+                        continue;
+                    }
+
+                    receivers.push((item, result_rx));
+                    pb.inc(1);
                 }
-
-                let (result_tx, result_rx) = tokio::sync::oneshot::channel::<SqlxJobResult>();
-                let query = item.upsert_query();
-                let job = SqlxJob { query, result_tx };
-
-                if let Err(e) = db_context.sqlx_tx.send(SqlxJobOrFlush::Job(job)).await {
-                    tracing::warn!("Failed to send job: {e:?}");
-                    continue;
-                }
-
-                receivers.push((item, result_rx));
-                pb.inc(1);
             }
-        });
+        );
 
         let _ = db_context.sqlx_tx.send(SqlxJobOrFlush::Flush).await;
 
         // 3. Then wait for all results in parallel
-        let results = with_progress!("Awaiting upsert results...", |pb| {
-            stream::iter(receivers)
-                .map(|(item, rx)| async move {
-                    match rx.await {
-                        Ok(Ok(pg_result)) => {
-                            db_context.key_cache.insert(item.any_pk());
-                            Ok(Some(pg_result))
+        let results = with_progress!(
+            app_context.multi_progress_bar.clone(),
+            "Awaiting upsert results...",
+            |pb| {
+                stream::iter(receivers)
+                    .map(|(item, rx)| async move {
+                        match rx.await {
+                            Ok(Ok(pg_result)) => {
+                                db_context.key_cache.insert(item.any_pk());
+                                Ok(Some(pg_result))
+                            }
+                            Ok(Err(e)) => {
+                                Err(DSError::DatabaseCustom(format!("Upsert failed: {e}")))
+                            }
+                            Err(_) => Err(DSError::DatabaseCustom("Worker dropped".to_string())),
                         }
-                        Ok(Err(e)) => Err(DSError::DatabaseCustom(format!("Upsert failed: {e}"))),
-                        Err(_) => Err(DSError::DatabaseCustom("Worker dropped".to_string())),
-                    }
-                })
-                .buffer_unordered(CONFIG.db_concurrency_limit)
-                .collect::<Vec<_>>()
-                .await
-        });
+                    })
+                    .buffer_unordered(CONFIG.db_concurrency_limit)
+                    .collect::<Vec<_>>()
+                    .await
+            }
+        );
 
         track_and_filter_errors(results, db_context).await
     }
@@ -298,7 +310,7 @@ pub trait PrimaryKey:
     fn create_select_query(&self) -> StaticPgQuery;
 
     async fn upsert_from_api(&self, db_context: &DbContext, api: &Self::Api)
-    -> Result<(), DSError>;
+        -> Result<(), DSError>;
 
     async fn verify_by_key(self, db_context: &DbContext) -> Result<Option<Self>, DSError>;
 }
@@ -306,7 +318,7 @@ pub trait PrimaryKey:
 #[async_trait]
 pub trait PrimaryKeyExt<K: PrimaryKey> {
     async fn verify_keys(self, db_context: &DbContext)
-    -> Result<RelationshipIntegrity<K>, DSError>;
+        -> Result<RelationshipIntegrity<K>, DSError>;
 }
 #[async_trait]
 impl<K: PrimaryKey> PrimaryKeyExt<K> for Vec<K> {

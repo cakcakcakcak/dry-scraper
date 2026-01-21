@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use sqlx::FromRow;
 use sqlx::postgres::types::PgInterval;
+use sqlx::FromRow;
 
 use super::super::NhlPrimaryKey;
-use crate::data_sources::NhlShiftKey;
 use crate::data_sources::models::NhlDefaultContext;
+use crate::data_sources::NhlShiftKey;
 use crate::impl_pk_debug;
 use crate::{
     bind,

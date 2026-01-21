@@ -1,9 +1,9 @@
-use serde::{Deserialize, Deserializer, Serialize, de};
+use serde::{de, Deserialize, Deserializer, Serialize};
 use sqlx::Type;
 
-use crate::DSError;
-use crate::common::models::ItemParsedWithContext;
 use crate::common::models::traits::{HasTypeName, IntoDbStruct};
+use crate::common::models::ItemParsedWithContext;
+use crate::DSError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Type, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

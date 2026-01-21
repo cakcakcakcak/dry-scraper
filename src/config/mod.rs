@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use clap::Parser;
@@ -18,9 +19,23 @@ const DEFAULT_DB_QUERY_BATCH_TIMEOUT_MS: u64 = 2_000;
 const DEFAULT_RETRY_INTERVAL_MS: u64 = 100;
 const DEFAULT_RETRY_MAX_INTERVAL_MS: u64 = 10_000;
 const DEFAULT_RETRIES: usize = 5;
+const DEFAULT_PROGRESS_BAR_STYLE_FORMAT: &str =
+    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {msg}";
+const DEFAULT_PROGRESS_SPINNER_STYLE_FORMAT: &str = "{spinner:.green} [{elapsed}] {msg}";
+
+pub static DEFAULT_PROGRESS_BAR_STYLE: Lazy<ProgressStyle> = Lazy::new(|| {
+    indicatif::ProgressStyle::with_template(DEFAULT_PROGRESS_BAR_STYLE_FORMAT)
+        .expect("DEFAULT_PROGRESS_BAR_STYLE_FORMAT must be a valid indicatif template")
+});
+pub static DEFAULT_PROGRESS_SPINNER_STYLE: Lazy<ProgressStyle> = Lazy::new(|| {
+    indicatif::ProgressStyle::with_template(DEFAULT_PROGRESS_SPINNER_STYLE_FORMAT)
+        .expect("DEFAULT_PROGRESS_SPINNER_STYLE_FORMAT must be a valid indicatif template")
+});
 
 pub static CONFIG: Lazy<Config> = Lazy::new(|| Config::from_env_and_args());
+pub static UI_CONFIG: Lazy<UiTheme> = Lazy::new(|| UiTheme::from_config(&CONFIG));
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub pg_host: String,
     pub pg_user: String,
@@ -34,9 +49,24 @@ pub struct Config {
     pub retry_interval_ms: u64,
     pub retry_max_interval_ms: u64,
     pub retries: usize,
-    pub multi_progress_bar: Arc<MultiProgress>,
+    pub progress_bar_style_format: String,
+    pub progress_spinner_style_format: String,
+}
+
+pub struct UiTheme {
     pub progress_bar_style: ProgressStyle,
-    pub spinner_style: ProgressStyle,
+    pub progress_spinner_style: ProgressStyle,
+}
+
+pub struct AppContext {
+    pub multi_progress_bar: Arc<MultiProgress>,
+}
+impl AppContext {
+    pub fn new() -> Self {
+        Self {
+            multi_progress_bar: Arc::new(MultiProgress::new()),
+        }
+    }
 }
 
 impl Config {
@@ -109,14 +139,15 @@ impl Config {
             .or(env_vars.retries)
             .unwrap_or(DEFAULT_RETRIES);
 
-        let progress_bar_style: ProgressStyle = ProgressStyle::default_bar()
-            .template(
-                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {msg}",
-            )
-            .unwrap();
-        let spinner_style: ProgressStyle = ProgressStyle::default_spinner()
-            .template("{spinner:.green} [{elapsed}] {msg}")
-            .unwrap();
+        let progress_bar_style_format: String = cli_args
+            .progress_bar_style_format
+            .or(env_vars.progress_bar_style_format)
+            .unwrap_or(DEFAULT_PROGRESS_BAR_STYLE_FORMAT.to_string());
+
+        let progress_spinner_style_format: String = cli_args
+            .progress_spinner_style_format
+            .or(env_vars.progress_spinner_style_format)
+            .unwrap_or(DEFAULT_PROGRESS_SPINNER_STYLE_FORMAT.to_string());
 
         Config {
             pg_host,
@@ -131,9 +162,49 @@ impl Config {
             retry_interval_ms,
             retry_max_interval_ms,
             retries,
-            multi_progress_bar: Arc::new(MultiProgress::new()),
-            progress_bar_style,
-            spinner_style: spinner_style,
+            progress_bar_style_format,
+            progress_spinner_style_format,
         }
     }
+}
+
+impl UiTheme {
+    pub fn from_config(cfg: &Config) -> Self {
+        let progress_bar_style = match ProgressStyle::with_template(&cfg.progress_bar_style_format)
+        {
+            Ok(style) => style,
+            Err(e) => {
+                tracing::warn!(
+                    provided = %cfg.progress_bar_style_format,
+                    error = %e,
+                    "Invalid progress bar style format; falling back to default"
+                );
+                DEFAULT_PROGRESS_BAR_STYLE.clone()
+            }
+        };
+
+        let progress_spinner_style =
+            match ProgressStyle::with_template(&cfg.progress_spinner_style_format) {
+                Ok(style) => style,
+                Err(e) => {
+                    tracing::warn!(
+                        provided = %cfg.progress_spinner_style_format,
+                        error = %e,
+                        "Invalid progress spinner style format; falling back to default"
+                    );
+                    DEFAULT_PROGRESS_SPINNER_STYLE.clone()
+                }
+            };
+
+        UiTheme {
+            progress_bar_style,
+            progress_spinner_style,
+        }
+    }
+}
+
+#[test]
+fn default_progress_templates_parse() {
+    assert!(ProgressStyle::with_template(DEFAULT_PROGRESS_BAR_STYLE_FORMAT).is_ok());
+    assert!(ProgressStyle::with_template(DEFAULT_PROGRESS_SPINNER_STYLE_FORMAT).is_ok());
 }

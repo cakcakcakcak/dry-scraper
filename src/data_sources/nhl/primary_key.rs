@@ -1,10 +1,9 @@
 use std::fmt::Debug;
 
 use async_trait::async_trait;
-use sqlx::{FromRow, Row, postgres::PgRow};
+use sqlx::{postgres::PgRow, FromRow, Row};
 
 use crate::{
-    DSError,
     any_primary_key::AnyPrimaryKey,
     common::{
         api::cacheable_api::SimpleApi,
@@ -19,6 +18,7 @@ use crate::{
             NhlSeason, NhlShift, NhlTeam, NhlTeamJson,
         },
     },
+    DSError,
 };
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

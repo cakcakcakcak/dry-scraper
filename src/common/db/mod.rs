@@ -19,5 +19,5 @@ pub mod init;
 pub mod worker;
 
 pub use db_entity::{DbEntity, DbEntityVecExt, PrimaryKey};
-pub use init::{DbContext, init_db_context};
+pub use init::DbContext;
 pub use worker::start_sqlx_worker;

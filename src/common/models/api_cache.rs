@@ -6,7 +6,7 @@ use crate::{
     any_primary_key::AnyPrimaryKey,
     bind,
     common::{
-        api::{CacheableApi, cacheable_api::SimpleApi},
+        api::{cacheable_api::SimpleApi, CacheableApi},
         db::{DbContext, DbEntity, PrimaryKey, StaticPgQuery, StaticPgQueryAs},
         errors::DSError,
     },
