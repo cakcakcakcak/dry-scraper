@@ -6,10 +6,6 @@ on:
   pull_request:
     branches: ["**"]
 
-defaults:
-  run:
-    working-directory: dry-scraper
-
 jobs:
   ci:
     runs-on: ubuntu-latest
