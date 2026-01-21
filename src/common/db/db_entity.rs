@@ -131,7 +131,7 @@ pub trait DbEntity:
             RelationshipIntegrity::AllValid => (),
             RelationshipIntegrity::Missing(keys) => {
                 stream::iter(keys)
-                    .map(|key| async move { key.upsert_from_api(&db_context, &api).await })
+                    .map(|key| async move { key.upsert_from_api(db_context, api).await })
                     .buffer_unordered(CONFIG.db_concurrency_limit)
                     .collect::<Vec<_>>()
                     .await;

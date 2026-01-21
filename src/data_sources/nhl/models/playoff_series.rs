@@ -136,8 +136,8 @@ impl IntoDbStruct for NhlPlayoffSeriesJson {
             bottom_seed_team_place_name: bottom_seed_team_place_name.best_str_or_none(),
             bottom_seed_team_place_name_with_preposition:
                 bottom_seed_team_place_name_with_preposition.best_str_or_none(),
-            bottom_seed_team_conference_name: bottom_seed_team_conference_name,
-            bottom_seed_team_conference_abbrev: bottom_seed_team_conference_abbrev,
+            bottom_seed_team_conference_name,
+            bottom_seed_team_conference_abbrev,
             bottom_seed_team_record,
             bottom_seed_team_series_wins,
             bottom_seed_team_division_abbrev,

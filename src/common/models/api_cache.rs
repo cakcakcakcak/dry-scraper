@@ -40,7 +40,7 @@ impl DbEntity for ApiCache {
     ) -> Result<Option<Self>, DSError> {
         match sqlx_operation_with_retries!(
             sqlx::query_as::<_, Self>(r#"SELECT * FROM api_cache WHERE endpoint=$1"#)
-                .bind(&id.endpoint.clone())
+                .bind(id.endpoint.clone())
                 .fetch_optional(&db_context.pool)
                 .await
         )
@@ -75,7 +75,7 @@ impl DbEntity for ApiCache {
             sqlx::query(
                 r#"INSERT INTO api_cache (endpoint, raw_data)
                                     VALUES ($1,$2)
-                                    ON CONFLICT (endpoint) DO UPDATE SET 
+                                    ON CONFLICT (endpoint) DO UPDATE SET
                                         endpoint = EXCLUDED.endpoint,
                                         raw_data = EXCLUDED.raw_data,
                                         last_updated = now()

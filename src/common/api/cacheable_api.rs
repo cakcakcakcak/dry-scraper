@@ -26,7 +26,7 @@ pub trait CacheableApi: Debug {
         tracing::debug!("Querying api_cache for the endpoint we seek...");
         match sqlx_operation_with_retries!(
             sqlx::query("SELECT raw_data from api_cache WHERE endpoint = $1")
-                .bind(&endpoint)
+                .bind(endpoint)
                 .fetch_optional(&db_context.pool)
                 .await
         )
@@ -77,12 +77,12 @@ pub trait CacheableApi: Debug {
         })?;
         let cache_record = ApiCache {
             endpoint: endpoint.to_string(),
-            raw_data: raw_data,
+            raw_data,
             last_updated: None,
         };
 
         tracing::debug!("Upserting cache record with endpoint {endpoint} into lp database.");
-        cache_record.upsert(&db_context).await?;
+        cache_record.upsert(db_context).await?;
         Ok(cache_record.raw_data)
     }
 }

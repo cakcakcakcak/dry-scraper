@@ -32,7 +32,7 @@ pub static DEFAULT_PROGRESS_SPINNER_STYLE: Lazy<ProgressStyle> = Lazy::new(|| {
         .expect("DEFAULT_PROGRESS_SPINNER_STYLE_FORMAT must be a valid indicatif template")
 });
 
-pub static CONFIG: Lazy<Config> = Lazy::new(|| Config::from_env_and_args());
+pub static CONFIG: Lazy<Config> = Lazy::new(Config::from_env_and_args);
 pub static UI_CONFIG: Lazy<UiTheme> = Lazy::new(|| UiTheme::from_config(&CONFIG));
 
 #[derive(Debug, Serialize, Deserialize)]

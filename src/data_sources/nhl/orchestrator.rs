@@ -38,7 +38,7 @@ where
     tracing::debug!("Successfully fetched {json_struct_count} `{j_name}`s from NHL API",);
 
     let db_structs: Vec<D> = json_structs.into_db_structs(
-        &app_context,
+        app_context,
         &format!("Parsing `{j_name}`s into `{d_name}`s."),
     );
     let db_struct_count: usize = db_structs.len();
@@ -138,9 +138,9 @@ pub async fn get_nhl_everything_in_season(
 
     for game in games {
         let (plays_res, roster_res, shifts_res) = tokio::join!(
-            get_nhl_plays_in_game(app_context, &db_context, &nhl_api, &game),
-            get_nhl_roster_spots_in_game(app_context, &db_context, &nhl_api, &game),
-            get_nhl_shifts_in_game(app_context, &db_context, &nhl_api, game.id),
+            get_nhl_plays_in_game(app_context, db_context, nhl_api, &game),
+            get_nhl_roster_spots_in_game(app_context, db_context, nhl_api, &game),
+            get_nhl_shifts_in_game(app_context, db_context, nhl_api, game.id),
         );
         plays_res?;
         roster_res?;
@@ -160,7 +160,7 @@ pub async fn get_nhl_all_games_in_season(
     let number_of_games: i32 = season.total_regular_season_games;
     let season_id: String = season.id.to_string();
 
-    let prefix: String = format!("{}02", season_id[..4].to_string());
+    let prefix: String = format!("{}02", &season_id[..4]);
     let game_ids: Vec<i32> = (1..=number_of_games)
         .map(|game_number| {
             let id_string: String = format!("{prefix}{game_number:04}");
@@ -181,7 +181,7 @@ pub async fn get_nhl_all_games_in_season(
     );
 
     let games: Vec<NhlGame> = ok_json_results.into_db_structs(
-        &app_context,
+        app_context,
         &format!("Parsing `NhlGameJson`s from {season_id} season."),
     );
     let game_count = games.len();
@@ -232,7 +232,7 @@ pub async fn get_nhl_roster_spots_in_game(
             .collect();
 
     let roster_spots: Vec<NhlRosterSpot> = roster_spot_jsons_with_context.into_db_structs(
-        &app_context,
+        app_context,
         &format!("Parsing `NhlRosterSpotJson`s from {game_id}."),
     );
     let roster_spot_count = roster_spots.len();
@@ -283,7 +283,7 @@ pub async fn get_nhl_plays_in_game(
             .collect();
 
     let plays: Vec<NhlPlay> = play_jsons_with_context.into_db_structs(
-        &app_context,
+        app_context,
         &format!("Parsing `NhlPlayJson`s from {game_id}."),
     );
     let play_count = plays.len();
@@ -346,7 +346,7 @@ pub async fn get_nhl_playoff_series(
         .games
         .iter()
         .map(|game_json| {
-                let raw_json: serde_json::Value = match serde_json::to_value(&game_json) {
+                let raw_json: serde_json::Value = match serde_json::to_value(game_json) {
                     Ok(val) => val,
                     Err(e) => {
                         tracing::warn!(
@@ -365,7 +365,7 @@ pub async fn get_nhl_playoff_series(
         }})
         .collect();
     let series_games: Vec<NhlPlayoffSeriesGame> = series_game_jsons.into_db_structs(
-        &app_context,
+        app_context,
         &format!(
         "Parsing `NhlPlayoffSeriesGameJson`s from Series {series_letter} from {season_id} season."
     ),
@@ -407,7 +407,7 @@ pub async fn get_nhl_games_in_playoff_series(
         "Fetched {ok_game_json_count}/{number_of_games} game play-by-play reports from NHL API or cache."
     );
     let games: Vec<NhlGame> = game_jsons.into_db_structs(
-        &app_context,
+        app_context,
         &format!(
         "Parsing `NhlPlayoffSeriesGameJson`s from Series {series_letter} from {season_id} season."
     ),

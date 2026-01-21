@@ -1,6 +1,4 @@
 // use rand::seq::SliceRandom;
-use tokio;
-use tracing_subscriber;
 
 mod any_primary_key;
 mod common;
@@ -31,19 +29,7 @@ async fn main() -> Result<(), DSError> {
     let db_context: DbContext = DbContext::connect().await?;
     let app_context: AppContext = AppContext::new();
     warm_nhl_key_cache(&app_context, &db_context).await?;
-    let nhl_api: NhlApi = NhlApi::new();
-
-    let mut seasons: Vec<NhlSeason> = get_nhl_seasons(&app_context, &db_context, &nhl_api).await?;
-    _ = get_nhl_franchises(&app_context, &db_context, &nhl_api).await?;
-    _ = get_nhl_teams(&app_context, &db_context, &nhl_api).await?;
-
-    seasons.sort_by_key(|season| season.id);
-    seasons.pop();
-    seasons.reverse();
-
-    for season in seasons {
-        get_nhl_everything_in_season(&app_context, &db_context, &nhl_api, &season).await?;
-    }
+    let _nhl_api: NhlApi = NhlApi::new();
 
     Ok(())
 }

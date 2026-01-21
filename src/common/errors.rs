@@ -11,7 +11,7 @@ pub enum DSError {
     #[error("Database error: {0}")]
     DatabaseCustom(String),
     #[error("Failed to send SQLx Job: {0}")]
-    SqlxJobSend(#[from] tokio::sync::mpsc::error::SendError<SqlxJob>),
+    SqlxJobSend(Box<tokio::sync::mpsc::error::SendError<SqlxJob>>),
     #[error("Failed to receive result of SQLx Job: {0}")]
     SqlxJobRecv(#[from] tokio::sync::oneshot::error::RecvError),
     #[error("Database migration error: {0}")]
@@ -26,4 +26,10 @@ pub enum DSError {
     Env(#[from] VarError),
     #[error("Parse error: {0}")]
     Parse(#[from] ParseIntError),
+}
+
+impl From<tokio::sync::mpsc::error::SendError<SqlxJob>> for DSError {
+    fn from(err: tokio::sync::mpsc::error::SendError<SqlxJob>) -> Self {
+        DSError::SqlxJobSend(Box::new(err))
+    }
 }

@@ -145,21 +145,18 @@ pub async fn track_and_filter_errors<T>(
     results: Vec<Result<T, DSError>>,
     db_context: &DbContext,
 ) -> Vec<T> {
-    let futures = results.into_iter().map(|res| {
-        let db_context = db_context;
-        async move {
-            match res {
-                Ok(val) => Some(val),
-                Err(e) => {
-                    DataSourceError::track_error(e, db_context).await;
-                    None
-                }
+    let futures = results.into_iter().map(|res| async move {
+        match res {
+            Ok(val) => Some(val),
+            Err(e) => {
+                DataSourceError::track_error(e, db_context).await;
+                None
             }
         }
     });
     futures::future::join_all(futures)
         .await
         .into_iter()
-        .filter_map(|x| x)
+        .flatten()
         .collect()
 }

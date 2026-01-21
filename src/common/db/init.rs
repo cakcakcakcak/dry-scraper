@@ -44,7 +44,7 @@ pub async fn init_db() -> Result<DbPool, DSError> {
 
     if !db_exists {
         tracing::warn!("lp database does not exist, attempting to create it.");
-        _ = sqlx_operation_with_retries!(sqlx::Postgres::create_database(&db_url).await).await?;
+        sqlx_operation_with_retries!(sqlx::Postgres::create_database(&db_url).await).await?;
         tracing::info!("lp database created");
     }
 
@@ -177,9 +177,9 @@ pub async fn init_db() -> Result<DbPool, DSError> {
 }
 
 fn database_url() -> Result<String, DSError> {
-    let pg_host: &str = &*CONFIG.pg_host;
-    let pg_user: &str = &*CONFIG.pg_user;
-    let pg_pass: &str = &*CONFIG.pg_pass;
+    let pg_host: &str = &CONFIG.pg_host;
+    let pg_user: &str = &CONFIG.pg_user;
+    let pg_pass: &str = &CONFIG.pg_pass;
 
     Ok(format!("postgres://{pg_user}:{pg_pass}@{pg_host}/lp"))
 }

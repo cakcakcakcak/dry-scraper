@@ -129,7 +129,7 @@ impl<'a> PlayerResource<'a> {
         with_progress!(
             app_context.multi_progress_bar.clone(),
             player_ids.len(),
-            &format!("Fetching many `NhlPlayerJson`s"),
+            "Fetching many `NhlPlayerJson`s".to_string(),
             |pb| {
                 stream::iter(player_ids)
                     .map(|player_id| self.get(db_context, player_id))
@@ -165,7 +165,7 @@ impl<'a> GameResource<'a> {
         with_progress!(
             app_context.multi_progress_bar.clone(),
             game_ids.len(),
-            &format!("Fetching `NhlGameJson`s."),
+            "Fetching `NhlGameJson`s.".to_string(),
             |pb| {
                 stream::iter(game_ids)
                     .map(|game_id| self.get(db_context, game_id))
