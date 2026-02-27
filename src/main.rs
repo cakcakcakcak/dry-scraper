@@ -1,18 +1,8 @@
-// use rand::seq::SliceRandom;
+use dry_scraper::config::{AppContext, CONFIG, UI_CONFIG};
 
-mod any_primary_key;
-mod common;
-mod config;
-mod data_sources;
+use dry_scraper::common::{db::DbContext, errors::DSError};
 
-use config::{AppContext, CONFIG, UI_CONFIG};
-
-use common::{
-    db::{DbContext, SqlxJob},
-    errors::DSError,
-};
-
-use data_sources::nhl::{api::*, models::*, orchestrator::*};
+use dry_scraper::data_sources::nhl::{api::*, orchestrator::*};
 
 #[tokio::main]
 async fn main() -> Result<(), DSError> {
