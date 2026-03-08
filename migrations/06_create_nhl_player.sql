@@ -32,5 +32,5 @@ CREATE TABLE IF NOT EXISTS nhl_player (
     in_hhof BOOL NOT NULL,
     raw_json JSONB NOT NULL,
     endpoint TEXT NOT NULL REFERENCES api_cache (endpoint),
-    last_updated TIMESTAMP DEFAULT now() NOT NULL
+    last_updated TIMESTAMPTZ DEFAULT now() NOT NULL
 )

@@ -26,6 +26,8 @@ pub enum DSError {
     Env(#[from] VarError),
     #[error("Parse error: {0}")]
     Parse(#[from] ParseIntError),
+    #[error("Cancelled")]
+    Cancelled,
 }
 
 impl From<tokio::sync::mpsc::error::SendError<SqlxJob>> for DSError {

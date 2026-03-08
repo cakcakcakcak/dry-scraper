@@ -14,8 +14,8 @@ use crate::{
         api::NhlApi,
         models::{
             NhlFranchise, NhlGame, NhlGameJson, NhlPlay, NhlPlayer, NhlPlayerJson,
-            NhlPlayoffBracketSeries, NhlPlayoffSeries, NhlPlayoffSeriesJson, NhlRosterSpot,
-            NhlSeason, NhlShift, NhlTeam, NhlTeamJson,
+            NhlPlayoffBracketSeries, NhlPlayoffSeries, NhlPlayoffSeriesGame, NhlPlayoffSeriesJson,
+            NhlRosterSpot, NhlSeason, NhlShift, NhlTeam, NhlTeamJson,
         },
     },
     DSError,
@@ -134,7 +134,7 @@ impl PrimaryKey for NhlPrimaryKey {
                 NhlPlayoffSeries::verify_by_key(db_context, self).await
             }
             NhlPrimaryKey::PlayoffSeriesGame(_) => {
-                NhlPlayoffSeries::verify_by_key(db_context, self).await
+                NhlPlayoffSeriesGame::verify_by_key(db_context, self).await
             }
         }
     }

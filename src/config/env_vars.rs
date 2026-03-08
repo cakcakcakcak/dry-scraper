@@ -10,7 +10,7 @@ pub struct EnvironmentVariables {
     pub db_concurrency_limit: Option<usize>,
     pub db_query_batch_size: Option<usize>,
     pub db_query_batch_timeout_ms: Option<u64>,
-    pub reset_db: Option<bool>,
+
     pub retry_interval_ms: Option<u64>,
     pub retry_max_interval_ms: Option<u64>,
     pub retries: Option<usize>,
@@ -30,7 +30,7 @@ impl EnvironmentVariables {
             db_query_batch_timeout_ms: Self::get_parsed_env_var_with_log(
                 "DB_QUERY_BATCH_TIMEOUT_MS",
             ),
-            reset_db: Self::get_parsed_env_var_with_log("RESET_DB"),
+
             retry_interval_ms: Self::get_parsed_env_var_with_log("RETRY_INTERVAL_MS"),
             retry_max_interval_ms: Self::get_parsed_env_var_with_log("RETRY_MAX_INTERVAL_MS"),
             retries: Self::get_parsed_env_var_with_log("RETRIES"),

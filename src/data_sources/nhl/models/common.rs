@@ -139,7 +139,6 @@ impl NhlApiDataArrayResponse {
         self.data
             .iter()
             .map(|json_value| {
-                let raw_data: String = json_value.to_string();
                 let parsed: Result<T, DSError> =
                     serde_json::from_value(json_value.clone()).map_err(DSError::from);
                 match parsed {
@@ -149,7 +148,7 @@ impl NhlApiDataArrayResponse {
                     }),
                     Err(e) => {
                         tracing::warn!(endpoint=%endpoint, error=%e, "Failed to parse item to `{}`.", T::type_name());
-                        tracing::info!(raw_data);
+                        tracing::info!(?json_value, "Raw JSON that failed to parse");
                         Err(e)
                     }
                 }

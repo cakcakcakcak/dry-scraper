@@ -45,7 +45,6 @@ pub struct Config {
     pub db_concurrency_limit: usize,
     pub db_query_batch_size: usize,
     pub db_query_batch_timeout_ms: u64,
-    pub reset_db: bool,
     pub retry_interval_ms: u64,
     pub retry_max_interval_ms: u64,
     pub retries: usize,
@@ -122,8 +121,6 @@ impl Config {
             .or(env_vars.db_query_batch_timeout_ms)
             .unwrap_or(DEFAULT_DB_QUERY_BATCH_TIMEOUT_MS);
 
-        let reset_db: bool = cli_args.reset_db.or(env_vars.reset_db).unwrap_or(false);
-
         let retry_interval_ms = cli_args
             .retry_interval_ms
             .or(env_vars.retry_interval_ms)
@@ -158,7 +155,6 @@ impl Config {
             db_concurrency_limit,
             db_query_batch_size,
             db_query_batch_timeout_ms,
-            reset_db,
             retry_interval_ms,
             retry_max_interval_ms,
             retries,

@@ -443,7 +443,10 @@ pub async fn warm_nhl_key_cache(
         NhlGame::warm_key_cache(db_context),
         NhlRosterSpot::warm_key_cache(db_context),
         NhlPlay::warm_key_cache(db_context),
+        NhlShift::warm_key_cache(db_context),
         NhlPlayoffBracketSeries::warm_key_cache(db_context),
+        NhlPlayoffSeries::warm_key_cache(db_context),
+        NhlPlayoffSeriesGame::warm_key_cache(db_context),
     ];
     stream::iter(cache_warmers)
         .map(|fut| fut)

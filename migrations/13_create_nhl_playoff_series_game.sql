@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS nhl_playoff_series_game (
     series_letter CHAR(1) NOT NULL,
     raw_json JSONB NOT NULL,
     endpoint TEXT NOT NULL REFERENCES api_cache (endpoint),
-    last_updated TIMESTAMP DEFAULT now() NOT NULL,
+    last_updated TIMESTAMPTZ DEFAULT now() NOT NULL,
     FOREIGN KEY (season_id, series_letter) REFERENCES nhl_playoff_bracket_series (season_id, series_letter),
     FOREIGN KEY (season_id, series_letter) REFERENCES nhl_playoff_series (season_id, series_letter),
     UNIQUE (season_id, series_letter, game_number)

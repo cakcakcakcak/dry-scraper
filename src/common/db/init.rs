@@ -73,101 +73,6 @@ pub async fn init_db() -> Result<DbPool, DSError> {
     )
     .await?;
 
-    if CONFIG.reset_db {
-        tracing::warn!("RESET_DB enabled: dropping tables and enums for clean state");
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS nhl_playoff_series_game")
-                .execute(&pool)
-                .await
-        )
-        .await?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS nhl_playoff_series")
-                .execute(&pool)
-                .await
-        )
-        .await?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS nhl_playoff_bracket_series")
-                .execute(&pool)
-                .await
-        )
-        .await?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS nhl_shift")
-                .execute(&pool)
-                .await
-        )
-        .await?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS nhl_play")
-                .execute(&pool)
-                .await
-        )
-        .await?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS nhl_roster_spot")
-                .execute(&pool)
-                .await
-        )
-        .await?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS nhl_game")
-                .execute(&pool)
-                .await
-        )
-        .await?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TYPE IF EXISTS game_type")
-                .execute(&pool)
-                .await
-        )
-        .await?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TYPE IF EXISTS period_type")
-                .execute(&pool)
-                .await
-        )
-        .await?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS nhl_player")
-                .execute(&pool)
-                .await
-        )
-        .await?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS nhl_team")
-                .execute(&pool)
-                .await
-        )
-        .await?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS nhl_franchise")
-                .execute(&pool)
-                .await
-        )
-        .await?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS nhl_season")
-                .execute(&pool)
-                .await
-        )
-        .await?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS data_source_error")
-                .execute(&pool)
-                .await
-        )
-        .await?;
-        sqlx_operation_with_retries!(
-            sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations")
-                .execute(&pool)
-                .await
-        )
-        .await?;
-        tracing::info!("Dropped tables in RESET_DB");
-    }
-
     // run migrations
     tracing::info!("Running database migrations...");
     sqlx::migrate!().run(&pool).await?;
@@ -182,4 +87,64 @@ fn database_url() -> Result<String, DSError> {
     let pg_pass: &str = &CONFIG.pg_pass;
 
     Ok(format!("postgres://{pg_user}:{pg_pass}@{pg_host}/lp"))
+}
+
+#[cfg(debug_assertions)]
+pub async fn reset_schema(pool: &DbPool) -> Result<(), DSError> {
+    tracing::warn!("Resetting database schema (debug build only)");
+    tracing::info!(
+        "Dropping all tables except infrastructure tables (api_cache, data_source_error)"
+    );
+
+    // Infrastructure tables to preserve
+    let preserve_tables = vec!["api_cache", "data_source_error", "_sqlx_migrations"];
+
+    // Get all tables in public schema
+    let tables: Vec<(String,)> = sqlx_operation_with_retries!(
+        sqlx::query_as::<_, (String,)>(
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+        )
+        .fetch_all(pool)
+        .await
+    )
+    .await?;
+
+    // Drop all tables except infrastructure
+    for (table,) in tables {
+        if !preserve_tables.contains(&table.as_str()) {
+            tracing::debug!("Dropping table: {}", table);
+            sqlx_operation_with_retries!(
+                sqlx::query(&format!("DROP TABLE IF EXISTS \"{}\" CASCADE", table))
+                    .execute(pool)
+                    .await
+            )
+            .await?;
+        }
+    }
+
+    // Drop custom types
+    let types: Vec<(String,)> = sqlx_operation_with_retries!(
+        sqlx::query_as::<_, (String,)>(
+            "SELECT typname FROM pg_type WHERE typnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public') AND typtype = 'e'"
+        )
+        .fetch_all(pool)
+        .await
+    )
+    .await?;
+
+    for (type_name,) in types {
+        tracing::debug!("Dropping type: {}", type_name);
+        sqlx_operation_with_retries!(
+            sqlx::query(&format!("DROP TYPE IF EXISTS \"{}\" CASCADE", type_name))
+                .execute(pool)
+                .await
+        )
+        .await?;
+    }
+
+    // Re-run migrations to recreate dropped tables
+    sqlx::migrate!("./migrations").run(pool).await?;
+
+    tracing::info!("Database schema reset complete");
+    Ok(())
 }

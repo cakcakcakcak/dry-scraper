@@ -5,5 +5,5 @@ CREATE TABLE IF NOT EXISTS nhl_franchise (
     team_place_name TEXT NOT NULL,
     raw_json JSONB NOT NULL,
     endpoint TEXT NOT NULL REFERENCES api_cache (endpoint),
-    last_updated TIMESTAMP DEFAULT now() NOT NULL
+    last_updated TIMESTAMPTZ DEFAULT now() NOT NULL
 )

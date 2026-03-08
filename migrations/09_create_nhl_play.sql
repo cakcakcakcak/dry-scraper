@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS nhl_play (
     details JSONB,
     raw_json JSONB NOT NULL,
     endpoint TEXT NOT NULL REFERENCES api_cache (endpoint),
-    last_updated TIMESTAMP DEFAULT now() NOT NULL,
+    last_updated TIMESTAMPTZ DEFAULT now() NOT NULL,
     PRIMARY KEY (game_id, event_id),
     UNIQUE (game_id, sort_order)
 )
