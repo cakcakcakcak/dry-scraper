@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 use clap::Parser;
-use indicatif::{MultiProgress, ProgressStyle};
+use indicatif::ProgressStyle;
 use once_cell::sync::Lazy;
 
 pub mod cli_args;
@@ -35,7 +34,7 @@ pub static DEFAULT_PROGRESS_SPINNER_STYLE: Lazy<ProgressStyle> = Lazy::new(|| {
 pub static CONFIG: Lazy<Config> = Lazy::new(Config::from_env_and_args);
 pub static UI_CONFIG: Lazy<UiTheme> = Lazy::new(|| UiTheme::from_config(&CONFIG));
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub pg_host: String,
     pub pg_user: String,
@@ -55,17 +54,6 @@ pub struct Config {
 pub struct UiTheme {
     pub progress_bar_style: ProgressStyle,
     pub progress_spinner_style: ProgressStyle,
-}
-
-pub struct AppContext {
-    pub multi_progress_bar: Arc<MultiProgress>,
-}
-impl AppContext {
-    pub fn new() -> Self {
-        Self {
-            multi_progress_bar: Arc::new(MultiProgress::new()),
-        }
-    }
 }
 
 impl Config {

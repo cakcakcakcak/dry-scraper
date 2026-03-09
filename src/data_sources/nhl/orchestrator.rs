@@ -6,6 +6,7 @@ use super::{api::NhlApi, models::*};
 
 use crate::{
     common::{
+        app_context::AppContext,
         db::{DbContext, DbEntity, DbEntityVecExt},
         errors::DSError,
         models::{
@@ -14,7 +15,6 @@ use crate::{
         },
         util::track_and_filter_errors,
     },
-    config::AppContext,
     CONFIG,
 };
 

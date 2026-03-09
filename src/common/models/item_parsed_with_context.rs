@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
 use crate::{
+    common::app_context::AppContext,
     common::models::traits::{DbStruct, IntoDbStruct},
-    config::AppContext,
     with_progress,
 };
 

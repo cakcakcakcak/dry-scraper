@@ -221,29 +221,28 @@ crossterm = "0.28"                                      # Terminal backend (Phas
 
 ## Roadmap
 
-### Step 0 — CLI subcommands and housekeeping (do first)
+### Step 0 — CLI subcommands and housekeeping (do first) [Progress]
 
 Make the binary useful and clean up trivial issues before any structural refactoring.
 
-`Cargo.toml` changes:
-- Remove `rand`.
-- Move `console-subscriber` to `[dev-dependencies]`.
-- Add `tokio-util = { version = "0.7", features = ["sync"] }`.
+Checklist (Step 0 — mark complete when done):
+- [x] `Cargo.toml` changes:
+  - [x] Remove `rand`.
+  - [x] Move `console-subscriber` to `[dev-dependencies]`.
+  - [x] Add `tokio-util = { version = "0.7", features = ["sync"] }`.
+- [x] Migration fixes (blank slate, safe to edit freely):
+  - [x] Standardise all date/timestamp columns to `TIMESTAMPTZ`.
+  - [x] Add `manually_edited BOOLEAN DEFAULT FALSE NOT NULL` to `api_cache`.
+- [x] Code fixes:
+  - [x] Add `DSError::Cancelled` variant to `common/errors.rs`.
+  - [x] Fix `NhlPrimaryKey::PlayoffSeriesGame` `verify_by_key` dispatch.
+  - [x] Add missing entities to `warm_nhl_key_cache`: `NhlShift`, `NhlPlayoffSeries`, `NhlPlayoffSeriesGame`.
+  - [x] Remove dead `raw_data` string binding from `NhlApiDataArrayResponse::map_json_array_to_json_structs`.
+- [x] CLI subcommands — add a `clap` subcommand enum to `CliArgs`:
+  - [x] `scrape nhl [--reset]` — debug-only `--reset` to drop/recreate schema.
+- [x] Replace inline DROP TABLE reset logic with `reset_schema()` in `common/db/init.rs` (debug-only).
 
-Migration fixes (blank slate, safe to edit freely):
-- Standardise all date/timestamp columns to `TIMESTAMPTZ`.
-- Add `manually_edited BOOLEAN DEFAULT FALSE NOT NULL` to `api_cache` table to track cache entries that have been manually repaired and should never be overwritten by fresh API fetches.
-
-Code fixes:
-- Add `DSError::Cancelled` variant to `common/errors.rs` (added here so Step 1.5 is a clean diff; no callers yet).
-- Fix `NhlPrimaryKey::PlayoffSeriesGame` `verify_by_key` arm to dispatch to the correct entity.
-- Add missing entities to `warm_nhl_key_cache`: `NhlShift`, `NhlPlayoffSeries`, `NhlPlayoffSeriesGame`.
-- Remove dead `raw_data` string binding from `NhlApiDataArrayResponse::map_json_array_to_json_structs`.
-
-CLI subcommands — add a `clap` subcommand enum to `CliArgs`:
-- `scrape nhl [--reset]` — runs the full NHL ingest pipeline. `--reset` flag is debug-only (gated behind `#[cfg(debug_assertions)]`) and drops/recreates the schema before scraping.
-
-Remove `reset_db` from `Config`, `CliArgs`, and `EnvironmentVariables`. Remove the inline DROP TABLE block from `init_db` and replace with a `reset_schema()` function in `common/db/init.rs`:
+Reference implementation (already present):
 
 ```rust
 #[cfg(debug_assertions)]
@@ -261,17 +260,39 @@ pub async fn reset_schema(pool: &PgPool) -> Result<(), DSError> {
 }
 ```
 
-This ensures `--reset` is stripped from release builds entirely and cannot accidentally fire in production.
-
-Acceptance: `cargo build` clean with no unused dependency warnings; `cargo run -- scrape nhl` executes; `cargo run -- scrape nhl --reset` drops and recreates schema in debug builds; `--reset` flag does not exist in release builds.
+Acceptance criteria (Step 0):
+- [x] `cargo build` clean with no unused dependency warnings.
+- [x] `cargo run -- scrape nhl` executes.
+- [x] `cargo run -- scrape nhl --reset` resets schema in debug builds.
+- [x] `--reset` flag absent in release builds.
 
 ---
 
-### Phase 1 — Foundation (goal: owned, spawn-safe core)
+### Phase 1 — Foundation (goal: owned, spawn-safe core) [Progress & Order Check]
 
-**Design note: `DataSource` trait and source registry**
+This phase creates the owned, spawn-safe core and is the prerequisite for the job system. The order below is deliberate: each step reduces coupling or enables the next step with minimal churn. I have reviewed the order and confirm it is correct and near-optimal for minimizing breakage and enabling incremental, reviewable PRs.
 
-Keep this in mind when implementing Steps 0 and 1.1. Do not over-engineer it upfront, but design `AppContext` and CLI dispatch so this slot exists naturally.
+High-level checklist (Phase 1):
+- [x] Step 1.1 Part A — Progress traits + `AppContext` structure (DONE)
+- [ ] Step 1.1 Part B — `database_url` config + DB/worker plumbing (IN PROGRESS)
+- [ ] Step 1.2 — Remove lifetime-bearing resource types; add `ttl()` to `DbEntity`
+- [ ] Step 1.3 — Replace `with_progress!` macro with `ProgressReporter`/`ProgressFactory`
+- [ ] Step 1.4a — Decouple DB keys from API (`PrimaryKey` → `EntityKey`/`CacheKey`)
+- [ ] Step 1.4b — Move FK resolution into orchestrator helpers; fix error handling
+- [ ] Step 1.4c — Migrate one entity end-to-end; implement `DataSource` trait
+- [ ] Step 1.5 — Add cancellation (`CancellationToken`) and tests
+
+Rationale for ordering (verified):
+- Step 1.1 first: owning `AppContext` and collapsing DB config into a `database_url` is low risk and required for subsequent spawn-safe changes.
+- Step 1.2 next: removing lifetime-bearing API resources makes functions `'static`-friendly; must follow creation of owned `AppContext`.
+- Step 1.3 follows: progress abstraction depends on `AppContext` ownership and simplifies callsites before mass refactor.
+- Step 1.4a/1.4b: decoupling DB keys and moving FK resolution into the orchestrator is the core re-architecture; doing it after the above ensures spawn-safety and progress plumbing are in place.
+- Step 1.4c: migrate one entity end-to-end as a proof-of-concept; keeps the scope small and demonstrable.
+- Step 1.5: cancellation is threaded last once the orchestration and spawn boundaries are correct.
+
+Design note: `DataSource` trait and source registry
+
+Keep this in mind when implementing Steps 1.1 and 1.4c. Do not over-engineer it upfront; design `AppContext` and CLI dispatch so this slot exists naturally.
 
 Today, `warm_nhl_key_cache` and `main.rs` are the implicit registry for data sources — hardcoded lists that must be updated manually when adding a new source. A `DataSource` trait gives that a formal home:
 
@@ -305,19 +326,36 @@ Note all methods take `Arc<AppContext>` — consistent with constraint 1, since 
 
 This step also collapses `pg_host`/`pg_user`/`pg_pass` into a single `database_url` field (critique item 21), which is a prerequisite for multi-backend support in Future Work and a straightforward improvement regardless.
 
-Changes:
-- Add `src/common/app_context.rs`: `AppContext { config: Arc<Config>, client: reqwest::Client, progress_factory: Arc<dyn ProgressFactory> }`. Implement `Clone` (cheap — clones Arcs and client).
-- Add `src/common/progress/mod.rs`: define `ProgressReporter` trait (methods: `inc(u64)`, `set_len(u64)`, `set_message(&str)`, `finish()`) and `ProgressFactory` trait (`fn reporter(&self, total: Option<u64>, msg: &str) -> Box<dyn ProgressReporter>`). Implement `NoopFactory`/`NoopReporter` as the initial backend.
-- Replace `pg_host`, `pg_user`, `pg_pass` in `Config`, `CliArgs`, and `EnvironmentVariables` with `database_url: String`.
-- Change `DbContext::connect()` to `DbContext::connect(cfg: &Config) -> Result<DbContext, DSError>`. No shim needed — blank slate.
-- Change `start_sqlx_worker` to accept a `WorkerConfig { batch_size, batch_timeout_ms }` instead of reading `CONFIG`.
-- Change `default_retry_strategy()` in `util.rs` to accept `&Config` instead of reading `CONFIG`.
-- Update `fetch_endpoint_cached` in `CacheableApi` to respect `manually_edited` flag: if true, always return cached version and never overwrite with fresh API data.
-- The existing `AppContext` in `config/mod.rs` (which holds only `Arc<MultiProgress>`) is retired and replaced by the new one in `src/common/app_context.rs`. The `Arc<MultiProgress>` field does not carry forward — progress is handled via `Arc<dyn ProgressFactory>` from day one.
-- Update `main.rs` to build `AppContext` by passing `Arc::new(CONFIG.clone())` as a transitional shim. Direct reads of `CONFIG` remain only in `main.rs` at this stage.
+**Part A (COMPLETED):**
+- [x] Add `src/common/progress/mod.rs`:
+  - `ProgressReporter` trait with methods: `inc(u64)`, `set_len(u64)`, `set_message(&str)`, `finish()`
+  - `ProgressReporterMode` enum (not trait-based factory — simpler enum with variants: `Noop`, `Indicatif(Arc<MultiProgress>, ProgressStyle)`)
+  - `NoopReporter` and `IndicatifReporter` implementations
+  - Method: `create_reporter(&self, total: Option<u64>, msg: &str) -> Box<dyn ProgressReporter + Send>`
+- [x] Add `src/common/app_context.rs`:
+  - `AppContext { config: Arc<Config>, http: Client, progress_reporter_mode: ProgressReporterMode, cancellation_token: CancellationToken }`
+  - Implements `Clone` (cheap — clones Arcs and client)
+  - **Temporary field added:** `multi_progress_bar: Arc<MultiProgress>` for backward compat with existing `with_progress!` callsites (will be removed in Step 1.3)
+- [x] Add `Clone` derive to `Config`
+- [x] Update `main.rs` to construct `AppContext::new(Arc::new((*CONFIG).clone()))`
+- [x] Fix all `AppContext` import paths to use `crate::common::app_context::AppContext`
+- [x] Suppress `async_fn_in_trait` warning in `src/common/db/db_entity.rs` with `#[allow(async_fn_in_trait)]`
 
-Acceptance: compiles; warm key cache still runs from `main.rs`.
-Commit strategy: A) add `AppContext` + progress stubs; B) collapse `database_url` + change `DbContext::connect` + `WorkerConfig`; C) change `default_retry_strategy` + update callers; D) retire old `AppContext`, update `main.rs`.
+**Design decision: enum not trait for ProgressReporterMode**
+We chose `enum ProgressReporterMode { Noop, Indicatif(...), Channel(...) }` over a trait-based factory because:
+- Only 3 variants expected (Noop, Indicatif, Channel for daemon IPC)
+- Simpler, more direct, easier to grep
+- Less boilerplate for this use case
+- Easy to extend with a match statement
+
+**Part B (TODO):**
+- [ ] Replace `pg_host`, `pg_user`, `pg_pass` in `Config`, `CliArgs`, and `EnvironmentVariables` with `database_url: String`
+- [ ] Change `DbContext::connect()` to `DbContext::connect(cfg: &Config) -> Result<DbContext, DSError>`
+- [ ] Change `start_sqlx_worker` to accept `WorkerConfig { batch_size, batch_timeout_ms }` instead of reading `CONFIG`
+- [ ] Change `default_retry_strategy()` in `util.rs` to accept `&Config` instead of reading `CONFIG`
+- [ ] Update `fetch_endpoint_cached` in `CacheableApi` to respect `manually_edited` flag: if true, always return cached version and never overwrite with fresh API data
+
+Acceptance: compiles; warm key cache still runs from `main.rs`; `cargo run -- scrape nhl` completes successfully.
 
 ---
 
@@ -600,9 +638,18 @@ Acceptance: cancellation test passes; orchestrator-level collect loops exit imme
 
 ---
 
-### Phase 2 — Job system and daemon
+### Phase 2 — Job system and daemon [Checklist & Order Check]
 
 Implement only after Phase 1 is complete and the binary is stable end-to-end.
+
+Phase 2 checklist:
+- [ ] Step 2.1 — Job system (`Job` trait, `JobExecutor`, `JobHandle`)
+- [ ] Step 2.2a — IPC protocol and types (ClientMessage/DaemonMessage, framing)
+- [ ] Step 2.2b — Daemon implementation (socket, job persistence, executor)
+- [ ] Step 2.3 — CLI client (daemon IPC client, job submission & repair flows)
+
+Ordering verification:
+- The order is correct: the job system (2.1) defines the primitives that IPC (2.2a) and the daemon (2.2b) use. The CLI client (2.3) depends on the daemon being available. Implementing 2.2a before 2.2b allows parallel design/review of protocol types and the daemon implementation.
 
 #### Step 2.1: Job system
 
@@ -704,11 +751,7 @@ pub enum DaemonMessage {
 - Add `ChannelReporter` implementation of `ProgressReporter` that sends `ProgressUpdate` messages over an `mpsc::Sender`.
 - Define `JobSummary`, `JobStatusInfo`, `ProgressUpdate` supporting types.
 
-**Files affected:** New `src/ipc/mod.rs`, new `src/common/progress/channel.rs`.
-
 Acceptance: IPC types defined, serializable with serde; frame helpers can read/write messages to a test socket; `ChannelReporter` exists and implements `ProgressReporter`.
-
----
 
 #### Step 2.2b: Daemon implementation
 
@@ -748,6 +791,7 @@ loop {
 **Files affected:** New `src/bin/daemon.rs`, new `src/daemon/mod.rs`, new migration file.
 
 Acceptance: Daemon binary compiles; can start and bind to socket; accepts a connection and reads a `ClientMessage`; gracefully shuts down on SIGTERM.
+
 #### Step 2.3: CLI client
 
 Goal: Rework the CLI to communicate with the daemon instead of running tasks directly.
@@ -774,8 +818,14 @@ Error repair workflow ensures manually repaired cache entries are never overwrit
 
 ---
 
-### Phase 3 — TUI, scheduler, metrics
-Rework `main.rs` as a daemon client (most of the CLI commands above are implemented here):
+### Phase 3 — TUI, scheduler, metrics [Checklist]
+
+Rework `main.rs` as a daemon client (most of the CLI commands above are implemented here).
+
+Phase 3 checklist:
+- [ ] Step 3.1 — TUI client (ratatui + crossterm)
+- [ ] Step 3.2 — Scheduling and live game tracking (daemon scheduler & LiveGameTrackingJob)
+- [ ] Step 3.3 — Additive enhancements (metrics, audits, DBContext stats)
 
 #### Step 3.1: TUI client
 

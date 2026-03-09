@@ -11,7 +11,7 @@ macro_rules! make_deserialize_to_type {
                                                     stringify!($func_name),
                                                     "\")]`"
                                                 )]
-        pub fn $func_name<'de, D>(deserializer: D) -> Result<Option<$ty>, D::Error>
+        fn $func_name<'de, D>(deserializer: D) -> Result<Option<$ty>, D::Error>
         where
             D: serde::Deserializer<'de>,
         {
@@ -27,7 +27,7 @@ macro_rules! make_deserialize_to_type {
                                                     stringify!($func_name),
                                                     "\")]`"
                                                 )]
-        pub fn $func_name<'de, D>(deserializer: D) -> Result<$ty, D::Error>
+        fn $func_name<'de, D>(deserializer: D) -> Result<$ty, D::Error>
         where
             D: serde::Deserializer<'de>,
         {

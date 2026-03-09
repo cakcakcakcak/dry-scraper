@@ -1,3 +1,5 @@
+#![allow(async_fn_in_trait)]
+
 use futures::stream::{self, StreamExt};
 use std::{
     cmp::{min, Eq},
@@ -13,12 +15,13 @@ use crate::{
     any_primary_key::AnyPrimaryKey,
     common::{
         api::CacheableApi,
+        app_context::AppContext,
         db::{DbContext, SqlxJob, SqlxJobOrFlush, SqlxJobResult, StaticPgQuery, StaticPgQueryAs},
         errors::DSError,
         models::traits::HasTypeName,
         util::track_and_filter_errors,
     },
-    config::{AppContext, CONFIG},
+    config::CONFIG,
     sqlx_operation_with_retries, with_progress,
 };
 

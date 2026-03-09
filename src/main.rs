@@ -1,8 +1,10 @@
 use clap::Parser;
 use dry_scraper::config::{
     cli_args::{CliArgs, Commands, ScrapeSource},
-    AppContext, CONFIG, UI_CONFIG,
+    CONFIG, UI_CONFIG,
 };
+
+use dry_scraper::common::app_context::AppContext;
 
 use dry_scraper::common::{db::DbContext, errors::DSError};
 
@@ -26,7 +28,7 @@ async fn main() -> Result<(), DSError> {
     let cli_args = CliArgs::parse();
 
     let db_context: DbContext = DbContext::connect().await?;
-    let app_context: AppContext = AppContext::new();
+    let app_context: AppContext = AppContext::new(std::sync::Arc::new((*CONFIG).clone()));
 
     match cli_args.command {
         Some(Commands::Scrape { source }) => match source {
