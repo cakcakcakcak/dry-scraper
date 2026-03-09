@@ -3,18 +3,22 @@ use tokio::{
     time::{timeout, Duration},
 };
 
-use crate::{
-    common::db::{DbPool, SqlxJob, SqlxJobOrFlush, SqlxJobResult, SqlxJobSender, SqlxTransaction},
-    config::CONFIG,
+use crate::common::db::{
+    DbPool, SqlxJob, SqlxJobOrFlush, SqlxJobResult, SqlxJobSender, SqlxTransaction,
 };
 
-pub fn start_sqlx_worker(db_pool: DbPool) -> SqlxJobSender {
-    let (tx, mut rx) = mpsc::channel::<SqlxJobOrFlush>(CONFIG.db_query_batch_size);
+pub struct WorkerConfig {
+    pub batch_size: usize,
+    pub batch_timeout_ms: u64,
+}
+
+pub fn start_sqlx_worker(db_pool: DbPool, worker_cfg: WorkerConfig) -> SqlxJobSender {
+    let (tx, mut rx) = mpsc::channel::<SqlxJobOrFlush>(worker_cfg.batch_size);
 
     tokio::spawn(async move {
         tracing::info!("Spawned SQLx worker.");
-        let mut batch: Vec<SqlxJob> = Vec::with_capacity(CONFIG.db_query_batch_size);
-        sqlx_worker_loop(db_pool, &mut batch, &mut rx).await;
+        let mut batch: Vec<SqlxJob> = Vec::with_capacity(worker_cfg.batch_size);
+        sqlx_worker_loop(db_pool, &mut batch, &mut rx, worker_cfg).await;
     });
 
     tx
@@ -24,6 +28,7 @@ async fn sqlx_worker_loop(
     db_pool: DbPool,
     batch: &mut Vec<SqlxJob>,
     rx: &mut Receiver<SqlxJobOrFlush>,
+    worker_cfg: WorkerConfig,
 ) {
     // loop and wait to rx.recv() a job
     // when a job is received, add it to the batch and start a timeout
@@ -31,14 +36,14 @@ async fn sqlx_worker_loop(
     // if a flush command is received, flush the batch
     loop {
         match timeout(
-            Duration::from_millis(CONFIG.db_query_batch_timeout_ms),
+            Duration::from_millis(worker_cfg.batch_timeout_ms),
             rx.recv(),
         )
         .await
         {
             Ok(Some(SqlxJobOrFlush::Job(job))) => {
                 batch.push(job);
-                if batch.len() < CONFIG.db_query_batch_size {
+                if batch.len() < worker_cfg.batch_size {
                     continue;
                 }
             }

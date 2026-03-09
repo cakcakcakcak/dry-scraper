@@ -4,7 +4,7 @@ use tokio_retry::{
 };
 
 use crate::common::{db::DbContext, errors::DSError, models::DataSourceError};
-use crate::config::CONFIG;
+use crate::config::Config;
 
 #[macro_export]
 macro_rules! bind {
@@ -42,15 +42,25 @@ macro_rules! with_progress {
 
 #[macro_export]
 macro_rules! sqlx_operation_with_retries {
-    ($body:expr) => {
-        $crate::common::util::sqlx_operation_with_retries(|| async { $body })
+    // New variant: accepts cfg parameter
+    ($cfg:expr, $($body:tt)*) => {
+        $crate::common::util::sqlx_operation_with_retries(|| async { $($body)* }, $cfg)
+    };
+    // Old variant: reads CONFIG global (for backward compat during Step 1.1)
+    ($($body:tt)*) => {
+        $crate::common::util::sqlx_operation_with_retries(|| async { $($body)* }, &$crate::config::CONFIG)
     };
 }
 
 #[macro_export]
 macro_rules! reqwest_with_retries {
-    ($body:expr) => {
-        $crate::common::util::reqwest_with_retries(|| async { $body })
+    // New variant: accepts cfg parameter
+    ($cfg:expr, $($body:tt)*) => {
+        $crate::common::util::reqwest_with_retries(|| async { $($body)* }, $cfg)
+    };
+    // Old variant: reads CONFIG global (for backward compat during Step 1.1)
+    ($($body:tt)*) => {
+        $crate::common::util::reqwest_with_retries(|| async { $($body)* }, &$crate::config::CONFIG)
     };
 }
 
@@ -76,13 +86,11 @@ macro_rules! impl_pk_debug {
     };
 }
 
-pub fn default_retry_strategy() -> impl Iterator<Item = std::time::Duration> {
-    ExponentialBackoff::from_millis(CONFIG.retry_interval_ms)
-        .max_delay(std::time::Duration::from_millis(
-            CONFIG.retry_max_interval_ms,
-        ))
+pub fn default_retry_strategy(cfg: &Config) -> impl Iterator<Item = std::time::Duration> {
+    ExponentialBackoff::from_millis(cfg.retry_interval_ms)
+        .max_delay(std::time::Duration::from_millis(cfg.retry_max_interval_ms))
         .map(jitter)
-        .take(CONFIG.retries)
+        .take(cfg.retries)
 }
 
 pub fn is_transient_sqlx_error(e: &sqlx::Error) -> bool {
@@ -102,13 +110,16 @@ fn is_transient_reqwest_error(e: &reqwest::Error) -> bool {
     is_transient
 }
 
-pub async fn sqlx_operation_with_retries<F, Fut, T>(operation: F) -> Result<T, sqlx::Error>
+pub async fn sqlx_operation_with_retries<F, Fut, T>(
+    operation: F,
+    cfg: &Config,
+) -> Result<T, sqlx::Error>
 where
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = Result<T, sqlx::Error>>,
 {
     RetryIf::spawn(
-        default_retry_strategy(),
+        default_retry_strategy(cfg),
         || async {
             let res: Result<T, sqlx::Error> = operation().await;
             if let Err(ref e) = res {
@@ -121,13 +132,16 @@ where
     .await
 }
 
-pub async fn reqwest_with_retries<F, Fut, T>(operation: F) -> Result<T, reqwest::Error>
+pub async fn reqwest_with_retries<F, Fut, T>(
+    operation: F,
+    cfg: &Config,
+) -> Result<T, reqwest::Error>
 where
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = Result<T, reqwest::Error>>,
 {
     RetryIf::spawn(
-        default_retry_strategy(),
+        default_retry_strategy(cfg),
         || async {
             let res = operation().await;
             if let Err(ref e) = res {

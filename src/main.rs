@@ -27,7 +27,7 @@ async fn main() -> Result<(), DSError> {
 
     let cli_args = CliArgs::parse();
 
-    let db_context: DbContext = DbContext::connect().await?;
+    let db_context: DbContext = DbContext::connect(&CONFIG).await?;
     let app_context: AppContext = AppContext::new(std::sync::Arc::new((*CONFIG).clone()));
 
     match cli_args.command {
@@ -38,7 +38,7 @@ async fn main() -> Result<(), DSError> {
             } => {
                 #[cfg(debug_assertions)]
                 if reset {
-                    reset_schema(&db_context.pool).await?;
+                    reset_schema(&db_context.pool, &CONFIG).await?;
                 }
 
                 tracing::info!("Starting NHL scrape");
