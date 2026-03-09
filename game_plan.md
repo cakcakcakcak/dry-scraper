@@ -181,10 +181,10 @@ The error enum has no variant for task cancellation. When cancellation lands, th
 
 **Fix:** Add `#[error("Operation cancelled")] Cancelled` to `DSError` in Step 0 so it is available when Step 1.5 wires it up. Adding it early costs nothing and keeps Step 1.5 a clean diff.
 
-### 20. `pg_host`/`pg_user`/`pg_pass` should be a single `database_url`
+### 20. `pg_host`/`pg_user`/`pg_pass` should be a single `database_url` ✅ FIXED
 The current three-field approach for database config is non-standard. sqlx, dotenv, and the broader Rust ecosystem all expect a single `DATABASE_URL` connection string. The current approach also makes multi-backend support harder.
 
-**Fix:** Replace `pg_host`, `pg_user`, `pg_pass` in `Config` (and in `CliArgs` and `EnvironmentVariables`) with a single `database_url: String` field. Done in Step 1.1.
+**Fix:** Replace `pg_host`, `pg_user`, `pg_pass` in `Config` (and in `CliArgs` and `EnvironmentVariables`) with a single `database_url: String` field. ✅ **COMPLETED in Step 1.1 Part B.**
 
 ---
 
@@ -274,7 +274,7 @@ This phase creates the owned, spawn-safe core and is the prerequisite for the jo
 
 High-level checklist (Phase 1):
 - [x] Step 1.1 Part A — Progress traits + `AppContext` structure (DONE)
-- [ ] Step 1.1 Part B — `database_url` config + DB/worker plumbing (IN PROGRESS)
+- [x] Step 1.1 Part B — `database_url` config + DB/worker plumbing (DONE)
 - [ ] Step 1.2 — Remove lifetime-bearing resource types; add `ttl()` to `DbEntity`
 - [ ] Step 1.3 — Replace `with_progress!` macro with `ProgressReporter`/`ProgressFactory`
 - [ ] Step 1.4a — Decouple DB keys from API (`PrimaryKey` → `EntityKey`/`CacheKey`)
@@ -348,12 +348,11 @@ We chose `enum ProgressReporterMode { Noop, Indicatif(...), Channel(...) }` over
 - Less boilerplate for this use case
 - Easy to extend with a match statement
 
-**Part B (TODO):**
-- [ ] Replace `pg_host`, `pg_user`, `pg_pass` in `Config`, `CliArgs`, and `EnvironmentVariables` with `database_url: String`
-- [ ] Change `DbContext::connect()` to `DbContext::connect(cfg: &Config) -> Result<DbContext, DSError>`
-- [ ] Change `start_sqlx_worker` to accept `WorkerConfig { batch_size, batch_timeout_ms }` instead of reading `CONFIG`
-- [ ] Change `default_retry_strategy()` in `util.rs` to accept `&Config` instead of reading `CONFIG`
-- [ ] Update `fetch_endpoint_cached` in `CacheableApi` to respect `manually_edited` flag: if true, always return cached version and never overwrite with fresh API data
+**Part B (COMPLETED):**
+- [x] Replace `pg_host`, `pg_user`, `pg_pass` in `Config`, `CliArgs`, and `EnvironmentVariables` with `database_url: String`
+- [x] Change `DbContext::connect()` to `DbContext::connect(cfg: &Config) -> Result<DbContext, DSError>`
+- [x] Change `start_sqlx_worker` to accept `WorkerConfig { batch_size, batch_timeout_ms }` instead of reading `CONFIG`
+- [x] Change `default_retry_strategy()` in `util.rs` to accept `&Config` instead of reading `CONFIG`
 
 Acceptance: compiles; warm key cache still runs from `main.rs`; `cargo run -- scrape nhl` completes successfully.
 
@@ -960,6 +959,20 @@ Phase 2:
 ---
 
 ## Future Work (not in current plan — needs more design time)
+
+### API cache TTL and `manually_edited` flag
+
+The `api_cache` table has a `manually_edited` boolean column (added in migration 02) that is not currently used in the Rust code. The intent is to protect manually-edited cache entries from being overwritten by automatic API refreshes.
+
+**Design questions that need answers first:**
+- What is the refresh strategy for `api_cache`? TTL-based? On-demand? Pattern-based (live games vs historical)?
+- How does `api_cache` TTL interact with `DbEntity` TTL (Step 1.2)? Should entity TTL drive API fetches, or vice versa?
+- Storage is cheap and API rate limits matter — should most cache entries be permanent unless explicitly refreshed?
+- Different endpoints have different update patterns (live games change every 30s, historical data never changes) — needs per-endpoint or pattern-based strategy.
+
+**When to implement:** After gaining operational experience with the scraper to understand actual API update patterns and refresh requirements. The column exists in the schema and can be utilized once the broader caching strategy is designed.
+
+---
 
 ### `#[derive(PgUpsert)]` proc macro crate
 
