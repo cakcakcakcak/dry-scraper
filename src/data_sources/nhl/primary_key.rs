@@ -233,7 +233,7 @@ impl NhlTeamKey {
         let team_id = self.id;
 
         let team_json_with_context: ItemParsedWithContext<NhlTeamJson> =
-            nhl_api.teams().get(db_context, team_id).await?;
+            nhl_api.get_team(db_context, team_id).await?;
         let team = team_json_with_context.into_db_struct();
 
         tracing::info!("Upserting team with id {team_id} into lp database.");
@@ -261,7 +261,7 @@ impl NhlPlayerKey {
         let player_id = self.id;
 
         let player_json_with_context: ItemParsedWithContext<NhlPlayerJson> =
-            nhl_api.players().get(db_context, player_id).await?;
+            nhl_api.get_player(db_context, player_id).await?;
         let player: NhlPlayer = player_json_with_context.into_db_struct();
 
         tracing::info!("Upserting player with id {player_id} into lp database.");
@@ -291,7 +291,7 @@ impl NhlGameKey {
         let game_id = self.id;
 
         let game_json_with_context: ItemParsedWithContext<NhlGameJson> =
-            nhl_api.games().get(db_context, game_id).await?;
+            nhl_api.get_game(db_context, game_id).await?;
         let game: NhlGame = game_json_with_context.into_db_struct();
 
         tracing::info!("Upserting game with id {game_id} into lp database.");
@@ -380,8 +380,7 @@ impl NhlPlayoffSeriesKey {
         let series_letter: &str = &self.series_letter;
 
         let series_json_with_context: ItemParsedWithContext<NhlPlayoffSeriesJson> = nhl_api
-            .playoff_series()
-            .get(db_context, season_id, series_letter)
+            .get_playoff_series(db_context, season_id, series_letter)
             .await?;
         let series: NhlPlayoffSeries = series_json_with_context.into_db_struct();
 

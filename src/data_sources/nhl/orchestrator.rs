@@ -64,7 +64,7 @@ pub async fn get_nhl_seasons(
         app_context,
         db_context,
         nhl_api,
-        nhl_api.seasons().list(db_context),
+        nhl_api.list_seasons(db_context),
     )
     .await
 }
@@ -79,7 +79,7 @@ pub async fn get_nhl_franchises(
         app_context,
         db_context,
         nhl_api,
-        nhl_api.franchises().list(db_context),
+        nhl_api.list_franchises(db_context),
     )
     .await
 }
@@ -94,7 +94,7 @@ pub async fn get_nhl_teams(
         app_context,
         db_context,
         nhl_api,
-        nhl_api.teams().list(db_context),
+        nhl_api.list_teams(db_context),
     )
     .await
 }
@@ -110,7 +110,7 @@ pub async fn get_nhl_shifts_in_game(
         app_context,
         db_context,
         nhl_api,
-        nhl_api.shifts().list_shifts_for_game(db_context, game_id),
+        nhl_api.list_shifts_for_game(db_context, game_id),
     )
     .await
 }
@@ -170,8 +170,7 @@ pub async fn get_nhl_all_games_in_season(
 
     tracing::info!("Fetching {number_of_games} `NhlGameJson`s from NHL API or cache.");
     let json_results: Vec<Result<ItemParsedWithContext<NhlGameJson>, DSError>> = nhl_api
-        .games()
-        .get_many(app_context, db_context, game_ids)
+        .get_many_games(app_context, db_context, game_ids)
         .await;
     let ok_json_results: Vec<ItemParsedWithContext<NhlGameJson>> =
         track_and_filter_errors(json_results, db_context).await;
@@ -310,9 +309,7 @@ pub async fn get_nhl_playoff_bracket_series(
         app_context,
         db_context,
         nhl_api,
-        nhl_api
-            .playoff_bracket()
-            .list_playoff_series_for_year(db_context, year_id),
+        nhl_api.list_playoff_series_for_year(db_context, year_id),
     )
     .await
 }
@@ -327,8 +324,7 @@ pub async fn get_nhl_playoff_series(
     let season_id: i32 = bracket_series.season_id;
     let series_letter: &str = &bracket_series.series_letter;
     let series_json: ItemParsedWithContext<NhlPlayoffSeriesJson> = nhl_api
-        .playoff_series()
-        .get(db_context, season_id, series_letter)
+        .get_playoff_series(db_context, season_id, series_letter)
         .await?;
 
     let series: NhlPlayoffSeries = series_json.clone().into_db_struct();
@@ -397,8 +393,7 @@ pub async fn get_nhl_games_in_playoff_series(
 
     tracing::info!("Fetching {number_of_games} game play-by-play reports from NHL API or cache.");
     let game_json_results: Vec<Result<ItemParsedWithContext<NhlGameJson>, DSError>> = nhl_api
-        .games()
-        .get_many(app_context, db_context, game_ids)
+        .get_many_games(app_context, db_context, game_ids)
         .await;
     let game_jsons: Vec<ItemParsedWithContext<NhlGameJson>> =
         track_and_filter_errors(game_json_results, db_context).await;

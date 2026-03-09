@@ -1,25 +1,16 @@
 use std::fmt::Debug;
 
 use async_trait::async_trait;
-use futures::stream::{self, StreamExt};
 use serde::de::DeserializeOwned;
 
-use crate::{
-    common::{
-        api::cacheable_api::CacheableApi,
-        app_context::AppContext,
-        db::DbContext,
-        errors::DSError,
-        models::{traits::IntoDbStruct, ItemParsedWithContext},
-    },
-    data_sources::models::NhlSeasonContext,
-    with_progress, CONFIG,
+use crate::common::{
+    api::cacheable_api::CacheableApi,
+    db::DbContext,
+    errors::DSError,
+    models::{traits::IntoDbStruct, ItemParsedWithContext},
 };
 
-use super::super::models::{
-    NhlDefaultContext, NhlGameJson, NhlPlayerJson, NhlPlayoffBracketJson,
-    NhlPlayoffBracketSeriesJson, NhlPlayoffSeriesJson,
-};
+use super::super::models::NhlDefaultContext;
 
 #[derive(Clone)]
 pub struct NhlWebApi {
@@ -46,23 +37,11 @@ impl NhlWebApi {
         }
     }
 
-    pub fn players(&self) -> PlayerResource<'_> {
-        PlayerResource { api: self }
+    pub fn endpoint(&self, path: &str) -> String {
+        format!("{}/{}", self.base_url, path.trim_start_matches('/'))
     }
 
-    pub fn games(&self) -> GameResource<'_> {
-        GameResource { api: self }
-    }
-
-    pub fn playoff_bracket(&self) -> PlayoffBracketResource<'_> {
-        PlayoffBracketResource { api: self }
-    }
-
-    pub fn playoff_series(&self) -> PlayoffSeriesResource<'_> {
-        PlayoffSeriesResource { api: self }
-    }
-
-    async fn fetch_and_parse<T>(
+    pub async fn fetch_and_parse<T>(
         &self,
         endpoint: &str,
         db_context: &DbContext,
@@ -102,143 +81,5 @@ impl NhlWebApi {
                 endpoint: endpoint.to_string(),
             },
         })
-    }
-}
-
-pub struct PlayerResource<'a> {
-    api: &'a NhlWebApi,
-}
-impl<'a> PlayerResource<'a> {
-    pub async fn get(
-        &self,
-        db_context: &DbContext,
-        player_id: i32,
-    ) -> Result<ItemParsedWithContext<NhlPlayerJson>, DSError> {
-        let endpoint = format!("{}/player/{}/landing", self.api.base_url, player_id);
-        self.api
-            .fetch_and_parse::<NhlPlayerJson>(&endpoint, db_context)
-            .await
-    }
-
-    pub async fn _get_many(
-        &self,
-        app_context: &AppContext,
-        db_context: &DbContext,
-        player_ids: Vec<i32>,
-    ) -> Vec<Result<ItemParsedWithContext<NhlPlayerJson>, DSError>> {
-        with_progress!(
-            app_context.multi_progress_bar.clone(),
-            player_ids.len(),
-            "Fetching many `NhlPlayerJson`s".to_string(),
-            |pb| {
-                stream::iter(player_ids)
-                    .map(|player_id| self.get(db_context, player_id))
-                    .buffer_unordered(CONFIG.db_concurrency_limit)
-                    .collect()
-                    .await
-            }
-        )
-    }
-}
-
-pub struct GameResource<'a> {
-    api: &'a NhlWebApi,
-}
-impl<'a> GameResource<'a> {
-    pub async fn get(
-        &self,
-        db_context: &DbContext,
-        game_id: i32,
-    ) -> Result<ItemParsedWithContext<NhlGameJson>, DSError> {
-        let endpoint: String = format!("{}/gamecenter/{}/play-by-play", self.api.base_url, game_id);
-        self.api
-            .fetch_and_parse::<NhlGameJson>(&endpoint, db_context)
-            .await
-    }
-
-    pub async fn get_many(
-        &self,
-        app_context: &AppContext,
-        db_context: &DbContext,
-        game_ids: Vec<i32>,
-    ) -> Vec<Result<ItemParsedWithContext<NhlGameJson>, DSError>> {
-        with_progress!(
-            app_context.multi_progress_bar.clone(),
-            game_ids.len(),
-            "Fetching `NhlGameJson`s.".to_string(),
-            |pb| {
-                stream::iter(game_ids)
-                    .map(|game_id| self.get(db_context, game_id))
-                    .buffer_unordered(CONFIG.api_concurrency_limit)
-                    .inspect(|_| pb.inc(1))
-                    .collect()
-                    .await
-            }
-        )
-    }
-}
-
-pub struct PlayoffBracketResource<'a> {
-    api: &'a NhlWebApi,
-}
-impl<'a> PlayoffBracketResource<'a> {
-    pub async fn list_playoff_series_for_year(
-        &self,
-        db_context: &DbContext,
-        year_id: i32,
-    ) -> Result<Vec<ItemParsedWithContext<NhlPlayoffBracketSeriesJson>>, DSError> {
-        let endpoint: String = format!("{}/playoff-bracket/{}", self.api.base_url, year_id);
-
-        let raw_data = self
-            .api
-            .fetch_endpoint_cached(db_context, &endpoint)
-            .await?;
-        let bracket: NhlPlayoffBracketJson = serde_json::from_str(&raw_data).map_err(|e| {
-            tracing::warn!(
-                endpoint,
-                "Failed to parse into `NhlPlayoffBracketJson`: {e}"
-            );
-            tracing::info!(raw_data);
-            DSError::Serde(e)
-        })?;
-
-        let season_id: i32 = format!("{}{}", year_id - 1, year_id)
-            .parse::<i32>()
-            .unwrap();
-        bracket
-            .series
-            .into_iter()
-            .map(|series| {
-                let raw_json: serde_json::Value = serde_json::to_value(series.clone()).unwrap();
-                Ok(ItemParsedWithContext {
-                    item: series,
-                    context: NhlSeasonContext {
-                        season_id,
-                        endpoint: endpoint.clone(),
-                        raw_json,
-                    },
-                })
-            })
-            .collect()
-    }
-}
-
-pub struct PlayoffSeriesResource<'a> {
-    api: &'a NhlWebApi,
-}
-impl<'a> PlayoffSeriesResource<'a> {
-    pub async fn get(
-        &self,
-        db_context: &DbContext,
-        season_id: i32,
-        series_letter: &str,
-    ) -> Result<ItemParsedWithContext<NhlPlayoffSeriesJson>, DSError> {
-        let endpoint: String = format!(
-            "{}/schedule/playoff-series/{}/{}",
-            self.api.base_url, season_id, series_letter
-        );
-        self.api
-            .fetch_and_parse::<NhlPlayoffSeriesJson>(&endpoint, db_context)
-            .await
     }
 }
