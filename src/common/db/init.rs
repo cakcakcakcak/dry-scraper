@@ -35,7 +35,7 @@ impl DbContext {
 
 #[tracing::instrument]
 pub async fn init_db() -> Result<DbPool, DSError> {
-    let db_url: String = database_url()?;
+    let db_url: String = CONFIG.database_url.clone();
     tracing::debug!(db_url);
 
     let db_exists =
@@ -79,14 +79,6 @@ pub async fn init_db() -> Result<DbPool, DSError> {
     tracing::info!("Database migrations complete");
 
     Ok(pool)
-}
-
-fn database_url() -> Result<String, DSError> {
-    let pg_host: &str = &CONFIG.pg_host;
-    let pg_user: &str = &CONFIG.pg_user;
-    let pg_pass: &str = &CONFIG.pg_pass;
-
-    Ok(format!("postgres://{pg_user}:{pg_pass}@{pg_host}/lp"))
 }
 
 #[cfg(debug_assertions)]

@@ -7,11 +7,7 @@ pub struct CliArgs {
     pub command: Option<Commands>,
 
     #[arg(long)]
-    pub pg_host: Option<String>,
-    #[arg(long)]
-    pub pg_user: Option<String>,
-    #[arg(long)]
-    pub pg_pass: Option<String>,
+    pub database_url: Option<String>,
     #[arg(long)]
     pub api_concurrency_limit: Option<usize>,
     #[arg(long)]

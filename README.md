@@ -100,7 +100,7 @@ Cross-cutting concerns:
 1) Copy environment template (do NOT commit `.env`) and set required environment variables
 ```dry-scraper/README.md#L100-108
 cp .env.example .env
-# Edit `.env` and set PG_HOST, PG_USER, PG_PASS
+# Edit `.env` and set DATABASE_URL
 ```
 
 2) Build & run
@@ -117,10 +117,8 @@ cargo run --release
 
 ### Configuration
 - Primary configuration is assembled from CLI args (via `clap`) and environment variables.
-- Minimum required env vars:
-  - `PG_HOST` — Postgres connection host (e.g. `localhost:5432`)
-  - `PG_USER` — Postgres username
-  - `PG_PASS` — Postgres password
+- Minimum required env var:
+  - `DATABASE_URL` — Postgres connection string (e.g. `postgres://user:pass@localhost:5432/lp`)
 
 ## Future work
 - Add unit and integration testing to ensure reliability

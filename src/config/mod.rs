@@ -36,9 +36,7 @@ pub static UI_CONFIG: Lazy<UiTheme> = Lazy::new(|| UiTheme::from_config(&CONFIG)
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    pub pg_host: String,
-    pub pg_user: String,
-    pub pg_pass: String,
+    pub database_url: String,
     pub api_concurrency_limit: usize,
     pub max_db_connections: u32,
     pub db_concurrency_limit: usize,
@@ -62,24 +60,10 @@ impl Config {
         let cli_args: CliArgs = CliArgs::parse();
         let env_vars: EnvironmentVariables = EnvironmentVariables::from_env();
 
-        let pg_host: String = cli_args.pg_host.or(env_vars.pg_host).unwrap_or_else(|| {
+        let database_url: String = cli_args.database_url.or(env_vars.database_url).unwrap_or_else(|| {
             panic!(
-                r#"Failed to load required environment variable: `PG_HOST`
-                At minimum, `PG_HOST`, `PG_USER`, and `PG_PASS` must be defined 1) as environment variables, 2) in a file named `.env`, or 3) as command line arguments.
-                Panicking!"#
-            )
-        });
-        let pg_user: String = cli_args.pg_user.or(env_vars.pg_user).unwrap_or_else(|| {
-            panic!(
-                r#"Failed to load required environment variable: `PG_USER`
-                At minimum, `PG_HOST`, `PG_USER`, and `PG_PASS` must be defined 1) as environment variables, 2) in a file named `.env`, or 3) as command line arguments.
-                Panicking!"#
-            )
-        });
-        let pg_pass: String = cli_args.pg_pass.or(env_vars.pg_pass).unwrap_or_else(|| {
-            panic!(
-                r#"Failed to load required environment variable: `PG_PASS`
-                At minimum, `PG_HOST`, `PG_USER`, and `PG_PASS` must be defined 1) as environment variables, 2) in a file named `.env`, or 3) as command line arguments.
+                r#"Failed to load required environment variable: `DATABASE_URL`
+                At minimum, `DATABASE_URL` must be defined 1) as environment variables, 2) in a file named `.env`, or 3) as command line arguments.
                 Panicking!"#
             )
         });
@@ -135,9 +119,7 @@ impl Config {
             .unwrap_or(DEFAULT_PROGRESS_SPINNER_STYLE_FORMAT.to_string());
 
         Config {
-            pg_host,
-            pg_user,
-            pg_pass,
+            database_url,
             api_concurrency_limit,
             max_db_connections,
             db_concurrency_limit,

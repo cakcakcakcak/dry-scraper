@@ -2,9 +2,7 @@ use std::env::VarError;
 
 #[derive(Debug)]
 pub struct EnvironmentVariables {
-    pub pg_host: Option<String>,
-    pub pg_user: Option<String>,
-    pub pg_pass: Option<String>,
+    pub database_url: Option<String>,
     pub api_concurrency_limit: Option<usize>,
     pub max_db_connections: Option<u32>,
     pub db_concurrency_limit: Option<usize>,
@@ -20,9 +18,7 @@ pub struct EnvironmentVariables {
 impl EnvironmentVariables {
     pub fn from_env() -> Self {
         Self {
-            pg_host: Self::get_parsed_env_var_with_log("PG_HOST"),
-            pg_user: Self::get_parsed_env_var_with_log("PG_USER"),
-            pg_pass: Self::get_parsed_env_var_with_log("PG_PASS"),
+            database_url: Self::get_parsed_env_var_with_log("DATABASE_URL"),
             api_concurrency_limit: Self::get_parsed_env_var_with_log("API_CONCURRENCY_LIMIT"),
             max_db_connections: Self::get_parsed_env_var_with_log("MAX_DB_CONNECTIONS"),
             db_concurrency_limit: Self::get_parsed_env_var_with_log("DB_CONCURRENCY_LIMIT"),
