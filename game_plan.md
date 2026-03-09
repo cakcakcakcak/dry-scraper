@@ -275,7 +275,7 @@ This phase creates the owned, spawn-safe core and is the prerequisite for the jo
 High-level checklist (Phase 1):
 - [x] Step 1.1 Part A — Progress traits + `AppContext` structure (DONE)
 - [x] Step 1.1 Part B — `database_url` config + DB/worker plumbing (DONE)
-- [ ] Step 1.2 — Remove lifetime-bearing resource types; add `ttl()` to `DbEntity`
+- [x] Step 1.2 — Remove lifetime-bearing resource types (DONE; TTL deferred)
 - [ ] Step 1.3 — Replace `with_progress!` macro with `ProgressReporter`/`ProgressFactory`
 - [ ] Step 1.4a — Decouple DB keys from API (`PrimaryKey` → `EntityKey`/`CacheKey`)
 - [ ] Step 1.4b — Move FK resolution into orchestrator helpers; fix error handling
@@ -358,55 +358,19 @@ Acceptance: compiles; warm key cache still runs from `main.rs`; `cargo run -- sc
 
 ---
 
-**Step 1.2 — Remove lifetime-bearing resource types from NhlApi; add TTL to DbEntity**
+**Step 1.2 — Remove lifetime-bearing resource types from NhlApi (COMPLETED)**
 
 Changes:
-- Fold `PlayerResource`, `GameResource`, `PlayoffBracketResource`, `PlayoffSeriesResource`, `SeasonResource`, `TeamResource`, `FranchiseResource`, `ShiftResource` methods directly onto their parent API structs (`NhlWebApi`, `NhlStatsApi`).
-- All resource methods become `&self` methods on the owned API structs. No more lifetime parameters on resource-like types.
-- Update all callers in `orchestrator.rs` and `primary_key.rs`.
-- Add `ttl()` method to `DbEntity` trait for decay-based refresh strategy:
+- [x] Fold `PlayerResource`, `GameResource`, `PlayoffBracketResource`, `PlayoffSeriesResource`, `SeasonResource`, `TeamResource`, `FranchiseResource`, `ShiftResource` methods directly onto `NhlApi`.
+- [x] All resource methods are now `&self` methods on the owned API struct. No lifetime parameters on resource-like types.
+- [x] Update all callers in `orchestrator.rs` and `primary_key.rs`.
+- [x] Add `endpoint()` helper methods to `NhlStatsApi` and `NhlWebApi` for DRY URL construction.
 
-```rust
-pub trait DbEntity: Clone + Send + Sync + 'static {
-    type Key: EntityKey;
-    
-    fn key(&self) -> Self::Key;
-    fn upsert_query(&self) -> StaticPgQuery;
-    fn select_key_query() -> StaticPgQueryAs<Self::Key>;
-    fn foreign_key_cache_entries(&self) -> Vec<CacheKey> { vec![] }
-    
-    /// How long this entity remains fresh. None = never auto-refresh (manual only).
-    fn ttl(&self) -> Option<Duration> {
-        Some(Duration::from_secs(86400))  // Default: 24 hours
-    }
-}
-```
+Note: Adding `ttl()` method to `DbEntity` trait was deferred to Future Work - needs operational experience with API refresh patterns first.
 
-Entities implement decay-based TTL — older "final" data refreshes less frequently to catch late corrections:
+The API is now spawn-safe and ergonomic. Instead of `nhl.games().get(...)`, callers use `nhl.get_game(...)`. All methods consolidated on `NhlApi` eliminate the distinction between stats and web APIs at the call site.
 
-```rust
-impl DbEntity for NhlGame {
-    fn ttl(&self) -> Option<Duration> {
-        if !matches!(self.game_state, GameState::Final) {
-            return Some(Duration::from_secs(30));  // Active: 30 seconds
-        }
-        
-        // Final games: TTL grows with age to catch corrections
-        let age = Utc::now() - self.game_date;
-        match age.num_days() {
-            0..=1 => Some(Duration::from_hours(1)),    // Day of/after: hourly
-            2..=7 => Some(Duration::from_hours(12)),   // Week after: twice daily
-            8..=30 => Some(Duration::from_days(1)),    // Month after: daily
-            31..=365 => Some(Duration::from_days(7)),  // Year after: weekly
-            _ => Some(Duration::from_days(30)),        // Old: monthly sweep
-        }
-    }
-}
-```
-
-This handles the reality that sports data is eventually consistent — stats get corrected, games get rescheduled, official decisions get reversed days later.
-
-Acceptance: `data_sources/nhl/api` compiles with no lifetime-parameterised resource structs; orchestrator calls compile; `DbEntity` trait has `ttl()` method; at least one entity implements decay-based TTL logic.
+Acceptance: ✅ `data_sources/nhl/api` compiles with no lifetime-parameterised resource structs; orchestrator calls compile.
 
 ---
 
@@ -960,17 +924,53 @@ Phase 2:
 
 ## Future Work (not in current plan — needs more design time)
 
-### API cache TTL and `manually_edited` flag
+### Cache refresh strategy (API cache TTL, entity TTL, and `manually_edited` flag)
 
 The `api_cache` table has a `manually_edited` boolean column (added in migration 02) that is not currently used in the Rust code. The intent is to protect manually-edited cache entries from being overwritten by automatic API refreshes.
 
+Additionally, Step 1.2 originally planned to add a `ttl()` method to `DbEntity` trait for decay-based entity refresh, but this was deferred because the interaction between API cache TTL and entity TTL needs design work.
+
 **Design questions that need answers first:**
 - What is the refresh strategy for `api_cache`? TTL-based? On-demand? Pattern-based (live games vs historical)?
-- How does `api_cache` TTL interact with `DbEntity` TTL (Step 1.2)? Should entity TTL drive API fetches, or vice versa?
+- How does `api_cache` TTL interact with `DbEntity` TTL? Should entity TTL drive API fetches, or vice versa?
 - Storage is cheap and API rate limits matter — should most cache entries be permanent unless explicitly refreshed?
 - Different endpoints have different update patterns (live games change every 30s, historical data never changes) — needs per-endpoint or pattern-based strategy.
+- Should entities have decay-based TTL (e.g., final games age out: 1hr → 12hr → daily → weekly → monthly)?
+- How does `manually_edited` flag prevent overwrites in practice? When does refresh logic check it?
 
-**When to implement:** After gaining operational experience with the scraper to understand actual API update patterns and refresh requirements. The column exists in the schema and can be utilized once the broader caching strategy is designed.
+**Proposed entity TTL design (from original Step 1.2 plan):**
+```rust
+pub trait DbEntity: Clone + Send + Sync + 'static {
+    // ... existing methods ...
+    
+    /// How long this entity remains fresh. None = never auto-refresh (manual only).
+    fn ttl(&self) -> Option<Duration> {
+        Some(Duration::from_secs(86400))  // Default: 24 hours
+    }
+}
+
+impl DbEntity for NhlGame {
+    fn ttl(&self) -> Option<Duration> {
+        if !matches!(self.game_state, GameState::Final) {
+            return Some(Duration::from_secs(30));  // Active: 30 seconds
+        }
+        
+        // Final games: TTL grows with age to catch corrections
+        let age = Utc::now() - self.game_date;
+        match age.num_days() {
+            0..=1 => Some(Duration::from_hours(1)),    // Day of/after: hourly
+            2..=7 => Some(Duration::from_hours(12)),   // Week after: twice daily
+            8..=30 => Some(Duration::from_days(1)),    // Month after: daily
+            31..=365 => Some(Duration::from_days(7)),  // Year after: weekly
+            _ => Some(Duration::from_days(30)),        // Old: monthly sweep
+        }
+    }
+}
+```
+
+This handles the reality that sports data is eventually consistent — stats get corrected, games get rescheduled, official decisions get reversed days later.
+
+**When to implement:** After gaining operational experience with the scraper to understand actual API update patterns and refresh requirements. The `manually_edited` column exists in the schema and can be utilized once the broader caching strategy is designed.
 
 ---
 
