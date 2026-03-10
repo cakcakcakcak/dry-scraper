@@ -9,6 +9,8 @@ pub struct CliArgs {
     #[arg(long)]
     pub database_url: Option<String>,
     #[arg(long)]
+    pub no_progress: bool,
+    #[arg(long)]
     pub api_concurrency_limit: Option<usize>,
     #[arg(long)]
     pub max_db_connections: Option<u32>,

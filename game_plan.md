@@ -276,7 +276,7 @@ High-level checklist (Phase 1):
 - [x] Step 1.1 Part A — Progress traits + `AppContext` structure (DONE)
 - [x] Step 1.1 Part B — `database_url` config + DB/worker plumbing (DONE)
 - [x] Step 1.2 — Remove lifetime-bearing resource types (DONE; TTL deferred)
-- [ ] Step 1.3 — Replace `with_progress!` macro with `ProgressReporter`/`ProgressFactory`
+- [x] Step 1.3 — Replace `with_progress!` macro with progress reporter pattern (DONE)
 - [ ] Step 1.4a — Decouple DB keys from API (`PrimaryKey` → `EntityKey`/`CacheKey`)
 - [ ] Step 1.4b — Move FK resolution into orchestrator helpers; fix error handling
 - [ ] Step 1.4c — Migrate one entity end-to-end; implement `DataSource` trait
@@ -374,15 +374,92 @@ Acceptance: ✅ `data_sources/nhl/api` compiles with no lifetime-parameterised r
 
 ---
 
-**Step 1.3 — Replace `with_progress!` with `ProgressReporter`**
+**Step 1.3 — Replace `with_progress!` with progress reporter pattern (COMPLETED)**
 
 Changes:
-- Add `IndicatifFactory`/`IndicatifReporter` in `src/common/progress/indicatif.rs` — thin wrapper around `indicatif::MultiProgress` and `indicatif::ProgressBar`.
-- Replace every `with_progress!` callsite (`item_parsed_with_context.rs`, `db_entity.rs`, `nhl_web_api.rs`) with `app_context.progress_factory.reporter(...)`.
-- Delete the `with_progress!` macro from `util.rs`.
-- `UI_CONFIG` is now unused — delete the static and `UiTheme` from `config/mod.rs`.
+- [x] Add sync helper methods to `AppContext`:
+  - `with_progress_bar<F, R>(&self, total: u64, msg: &str, f: F) -> R` for sync progress bar
+  - `with_spinner<F, R>(&self, msg: &str, f: F) -> R` for sync spinner
+- [x] Replace `with_progress!` callsites:
+  - `item_parsed_with_context.rs` - uses sync helper method
+  - `db_entity.rs` - uses explicit progress reporter calls (2 spinners)
+  - `nhl_api.rs` - uses explicit progress reporter calls (2 progress bars)
+- [x] Delete the `with_progress!` macro from `util.rs`.
+- [x] Remove `multi_progress_bar` field from `AppContext`.
+- [x] Delete `UI_CONFIG` static and `UiTheme` struct from `config/mod.rs`.
+- [x] Update `AppContext::new()` to properly initialize `progress_reporter_mode` with `Indicatif` variant (added `--no-progress` CLI flag; defaults to enabled)
 
-Acceptance: all callsites use the trait; `UI_CONFIG` static gone; `NoopFactory` and `IndicatifFactory` are swappable with identical outcomes.
+Design decision: Async helper methods have lifetime issues with complex async code (streams, nested awaits). The solution is to use explicit progress reporter calls for async cases:
+```rust
+let pb = app_context.progress_reporter_mode.create_reporter(Some(count), msg);
+let result = async_work().await;
+pb.finish();
+```
+This pattern is more explicit, easier to debug, and matches what Phase 2 jobs will use (they receive owned `Box<dyn ProgressReporter>`).
+
+Sync helper method signatures:
+```rust
+impl AppContext {
+    // Sync progress bar with known total
+    pub fn with_progress_bar<F, R>(&self, total: u64, msg: &str, f: F) -> R
+    where
+        F: FnOnce(&dyn ProgressReporter) -> R,
+    {
+        let pb = self.progress_reporter_mode.create_reporter(Some(total), msg);
+        let result = f(&*pb);
+        pb.finish();
+        result
+    }
+    
+    // Sync spinner without known total
+    pub fn with_spinner<F, R>(&self, msg: &str, f: F) -> R
+    where
+        F: FnOnce(&dyn ProgressReporter) -> R,
+    {
+        let pb = self.progress_reporter_mode.create_reporter(None, msg);
+        let result = f(&*pb);
+        pb.finish();
+        result
+    }
+}
+```
+
+Example transformations:
+```rust
+// Sync case (uses helper method):
+// Before:
+with_progress!(app_context.multi_progress_bar, items.len(), "Processing", |pb| {
+    items.iter().inspect(|_| pb.inc(1)).collect()
+})
+
+// After:
+app_context.with_progress_bar(items.len() as u64, "Processing", |pb| {
+    items.iter().inspect(|_| pb.inc(1)).collect()
+})
+
+// Async case (uses explicit calls):
+// Before:
+with_progress!(app_context.multi_progress_bar.clone(), ids.len(), "Fetching", |pb| {
+    stream.inspect(|_| pb.inc(1)).collect().await
+})
+
+// After:
+let pb = app_context.progress_reporter_mode.create_reporter(
+    Some(ids.len() as u64),
+    "Fetching"
+);
+let result = stream.iter(ids)
+    .map(|id| fetch(id))
+    .inspect(|_| pb.inc(1))
+    .collect()
+    .await;
+pb.finish();
+result
+```
+
+Rationale: Sync helper methods provide ergonomics for simple CPU-bound progress. Async cases use explicit calls to avoid lifetime complexity and prepare for Phase 2 where jobs receive owned `Box<dyn ProgressReporter>`. Explicit calls are clearer, more composable, and easier to debug.
+
+Acceptance: ✅ sync callsites use helper methods; async callsites use explicit progress reporter calls; `UI_CONFIG` static gone; `multi_progress_bar` field removed; macro deleted; Noop and Indicatif swappable via `ProgressReporterMode`.
 
 ---
 

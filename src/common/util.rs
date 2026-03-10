@@ -18,29 +18,6 @@ macro_rules! bind {
 }
 
 #[macro_export]
-macro_rules! with_progress {
-    // progress bar
-    ($mp_bar:expr, $count:expr, $msg:expr, |$pb:ident| $body:block) => {{
-        let $pb = $mp_bar.add(indicatif::ProgressBar::new($count as u64));
-        $pb.set_message($msg.to_string());
-        $pb.set_style($crate::config::UI_CONFIG.progress_bar_style.clone());
-        let result = { $body };
-        $pb.finish_using_style();
-        result
-    }};
-    // spinner
-    ($mp_bar:expr, $msg:expr, |$pb:ident| $body:block) => {{
-        let $pb = $mp_bar.add(indicatif::ProgressBar::new_spinner());
-        $pb.set_message($msg);
-        $pb.enable_steady_tick(std::time::Duration::from_millis(100));
-        $pb.set_style($crate::config::UI_CONFIG.progress_spinner_style.clone());
-        let result = { $body };
-        $pb.finish_using_style();
-        result
-    }};
-}
-
-#[macro_export]
 macro_rules! sqlx_operation_with_retries {
     // New variant: accepts cfg parameter
     ($cfg:expr, $($body:tt)*) => {

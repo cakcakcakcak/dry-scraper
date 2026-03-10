@@ -13,7 +13,7 @@ use crate::{
         NhlPlayoffBracketSeriesJson, NhlPlayoffSeriesJson, NhlSeasonContext, NhlSeasonJson,
         NhlShiftJson, NhlTeamJson,
     },
-    with_progress, DSError, CONFIG,
+    DSError, CONFIG,
 };
 
 #[derive(Clone, Debug)]
@@ -118,18 +118,18 @@ impl NhlApi {
         db_context: &DbContext,
         player_ids: Vec<i32>,
     ) -> Vec<Result<ItemParsedWithContext<NhlPlayerJson>, DSError>> {
-        with_progress!(
-            app_context.multi_progress_bar.clone(),
-            player_ids.len(),
-            "Fetching many `NhlPlayerJson`s".to_string(),
-            |pb| {
-                stream::iter(player_ids)
-                    .map(|player_id| self.get_player(db_context, player_id))
-                    .buffer_unordered(CONFIG.db_concurrency_limit)
-                    .collect()
-                    .await
-            }
-        )
+        let pb = app_context.progress_reporter_mode.create_reporter(
+            Some(player_ids.len() as u64),
+            "Fetching many `NhlPlayerJson`s",
+        );
+        let result = stream::iter(player_ids)
+            .map(|player_id| self.get_player(db_context, player_id))
+            .buffer_unordered(CONFIG.db_concurrency_limit)
+            .inspect(|_| pb.inc(1))
+            .collect()
+            .await;
+        pb.finish();
+        result
     }
 
     // Game methods
@@ -152,19 +152,17 @@ impl NhlApi {
         db_context: &DbContext,
         game_ids: Vec<i32>,
     ) -> Vec<Result<ItemParsedWithContext<NhlGameJson>, DSError>> {
-        with_progress!(
-            app_context.multi_progress_bar.clone(),
-            game_ids.len(),
-            "Fetching `NhlGameJson`s.".to_string(),
-            |pb| {
-                stream::iter(game_ids)
-                    .map(|game_id| self.get_game(db_context, game_id))
-                    .buffer_unordered(CONFIG.api_concurrency_limit)
-                    .inspect(|_| pb.inc(1))
-                    .collect()
-                    .await
-            }
-        )
+        let pb = app_context
+            .progress_reporter_mode
+            .create_reporter(Some(game_ids.len() as u64), "Fetching `NhlGameJson`s.");
+        let result = stream::iter(game_ids)
+            .map(|game_id| self.get_game(db_context, game_id))
+            .buffer_unordered(CONFIG.api_concurrency_limit)
+            .inspect(|_| pb.inc(1))
+            .collect()
+            .await;
+        pb.finish();
+        result
     }
 
     // Playoff bracket methods

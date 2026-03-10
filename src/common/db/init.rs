@@ -39,7 +39,7 @@ impl DbContext {
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip(cfg))]
 pub async fn init_db(cfg: &Config) -> Result<DbPool, DSError> {
     let db_url: String = cfg.database_url.clone();
     tracing::debug!(db_url);

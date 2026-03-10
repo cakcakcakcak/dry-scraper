@@ -22,7 +22,7 @@ use crate::{
         util::track_and_filter_errors,
     },
     config::CONFIG,
-    sqlx_operation_with_retries, with_progress,
+    sqlx_operation_with_retries,
 };
 
 #[async_trait]
@@ -235,62 +235,56 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
         );
         let mut receivers = Vec::new();
 
-        with_progress!(
-            app_context.multi_progress_bar.clone(),
-            "Dispatching upsert queries...",
-            |pb| {
-                for item in items {
-                    if db_context.key_cache.contains(&item.any_pk()) {
-                        tracing::debug!("Key cache contains {:?}, skipping upsert.", item.pk());
-                        pb.inc(1);
-                        continue;
-                    }
-                    for fk in item.foreign_keys() {
-                        if !db_context.key_cache.contains(&fk.any_pk()) {
-                            continue;
-                        }
-                    }
-
-                    let (result_tx, result_rx) = tokio::sync::oneshot::channel::<SqlxJobResult>();
-                    let query = item.upsert_query();
-                    let job = SqlxJob { query, result_tx };
-
-                    if let Err(e) = db_context.sqlx_tx.send(SqlxJobOrFlush::Job(job)).await {
-                        tracing::warn!("Failed to send job: {e:?}");
-                        continue;
-                    }
-
-                    receivers.push((item, result_rx));
-                    pb.inc(1);
+        let pb = app_context
+            .progress_reporter_mode
+            .create_reporter(None, "Dispatching upsert queries...");
+        for item in items {
+            if db_context.key_cache.contains(&item.any_pk()) {
+                tracing::debug!("Key cache contains {:?}, skipping upsert.", item.pk());
+                pb.inc(1);
+                continue;
+            }
+            for fk in item.foreign_keys() {
+                if !db_context.key_cache.contains(&fk.any_pk()) {
+                    continue;
                 }
             }
-        );
+
+            let (result_tx, result_rx) = tokio::sync::oneshot::channel::<SqlxJobResult>();
+            let query = item.upsert_query();
+            let job = SqlxJob { query, result_tx };
+
+            if let Err(e) = db_context.sqlx_tx.send(SqlxJobOrFlush::Job(job)).await {
+                tracing::warn!("Failed to send job: {e:?}");
+                continue;
+            }
+
+            receivers.push((item, result_rx));
+            pb.inc(1);
+        }
+        pb.finish();
 
         let _ = db_context.sqlx_tx.send(SqlxJobOrFlush::Flush).await;
 
         // 3. Then wait for all results in parallel
-        let results = with_progress!(
-            app_context.multi_progress_bar.clone(),
-            "Awaiting upsert results...",
-            |pb| {
-                stream::iter(receivers)
-                    .map(|(item, rx)| async move {
-                        match rx.await {
-                            Ok(Ok(pg_result)) => {
-                                db_context.key_cache.insert(item.any_pk());
-                                Ok(Some(pg_result))
-                            }
-                            Ok(Err(e)) => {
-                                Err(DSError::DatabaseCustom(format!("Upsert failed: {e}")))
-                            }
-                            Err(_) => Err(DSError::DatabaseCustom("Worker dropped".to_string())),
-                        }
-                    })
-                    .buffer_unordered(CONFIG.db_concurrency_limit)
-                    .collect::<Vec<_>>()
-                    .await
-            }
-        );
+        let pb = app_context
+            .progress_reporter_mode
+            .create_reporter(None, "Awaiting upsert results...");
+        let results: Vec<_> = stream::iter(receivers)
+            .map(|(item, rx)| async move {
+                match rx.await {
+                    Ok(Ok(pg_result)) => {
+                        db_context.key_cache.insert(item.any_pk());
+                        Ok(Some(pg_result))
+                    }
+                    Ok(Err(e)) => Err(DSError::DatabaseCustom(format!("Upsert failed: {e}"))),
+                    Err(_) => Err(DSError::DatabaseCustom("Worker dropped".to_string())),
+                }
+            })
+            .buffer_unordered(CONFIG.db_concurrency_limit)
+            .collect()
+            .await;
+        pb.finish();
 
         track_and_filter_errors(results, db_context).await
     }

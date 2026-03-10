@@ -32,7 +32,6 @@ pub static DEFAULT_PROGRESS_SPINNER_STYLE: Lazy<ProgressStyle> = Lazy::new(|| {
 });
 
 pub static CONFIG: Lazy<Config> = Lazy::new(Config::from_env_and_args);
-pub static UI_CONFIG: Lazy<UiTheme> = Lazy::new(|| UiTheme::from_config(&CONFIG));
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -47,11 +46,6 @@ pub struct Config {
     pub retries: usize,
     pub progress_bar_style_format: String,
     pub progress_spinner_style_format: String,
-}
-
-pub struct UiTheme {
-    pub progress_bar_style: ProgressStyle,
-    pub progress_spinner_style: ProgressStyle,
 }
 
 impl Config {
@@ -130,41 +124,6 @@ impl Config {
             retries,
             progress_bar_style_format,
             progress_spinner_style_format,
-        }
-    }
-}
-
-impl UiTheme {
-    pub fn from_config(cfg: &Config) -> Self {
-        let progress_bar_style = match ProgressStyle::with_template(&cfg.progress_bar_style_format)
-        {
-            Ok(style) => style,
-            Err(e) => {
-                tracing::warn!(
-                    provided = %cfg.progress_bar_style_format,
-                    error = %e,
-                    "Invalid progress bar style format; falling back to default"
-                );
-                DEFAULT_PROGRESS_BAR_STYLE.clone()
-            }
-        };
-
-        let progress_spinner_style =
-            match ProgressStyle::with_template(&cfg.progress_spinner_style_format) {
-                Ok(style) => style,
-                Err(e) => {
-                    tracing::warn!(
-                        provided = %cfg.progress_spinner_style_format,
-                        error = %e,
-                        "Invalid progress spinner style format; falling back to default"
-                    );
-                    DEFAULT_PROGRESS_SPINNER_STYLE.clone()
-                }
-            };
-
-        UiTheme {
-            progress_bar_style,
-            progress_spinner_style,
         }
     }
 }

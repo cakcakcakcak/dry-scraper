@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use crate::{
     common::app_context::AppContext,
     common::models::traits::{DbStruct, IntoDbStruct},
-    with_progress,
 };
 
 #[derive(Clone, Debug)]
@@ -34,7 +33,7 @@ where
     J::DbStruct: DbStruct,
 {
     fn into_db_structs(self, app_context: &AppContext, pb_msg: &str) -> Vec<J::DbStruct> {
-        with_progress!(app_context.multi_progress_bar, self.len(), pb_msg, |pb| {
+        app_context.with_progress_bar(self.len() as u64, pb_msg, |pb| {
             self.into_iter()
                 .map(|game_json| game_json.into_db_struct())
                 .inspect(|_| pb.inc(1))

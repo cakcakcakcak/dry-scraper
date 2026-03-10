@@ -1,9 +1,9 @@
-use indicatif::MultiProgress;
+use indicatif::{MultiProgress, ProgressStyle};
 use reqwest::Client;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
-use crate::common::progress::ProgressReporterMode;
+use crate::common::progress::{ProgressReporter, ProgressReporterMode};
 use crate::config::Config;
 
 #[derive(Clone)]
@@ -12,20 +12,55 @@ pub struct AppContext {
     pub http: Client,
     pub progress_reporter_mode: ProgressReporterMode,
     pub cancellation_token: CancellationToken,
-
-    // TEMPORARY: Kept for backward compat during Step 1.1.
-    // Will be removed in Step 1.3 when we migrate to progress_reporter_mode.
-    pub multi_progress_bar: Arc<MultiProgress>,
 }
 
 impl AppContext {
-    pub fn new(cfg: Arc<Config>) -> Self {
+    pub fn new(cfg: Arc<Config>, disable_progress: bool) -> Self {
+        let progress_reporter_mode = if !disable_progress {
+            let mp = Arc::new(MultiProgress::new());
+            let style = ProgressStyle::default_bar()
+                .template(&cfg.progress_bar_style_format)
+                .unwrap_or_else(|_| ProgressStyle::default_bar())
+                .progress_chars("##-");
+            ProgressReporterMode::Indicatif(mp, style)
+        } else {
+            ProgressReporterMode::Noop
+        };
+
         Self {
             config: cfg,
             http: Client::new(),
-            progress_reporter_mode: ProgressReporterMode::Noop,
+            progress_reporter_mode,
             cancellation_token: CancellationToken::new(),
-            multi_progress_bar: Arc::new(MultiProgress::new()),
         }
     }
+
+    pub fn with_progress_bar<F, R>(&self, total: u64, msg: &str, f: F) -> R
+    where
+        F: FnOnce(&dyn ProgressReporter) -> R,
+    {
+        let pb = self
+            .progress_reporter_mode
+            .create_reporter(Some(total), msg);
+        let result = f(&*pb);
+        pb.finish();
+        result
+    }
+
+    // Spinner without known total
+    pub fn with_spinner<F, R>(&self, msg: &str, f: F) -> R
+    where
+        F: FnOnce(&dyn ProgressReporter) -> R,
+    {
+        let pb = self.progress_reporter_mode.create_reporter(None, msg);
+        let result = f(&*pb);
+        pb.finish();
+        result
+    }
+
+    // Note: No async variants provided. For async progress reporting with complex
+    // lifetime requirements (streams, multiple awaits), use explicit calls:
+    //   let pb = app_context.progress_reporter_mode.create_reporter(...);
+    //   let result = async_work_with_pb().await;
+    //   pb.finish();
 }
