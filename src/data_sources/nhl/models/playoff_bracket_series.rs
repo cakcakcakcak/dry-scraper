@@ -6,7 +6,7 @@ use super::super::primary_key::*;
 use crate::{
     bind,
     common::{
-        db::{DbEntity, StaticPgQuery, StaticPgQueryAs},
+        db::{CacheKey, DbEntity, StaticPgQuery, StaticPgQueryAs},
         models::traits::{DbStruct, IntoDbStruct},
     },
     data_sources::models::{LocalizedNameJson, NhlSeasonContext},
@@ -186,14 +186,30 @@ impl DbEntity for NhlPlayoffBracketSeries {
         )
     }
 
-    // fn foreign_keys(&self) -> Vec<Self::Pk> {
-    //     vec![
-    //         Self::Pk::api_cache(&self.endpoint),
-    //         Self::Pk::season(self.season_id),
-    //         Self::Pk::team(self.top_seed_team_id),
-    //         Self::Pk::team(self.bottom_seed_team_id),
-    //     ]
-    // }
+    fn foreign_keys(&self) -> Vec<CacheKey> {
+        vec![
+            CacheKey {
+                source: "nhl",
+                table: "api_cache",
+                id: self.endpoint.clone(),
+            },
+            CacheKey {
+                source: "nhl",
+                table: "season",
+                id: self.season_id.to_string(),
+            },
+            CacheKey {
+                source: "nhl",
+                table: "team",
+                id: self.top_seed_team_id.to_string(),
+            },
+            CacheKey {
+                source: "nhl",
+                table: "team",
+                id: self.bottom_seed_team_id.to_string(),
+            },
+        ]
+    }
 
     fn upsert_query(&self) -> StaticPgQuery {
         bind!(

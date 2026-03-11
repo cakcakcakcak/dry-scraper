@@ -8,7 +8,7 @@ use super::NhlDefaultContext;
 use crate::{
     bind,
     common::{
-        db::{DbEntity, StaticPgQuery, StaticPgQueryAs},
+        db::{CacheKey, DbEntity, StaticPgQuery, StaticPgQueryAs},
         models::traits::{DbStruct, IntoDbStruct},
     },
     impl_has_type_name, impl_pk_debug,
@@ -77,8 +77,22 @@ impl DbEntity for NhlTeam {
         sqlx::query_as::<_, Self::Pk>("SELECT id from nhl_team")
     }
 
-    fn foreign_keys(&self) -> Vec<Self::Pk> {
-        vec![] // TODO: Step 1.4b - FK resolution moves to orchestrator
+    fn foreign_keys(&self) -> Vec<CacheKey> {
+        let mut keys = vec![CacheKey {
+            source: "nhl",
+            table: "api_cache",
+            id: self.endpoint.clone(),
+        }];
+
+        if let Some(franchise_id) = self.franchise_id {
+            keys.push(CacheKey {
+                source: "nhl",
+                table: "team",
+                id: franchise_id.to_string(),
+            });
+        }
+
+        keys
     }
 
     fn upsert_query(&self) -> StaticPgQuery {

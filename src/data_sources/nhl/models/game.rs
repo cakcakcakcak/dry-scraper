@@ -13,7 +13,7 @@ use crate::impl_pk_debug;
 use crate::{
     bind,
     common::{
-        db::{DbEntity, StaticPgQuery, StaticPgQueryAs},
+        db::{CacheKey, DbEntity, StaticPgQuery, StaticPgQueryAs},
         models::traits::{DbStruct, IntoDbStruct},
     },
     impl_has_type_name,
@@ -222,14 +222,30 @@ impl DbEntity for NhlGame {
         sqlx::query_as::<_, Self::Pk>("SELECT id from nhl_game")
     }
 
-    // fn foreign_keys(&self) -> Vec<Self::Pk> {
-    //     vec![
-    //         Self::Pk::api_cache(&self.endpoint),
-    //         Self::Pk::season(self.season),
-    //         Self::Pk::team(self.away_team_id),
-    //         Self::Pk::team(self.home_team_id),
-    //     ]
-    // }
+    fn foreign_keys(&self) -> Vec<CacheKey> {
+        vec![
+            CacheKey {
+                source: "nhl",
+                table: "api_cache",
+                id: self.endpoint.clone(),
+            },
+            CacheKey {
+                source: "nhl",
+                table: "season",
+                id: self.season.to_string(),
+            },
+            CacheKey {
+                source: "nhl",
+                table: "team",
+                id: self.away_team_id.to_string(),
+            },
+            CacheKey {
+                source: "nhl",
+                table: "team",
+                id: self.home_team_id.to_string(),
+            },
+        ]
+    }
 
     fn upsert_query(&self) -> StaticPgQuery {
         bind!(

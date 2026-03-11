@@ -1,37 +1,3 @@
-//! NHL data orchestration layer.
-//!
-//! ## Foreign key dependency management
-//!
-//! This module fetches and upserts NHL entities in the correct dependency order.
-//! Each `get_nhl_*` function assumes its dependencies are already cached.
-//!
-//! **Dependency graph (fetch in this order):**
-//! 1. Franchises (no dependencies)
-//! 2. Seasons (no dependencies)
-//! 3. Teams (depends on: franchises)
-//! 4. Players (depends on: teams - optional current_team_id)
-//! 5. Games (depends on: teams, seasons)
-//! 6. Playoff bracket series (depends on: seasons, teams)
-//! 7. Playoff series (depends on: seasons, teams, playoff bracket series)
-//! 8. Playoff series games (depends on: playoff series)
-//! 9. Roster spots (depends on: games, teams, players)
-//! 10. Plays (depends on: games)
-//! 11. Shifts (depends on: games, teams, players)
-//!
-//! **Usage pattern:**
-//! ```rust,ignore
-//! // At startup, warm the key cache from existing DB records
-//! warm_nhl_key_cache(&app_context, &db_context).await?;
-//!
-//! // Then fetch in dependency order (each function is idempotent)
-//! get_nhl_franchises(&app_context, &db_context, &nhl_api).await?;
-//! get_nhl_teams(&app_context, &db_context, &nhl_api).await?;
-//! get_nhl_games(&app_context, &db_context, &nhl_api).await?;
-//! ```
-//!
-//! All `get_nhl_*` functions check the key cache before upserting, so calling
-//! them multiple times is safe and cheap.
-
 use futures::stream::{self, StreamExt};
 use sqlx::postgres::PgQueryResult;
 
@@ -40,7 +6,10 @@ use super::{api::NhlApi, models::*};
 use crate::{
     common::{
         app_context::AppContext,
-        db::{DbContext, DbEntity, DbEntityVecExt},
+        db::{
+            all_foreign_keys_cached, find_missing_foreign_keys, CacheKey, DbContext, DbEntity,
+            DbEntityVecExt,
+        },
         errors::DSError,
         models::{
             traits::{DbStruct, HasTypeName, IntoDbStruct},
@@ -50,6 +19,44 @@ use crate::{
     },
     CONFIG,
 };
+
+/// Ensure all foreign keys referenced by entities exist in the database.
+///
+/// This checks the key cache for missing FKs and logs warnings if any are found.
+/// It does NOT fetch missing entities - the caller must ensure proper ordering
+/// (e.g., fetch teams before games that reference them).
+///
+/// Returns the list of missing foreign keys for diagnostic purposes.
+async fn ensure_foreign_keys_exist<T>(entities: &[T], db_context: &DbContext) -> Vec<CacheKey>
+where
+    T: DbEntity + HasTypeName,
+{
+    if all_foreign_keys_cached(entities, db_context) {
+        return Vec::new();
+    }
+
+    let missing_fks = find_missing_foreign_keys(entities, db_context);
+    let type_name = T::type_name();
+
+    tracing::warn!(
+        "{} `{}` entities reference {} missing foreign keys. Some upserts may fail if FKs don't exist.",
+        entities.len(),
+        type_name,
+        missing_fks.len()
+    );
+
+    if tracing::enabled!(tracing::Level::DEBUG) {
+        let sample_size = missing_fks.len().min(10);
+        tracing::debug!(
+            "Missing FK sample ({}/{}): {:#?}",
+            sample_size,
+            missing_fks.len(),
+            &missing_fks.iter().take(sample_size).collect::<Vec<_>>()
+        );
+    }
+
+    missing_fks
+}
 
 pub async fn get_resource<J, D, Fut>(
     app_context: &AppContext,
@@ -75,6 +82,9 @@ where
     );
     let db_struct_count: usize = db_structs.len();
     tracing::debug!("Parsed {db_struct_count}/{json_struct_count} `{j_name}`s into `{d_name}`s.",);
+
+    // Check for missing foreign keys before upserting
+    ensure_foreign_keys_exist(&db_structs, db_context).await;
 
     tracing::debug!("Upserting {db_struct_count} `{d_name}`s into lp database.",);
     let upsert_results: Vec<Option<PgQueryResult>> =
@@ -198,6 +208,9 @@ pub async fn get_nhl_all_games_in_season(
     let game_count = games.len();
     tracing::info!("Parsed {game_count}/{number_of_games} games into lp database structs.");
 
+    // Check for missing foreign keys (teams, season) before upserting
+    ensure_foreign_keys_exist(&games, db_context).await;
+
     tracing::info!("Upserting {number_of_games} games  into lp database.");
     let upsert_results: Vec<Option<PgQueryResult>> =
         games.upsert_all(app_context, db_context).await;
@@ -248,6 +261,9 @@ pub async fn get_nhl_roster_spots_in_game(
     let roster_spot_count = roster_spots.len();
     tracing::info!("Parsed {roster_spot_count} roster spots into lp database structs.");
 
+    // Check for missing foreign keys (game, players, teams) before upserting
+    ensure_foreign_keys_exist(&roster_spots, db_context).await;
+
     tracing::info!("Upserting {roster_spot_count} roster spots lp database.",);
     let upsert_results = roster_spots.upsert_all(app_context, db_context).await;
     let ok_upsert_count = upsert_results.len();
@@ -296,6 +312,9 @@ pub async fn get_nhl_plays_in_game(
     let play_count = plays.len();
     tracing::info!("Parsed {play_count} plays into lp database structs.",);
 
+    // Check for missing foreign keys (game) before upserting
+    ensure_foreign_keys_exist(&plays, db_context).await;
+
     tracing::info!("Upserting {play_count} plays into lp database.",);
     let upsert_results = plays.upsert_all(app_context, db_context).await;
     let ok_upsert_count = upsert_results.len();
@@ -337,9 +356,12 @@ pub async fn get_nhl_playoff_series(
     let series: NhlPlayoffSeries = series_json.clone().into_db_struct();
     tracing::info!("Parsed playoff series into lp database struct.");
 
-    tracing::debug!(
-        "playoff series upsert deferred to orchestrator (use resolve_foreign_keys in step 1.4c)"
-    );
+    // Check for missing foreign keys (season, teams, bracket series) before upserting
+    ensure_foreign_keys_exist(std::slice::from_ref(&series), db_context).await;
+
+    // Upsert the playoff series now that FKs are checked
+    tracing::debug!("Upserting playoff series into lp database.");
+    let _upsert_result = series.upsert(db_context).await?;
 
     let series_game_jsons: Vec<ItemParsedWithContext<NhlPlayoffSeriesGameJson>> = series_json
         .item
@@ -372,6 +394,9 @@ pub async fn get_nhl_playoff_series(
     );
     let series_game_count = series_games.len();
     tracing::info!("Parsed {series_game_count} games into lp database structs.",);
+
+    // Check for missing foreign keys (season, teams, series, bracket series) before upserting
+    ensure_foreign_keys_exist(&series_games, db_context).await;
 
     tracing::info!("Upserting {series_game_count} games  into lp database.",);
     let upsert_results = series_games.upsert_all(app_context, db_context).await;
@@ -413,6 +438,9 @@ pub async fn get_nhl_games_in_playoff_series(
     tracing::info!(
         "Parsed {ok_game_count}/{number_of_games} game play-by-play reports lp database structs."
     );
+
+    // Check for missing foreign keys (season, teams) before upserting
+    ensure_foreign_keys_exist(&games, db_context).await;
 
     tracing::info!("Upserting {ok_game_count} game play-by-play reports into lp database.");
     let upsert_results = games.upsert_all(app_context, db_context).await;

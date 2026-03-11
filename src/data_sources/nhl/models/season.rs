@@ -5,15 +5,15 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
-use super::super::primary_key::*;
 use super::NhlDefaultContext;
 use crate::{
     bind,
     common::{
-        db::{DbEntity, StaticPgQuery, StaticPgQueryAs},
+        db::{CacheKey, DbEntity, StaticPgQuery, StaticPgQueryAs},
         models::traits::{DbStruct, IntoDbStruct},
         serde_helpers::JsonExt,
     },
+    data_sources::NhlSeasonKey,
     impl_has_type_name, impl_pk_debug, make_deserialize_to_type,
 };
 
@@ -161,9 +161,13 @@ impl DbEntity for NhlSeason {
         sqlx::query_as::<_, Self::Pk>("SELECT id from nhl_season")
     }
 
-    // fn foreign_keys(&self) -> Vec<Self::Pk> {
-    //     vec![Self::Pk::api_cache(&self.endpoint)]
-    // }
+    fn foreign_keys(&self) -> Vec<CacheKey> {
+        vec![CacheKey {
+            source: "nhl",
+            table: "api_cache",
+            id: self.endpoint.clone(),
+        }]
+    }
 
     fn upsert_query(&self) -> StaticPgQuery {
         bind!(

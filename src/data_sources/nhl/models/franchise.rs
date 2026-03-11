@@ -6,7 +6,7 @@ use sqlx::FromRow;
 use crate::{
     bind,
     common::{
-        db::{DbEntity, StaticPgQuery, StaticPgQueryAs},
+        db::{CacheKey, DbEntity, StaticPgQuery, StaticPgQueryAs},
         models::traits::{DbStruct, IntoDbStruct},
     },
     data_sources::NhlFranchiseKey,
@@ -70,9 +70,13 @@ impl DbEntity for NhlFranchise {
         sqlx::query_as::<_, Self::Pk>("SELECT id from nhl_franchise")
     }
 
-    // fn foreign_keys(&self) -> Vec<Self::Pk> {
-    //     vec![Self::Pk::api_cache(&self.endpoint)]
-    // }
+    fn foreign_keys(&self) -> Vec<CacheKey> {
+        vec![CacheKey {
+            source: "nhl",
+            table: "api_cache",
+            id: self.endpoint.clone(),
+        }]
+    }
 
     fn upsert_query(&self) -> StaticPgQuery {
         bind!(

@@ -6,7 +6,7 @@ use super::super::primary_key::*;
 use crate::{
     bind,
     common::{
-        db::{DbEntity, StaticPgQuery, StaticPgQueryAs},
+        db::{CacheKey, DbEntity, StaticPgQuery, StaticPgQueryAs},
         models::traits::{DbStruct, IntoDbStruct},
     },
     data_sources::models::{
@@ -212,16 +212,40 @@ impl DbEntity for NhlPlayoffSeriesGame {
         sqlx::query_as::<_, Self::Pk>("SELECT id from nhl_playoff_series_game")
     }
 
-    // fn foreign_keys(&self) -> Vec<Self::Pk> {
-    //     vec![
-    //         Self::Pk::api_cache(&self.endpoint),
-    //         Self::Pk::season(self.season_id),
-    //         Self::Pk::team(self.away_team_id),
-    //         Self::Pk::team(self.home_team_id),
-    //         Self::Pk::playoff_series(self.season_id, &self.series_letter),
-    //         Self::Pk::playoff_bracket_series(self.season_id, &self.series_letter),
-    //     ]
-    // }
+    fn foreign_keys(&self) -> Vec<CacheKey> {
+        vec![
+            CacheKey {
+                source: "nhl",
+                table: "api_cache",
+                id: self.endpoint.clone(),
+            },
+            CacheKey {
+                source: "nhl",
+                table: "season",
+                id: self.season_id.to_string(),
+            },
+            CacheKey {
+                source: "nhl",
+                table: "team",
+                id: self.away_team_id.to_string(),
+            },
+            CacheKey {
+                source: "nhl",
+                table: "team",
+                id: self.home_team_id.to_string(),
+            },
+            CacheKey {
+                source: "nhl",
+                table: "playoff_series",
+                id: format!("{}:{}", self.season_id, self.series_letter),
+            },
+            CacheKey {
+                source: "nhl",
+                table: "playoff_bracket_series",
+                id: format!("{}:{}", self.season_id, self.series_letter),
+            },
+        ]
+    }
 
     fn upsert_query(&self) -> StaticPgQuery {
         bind!(

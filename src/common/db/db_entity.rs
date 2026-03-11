@@ -41,7 +41,7 @@ pub trait DbEntity:
         self.pk().cache_key()
     }
 
-    fn foreign_keys(&self) -> Vec<Self::Pk> {
+    fn foreign_keys(&self) -> Vec<CacheKey> {
         vec![]
     }
 

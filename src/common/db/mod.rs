@@ -34,10 +34,14 @@ pub type StaticPgQueryAs<T> =
     sqlx::query::QueryAs<'static, sqlx::Postgres, T, sqlx::postgres::PgArguments>;
 
 pub mod db_entity;
+pub mod fk_helpers;
 pub mod init;
 pub mod worker;
 
 pub use db_entity::{DbEntity, DbEntityVecExt, PrimaryKey};
+pub use fk_helpers::{
+    all_foreign_keys_cached, find_missing_foreign_keys, group_cache_keys_by_table,
+};
 
 pub use init::DbContext;
 pub use worker::start_sqlx_worker;
