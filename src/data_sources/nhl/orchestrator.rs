@@ -1,3 +1,37 @@
+//! NHL data orchestration layer.
+//!
+//! ## Foreign key dependency management
+//!
+//! This module fetches and upserts NHL entities in the correct dependency order.
+//! Each `get_nhl_*` function assumes its dependencies are already cached.
+//!
+//! **Dependency graph (fetch in this order):**
+//! 1. Franchises (no dependencies)
+//! 2. Seasons (no dependencies)
+//! 3. Teams (depends on: franchises)
+//! 4. Players (depends on: teams - optional current_team_id)
+//! 5. Games (depends on: teams, seasons)
+//! 6. Playoff bracket series (depends on: seasons, teams)
+//! 7. Playoff series (depends on: seasons, teams, playoff bracket series)
+//! 8. Playoff series games (depends on: playoff series)
+//! 9. Roster spots (depends on: games, teams, players)
+//! 10. Plays (depends on: games)
+//! 11. Shifts (depends on: games, teams, players)
+//!
+//! **Usage pattern:**
+//! ```rust,ignore
+//! // At startup, warm the key cache from existing DB records
+//! warm_nhl_key_cache(&app_context, &db_context).await?;
+//!
+//! // Then fetch in dependency order (each function is idempotent)
+//! get_nhl_franchises(&app_context, &db_context, &nhl_api).await?;
+//! get_nhl_teams(&app_context, &db_context, &nhl_api).await?;
+//! get_nhl_games(&app_context, &db_context, &nhl_api).await?;
+//! ```
+//!
+//! All `get_nhl_*` functions check the key cache before upserting, so calling
+//! them multiple times is safe and cheap.
+
 use futures::stream::{self, StreamExt};
 use sqlx::postgres::PgQueryResult;
 
