@@ -102,11 +102,7 @@ pub trait DbEntity:
                 Ok(None)
             }
             Err(e) => {
-                tracing::warn!(
-                    "Failed to fetch from database using key {:?}: {:?}",
-                    id,
-                    e
-                );
+                tracing::warn!("Failed to fetch from database using key {:?}: {:?}", id, e);
                 Err(DSError::from(e))
             }
         }
