@@ -95,7 +95,7 @@ pub async fn reset_schema(pool: &DbPool, cfg: &Config) -> Result<(), DSError> {
     );
 
     // Infrastructure tables to preserve
-    let preserve_tables = vec!["api_cache", "data_source_error", "_sqlx_migrations"];
+    let preserve_tables = ["api_cache", "data_source_error", "_sqlx_migrations"];
 
     // Get all tables in public schema
     let tables: Vec<(String,)> = sqlx_operation_with_retries!(

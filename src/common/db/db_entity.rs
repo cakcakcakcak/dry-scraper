@@ -1,12 +1,7 @@
 #![allow(async_fn_in_trait)]
 
 use futures::stream::{self, StreamExt};
-use std::{
-    cmp::Eq,
-    collections::HashSet,
-    fmt::Debug,
-    hash::Hash,
-};
+use std::{cmp::Eq, fmt::Debug, hash::Hash};
 
 use async_trait::async_trait;
 use sqlx::{postgres::PgQueryResult, FromRow};
@@ -96,59 +91,24 @@ pub trait DbEntity:
         {
             Ok(Some(row)) => {
                 tracing::debug!(
-                    "Record found in lp database for key {:?}. Adding key to key cache",
+                    "Record found in database for key {:?}. Adding key to key cache",
                     id
                 );
                 db_context.key_cache.insert(id.cache_key());
                 Self::from_row(&row).map(Some).map_err(DSError::from)
             }
             Ok(None) => {
-                tracing::debug!("Record not found in lp database for key {:?}", id);
+                tracing::debug!("Record not found in database for key {:?}", id);
                 Ok(None)
             }
             Err(e) => {
                 tracing::warn!(
-                    "Failed to fetch from lp database using key {:?}: {:?}",
+                    "Failed to fetch from database using key {:?}: {:?}",
                     id,
                     e
                 );
                 Err(DSError::from(e))
             }
-        }
-    }
-
-    #[tracing::instrument(skip(db_context))]
-    async fn verify_relationships(
-        &self,
-        db_context: &DbContext,
-    ) -> Result<RelationshipIntegrity<Self::Pk>, DSError> {
-        self.foreign_keys().verify_keys(db_context).await
-    }
-
-    #[tracing::instrument(skip(db_context))]
-    async fn fix_relationships_and_upsert(
-        &self,
-        db_context: &DbContext,
-    ) -> Result<Option<PgQueryResult>, DSError> {
-        match self.verify_relationships(db_context).await? {
-            RelationshipIntegrity::AllValid => (),
-            RelationshipIntegrity::Missing(_keys) => {
-                // TODO: Step 1.4b - replace with resolve_foreign_keys pattern
-                // This FK resolution will be moved to orchestrator layer
-                tracing::warn!(
-                    "Missing foreign keys detected but auto-resolution removed in Step 1.4a"
-                );
-            }
-        }
-
-        if db_context.key_cache.contains(&self.cache_key()) {
-            tracing::debug!("Key cache contains {:?}, skipping upsert.", self.pk());
-            return Ok(None);
-        }
-
-        match self.upsert(db_context).await {
-            Ok(query_result) => Ok(Some(query_result)),
-            Err(e) => Err(e),
         }
     }
 
@@ -195,41 +155,7 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
         let items: Vec<T> = self.clone();
         let type_name = T::type_name();
 
-        tracing::debug!(
-            "Determining missing foreign keys for {} `{type_name}`s.",
-            items.len()
-        );
-        let mut missing_keys: HashSet<<T as DbEntity>::Pk> = HashSet::new();
-        for item in &items {
-            if db_context.key_cache.contains(&item.cache_key()) {
-                continue;
-            }
-            for fk in item.foreign_keys() {
-                if !db_context.key_cache.contains(&fk.cache_key()) {
-                    missing_keys.insert(fk);
-                }
-            }
-        }
-
-        let missing_keys: Vec<<T as DbEntity>::Pk> = missing_keys.into_iter().collect();
-        tracing::debug!(
-            "Collected {} unique foreign keys to verify",
-            missing_keys.len()
-        );
-
-        // TODO: Step 1.4b - replace with resolve_foreign_keys pattern
-        // This FK resolution will be moved to orchestrator layer
-        if !missing_keys.is_empty() {
-            tracing::warn!(
-                "Found {} missing foreign keys but auto-resolution removed in Step 1.4a",
-                missing_keys.len()
-            );
-        }
-
-        tracing::debug!(
-            "Phase 4: Upserting {} `{type_name}`s to lp database",
-            items.len()
-        );
+        tracing::debug!("Upserting {} `{type_name}`s to database", items.len());
         let mut receivers = Vec::new();
 
         let pb = app_context
@@ -240,11 +166,6 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
                 tracing::debug!("Key cache contains {:?}, skipping upsert.", item.pk());
                 pb.inc(1);
                 continue;
-            }
-            for fk in item.foreign_keys() {
-                if !db_context.key_cache.contains(&fk.cache_key()) {
-                    continue;
-                }
             }
 
             let (result_tx, result_rx) = tokio::sync::oneshot::channel::<SqlxJobResult>();
@@ -263,7 +184,7 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
 
         let _ = db_context.sqlx_tx.send(SqlxJobOrFlush::Flush).await;
 
-        // 3. Then wait for all results in parallel
+        // Wait for all results in parallel
         let pb = app_context
             .progress_reporter_mode
             .create_reporter(None, "Awaiting upsert results...");
@@ -287,12 +208,6 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
     }
 }
 
-#[derive(Debug)]
-pub enum RelationshipIntegrity<Pk: PrimaryKey> {
-    AllValid,
-    Missing(Vec<Pk>),
-}
-
 #[async_trait]
 pub trait PrimaryKey:
     Debug + Eq + Hash + Send + Sync + Unpin + for<'a> FromRow<'a, sqlx::postgres::PgRow>
@@ -305,36 +220,5 @@ pub trait PrimaryKey:
 
     async fn verify_by_key(self, db_context: &DbContext) -> Result<Option<Self>, DSError> {
         Self::Entity::verify_by_key(db_context, self).await
-    }
-}
-
-#[async_trait]
-pub trait PrimaryKeyExt<K: PrimaryKey> {
-    async fn verify_keys(self, db_context: &DbContext)
-        -> Result<RelationshipIntegrity<K>, DSError>;
-}
-#[async_trait]
-impl<K: PrimaryKey> PrimaryKeyExt<K> for Vec<K> {
-    async fn verify_keys(
-        self,
-        db_context: &DbContext,
-    ) -> Result<RelationshipIntegrity<K>, DSError> {
-        let mut missing: Vec<K> = vec![];
-
-        let results = stream::iter(self)
-            .map(|fk| async move { fk.verify_by_key(db_context).await })
-            .buffer_unordered(CONFIG.db_concurrency_limit)
-            .collect::<Vec<_>>()
-            .await;
-        for result in results {
-            if let Ok(Some(pk)) = result {
-                missing.push(pk)
-            }
-        }
-
-        match missing.len() {
-            0 => Ok(RelationshipIntegrity::AllValid),
-            _ => Ok(RelationshipIntegrity::Missing(missing)),
-        }
     }
 }

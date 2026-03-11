@@ -23,6 +23,11 @@ impl Debug for NhlWebApi {
         f.debug_struct("NhlWebApi").finish()
     }
 }
+impl Default for NhlWebApi {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 #[async_trait]
 impl CacheableApi for NhlWebApi {
     fn client(&self) -> &reqwest::Client {

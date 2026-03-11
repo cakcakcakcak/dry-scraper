@@ -21,6 +21,11 @@ pub struct NhlApi {
     nhl_stats_api: NhlStatsApi,
     nhl_web_api: NhlWebApi,
 }
+impl Default for NhlApi {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 #[async_trait]
 impl CacheableApi for NhlApi {
     fn client(&self) -> &reqwest::Client {

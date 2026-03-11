@@ -25,6 +25,11 @@ impl Debug for NhlStatsApi {
             .finish()
     }
 }
+impl Default for NhlStatsApi {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 #[async_trait]
 impl CacheableApi for NhlStatsApi {
     fn client(&self) -> &reqwest::Client {

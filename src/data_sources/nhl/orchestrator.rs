@@ -303,12 +303,9 @@ pub async fn get_nhl_playoff_series(
     let series: NhlPlayoffSeries = series_json.clone().into_db_struct();
     tracing::info!("Parsed playoff series into lp database struct.");
 
-    tracing::info!("Upserting playoff series into lp database.",);
-
-    // series
-    //     .fix_relationships_and_upsert(db_context, nhl_api)
-    //     .await?;
-    tracing::info!("Upserted playoff series into lp database.",);
+    tracing::debug!(
+        "playoff series upsert deferred to orchestrator (use resolve_foreign_keys in step 1.4c)"
+    );
 
     let series_game_jsons: Vec<ItemParsedWithContext<NhlPlayoffSeriesGameJson>> = series_json
         .item
