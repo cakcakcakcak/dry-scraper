@@ -5,9 +5,8 @@ use sqlx::{migrate::MigrateDatabase, postgres::PgPoolOptions};
 use tokio_retry::RetryIf;
 
 use crate::{
-    any_primary_key::AnyPrimaryKey,
     common::{
-        db::{start_sqlx_worker, worker::WorkerConfig, DbPool, SqlxJobSender},
+        db::{start_sqlx_worker, worker::WorkerConfig, CacheKey, DbPool, SqlxJobSender},
         errors::DSError,
         util::{default_retry_strategy, is_transient_sqlx_error},
     },
@@ -19,7 +18,7 @@ use crate::{
 pub struct DbContext {
     pub pool: DbPool,
     pub sqlx_tx: SqlxJobSender,
-    pub key_cache: Arc<DashSet<AnyPrimaryKey>>,
+    pub key_cache: Arc<DashSet<CacheKey>>,
 }
 impl DbContext {
     pub async fn connect(cfg: &Config) -> Result<DbContext, DSError> {

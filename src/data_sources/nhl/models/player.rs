@@ -196,23 +196,23 @@ impl DbStruct for NhlPlayer {
 }
 #[async_trait]
 impl DbEntity for NhlPlayer {
-    type Pk = NhlPrimaryKey;
+    type Pk = NhlPlayerKey;
 
     fn pk(&self) -> Self::Pk {
-        Self::Pk::Player(NhlPlayerKey { id: self.id })
+        NhlPlayerKey { id: self.id }
     }
 
     fn select_key_query() -> StaticPgQueryAs<Self::Pk> {
-        sqlx::query_as::<_, Self::Pk>("SELECT 'nhl_player' AS table_name, id from nhl_player")
+        sqlx::query_as::<_, Self::Pk>("SELECT id from nhl_player")
     }
 
-    fn foreign_keys(&self) -> Vec<Self::Pk> {
-        let mut keys = vec![Self::Pk::api_cache(&self.endpoint)];
-        if let Some(current_team_id) = self.current_team_id {
-            keys.push(Self::Pk::team(current_team_id));
-        }
-        keys
-    }
+    // fn foreign_keys(&self) -> Vec<Self::Pk> {
+    //     let mut keys = vec![Self::Pk::api_cache(&self.endpoint)];
+    //     if let Some(current_team_id) = self.current_team_id {
+    //         keys.push(Self::Pk::team(current_team_id));
+    //     }
+    //     keys
+    // }
 
     fn upsert_query(&self) -> StaticPgQuery {
         bind!(

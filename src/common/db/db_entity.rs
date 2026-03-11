@@ -2,7 +2,7 @@
 
 use futures::stream::{self, StreamExt};
 use std::{
-    cmp::{min, Eq},
+    cmp::Eq,
     collections::HashSet,
     fmt::Debug,
     hash::Hash,
@@ -12,11 +12,12 @@ use async_trait::async_trait;
 use sqlx::{postgres::PgQueryResult, FromRow};
 
 use crate::{
-    any_primary_key::AnyPrimaryKey,
     common::{
-        api::CacheableApi,
         app_context::AppContext,
-        db::{DbContext, SqlxJob, SqlxJobOrFlush, SqlxJobResult, StaticPgQuery, StaticPgQueryAs},
+        db::{
+            CacheKey, DbContext, SqlxJob, SqlxJobOrFlush, SqlxJobResult, StaticPgQuery,
+            StaticPgQueryAs,
+        },
         errors::DSError,
         models::traits::HasTypeName,
         util::track_and_filter_errors,
@@ -37,12 +38,12 @@ pub trait DbEntity:
     + for<'a> FromRow<'a, sqlx::postgres::PgRow>
     + 'static
 {
-    type Pk: PrimaryKey;
+    type Pk: PrimaryKey<Entity = Self>;
 
     fn pk(&self) -> Self::Pk;
 
-    fn any_pk(&self) -> AnyPrimaryKey {
-        self.pk().any_pk()
+    fn cache_key(&self) -> CacheKey {
+        self.pk().cache_key()
     }
 
     fn foreign_keys(&self) -> Vec<Self::Pk> {
@@ -57,7 +58,7 @@ pub trait DbEntity:
         let select_query: StaticPgQueryAs<Self::Pk> = Self::select_key_query();
         let key_vec: Vec<Self::Pk> = select_query.fetch_all(&db_context.pool).await?;
         for entity in key_vec {
-            db_context.key_cache.insert(entity.any_pk());
+            db_context.key_cache.insert(entity.cache_key());
         }
         Ok(())
     }
@@ -71,7 +72,7 @@ pub trait DbEntity:
         db_context: &DbContext,
         id: Self::Pk,
     ) -> Result<Option<Self::Pk>, DSError> {
-        if db_context.key_cache.contains(&id.any_pk()) {
+        if db_context.key_cache.contains(&id.cache_key()) {
             return Ok(None);
         }
         match Self::fetch_from_db_by_key(db_context, &id).await {
@@ -98,7 +99,7 @@ pub trait DbEntity:
                     "Record found in lp database for key {:?}. Adding key to key cache",
                     id
                 );
-                db_context.key_cache.insert(id.any_pk());
+                db_context.key_cache.insert(id.cache_key());
                 Self::from_row(&row).map(Some).map_err(DSError::from)
             }
             Ok(None) => {
@@ -124,24 +125,23 @@ pub trait DbEntity:
         self.foreign_keys().verify_keys(db_context).await
     }
 
-    #[tracing::instrument(skip(db_context, api))]
+    #[tracing::instrument(skip(db_context))]
     async fn fix_relationships_and_upsert(
         &self,
         db_context: &DbContext,
-        api: &<Self::Pk as PrimaryKey>::Api,
     ) -> Result<Option<PgQueryResult>, DSError> {
         match self.verify_relationships(db_context).await? {
             RelationshipIntegrity::AllValid => (),
-            RelationshipIntegrity::Missing(keys) => {
-                stream::iter(keys)
-                    .map(|key| async move { key.upsert_from_api(db_context, api).await })
-                    .buffer_unordered(CONFIG.db_concurrency_limit)
-                    .collect::<Vec<_>>()
-                    .await;
+            RelationshipIntegrity::Missing(_keys) => {
+                // TODO: Step 1.4b - replace with resolve_foreign_keys pattern
+                // This FK resolution will be moved to orchestrator layer
+                tracing::warn!(
+                    "Missing foreign keys detected but auto-resolution removed in Step 1.4a"
+                );
             }
         }
 
-        if db_context.key_cache.contains(&self.any_pk()) {
+        if db_context.key_cache.contains(&self.cache_key()) {
             tracing::debug!("Key cache contains {:?}, skipping upsert.", self.pk());
             return Ok(None);
         }
@@ -164,7 +164,7 @@ pub trait DbEntity:
 
         match result_rx.await {
             Ok(Ok(pg_result)) => {
-                db_context.key_cache.insert(self.any_pk());
+                db_context.key_cache.insert(self.cache_key());
                 Ok(pg_result)
             }
             Ok(Err(e)) => Err(DSError::DatabaseCustom(format!("Upsert failed: {e}"))),
@@ -178,16 +178,14 @@ pub trait DbEntityVecExt<T: DbEntity> {
         &self,
         app_context: &AppContext,
         db_context: &DbContext,
-        api: &<<T as DbEntity>::Pk as PrimaryKey>::Api,
     ) -> Vec<Option<PgQueryResult>>;
 }
 impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
-    #[tracing::instrument(skip(self, app_context, db_context, api))]
+    #[tracing::instrument(skip(self, app_context, db_context))]
     async fn upsert_all(
         &self,
         app_context: &AppContext,
         db_context: &DbContext,
-        api: &<<T as DbEntity>::Pk as PrimaryKey>::Api,
     ) -> Vec<Option<PgQueryResult>> {
         if self.is_empty() {
             tracing::debug!("No items to upsert, returning early");
@@ -203,11 +201,11 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
         );
         let mut missing_keys: HashSet<<T as DbEntity>::Pk> = HashSet::new();
         for item in &items {
-            if db_context.key_cache.contains(&item.any_pk()) {
+            if db_context.key_cache.contains(&item.cache_key()) {
                 continue;
             }
             for fk in item.foreign_keys() {
-                if !db_context.key_cache.contains(&fk.any_pk()) {
+                if !db_context.key_cache.contains(&fk.cache_key()) {
                     missing_keys.insert(fk);
                 }
             }
@@ -219,15 +217,14 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
             missing_keys.len()
         );
 
-        tracing::debug!("Upserting {} missing foreign keys", missing_keys.len());
-        stream::iter(missing_keys)
-            .map(|key| async move { key.upsert_from_api(db_context, api).await })
-            .buffer_unordered(min(
-                CONFIG.api_concurrency_limit,
-                CONFIG.db_concurrency_limit,
-            ))
-            .collect::<Vec<_>>()
-            .await;
+        // TODO: Step 1.4b - replace with resolve_foreign_keys pattern
+        // This FK resolution will be moved to orchestrator layer
+        if !missing_keys.is_empty() {
+            tracing::warn!(
+                "Found {} missing foreign keys but auto-resolution removed in Step 1.4a",
+                missing_keys.len()
+            );
+        }
 
         tracing::debug!(
             "Phase 4: Upserting {} `{type_name}`s to lp database",
@@ -239,13 +236,13 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
             .progress_reporter_mode
             .create_reporter(None, "Dispatching upsert queries...");
         for item in items {
-            if db_context.key_cache.contains(&item.any_pk()) {
+            if db_context.key_cache.contains(&item.cache_key()) {
                 tracing::debug!("Key cache contains {:?}, skipping upsert.", item.pk());
                 pb.inc(1);
                 continue;
             }
             for fk in item.foreign_keys() {
-                if !db_context.key_cache.contains(&fk.any_pk()) {
+                if !db_context.key_cache.contains(&fk.cache_key()) {
                     continue;
                 }
             }
@@ -274,7 +271,7 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
             .map(|(item, rx)| async move {
                 match rx.await {
                     Ok(Ok(pg_result)) => {
-                        db_context.key_cache.insert(item.any_pk());
+                        db_context.key_cache.insert(item.cache_key());
                         Ok(Some(pg_result))
                     }
                     Ok(Err(e)) => Err(DSError::DatabaseCustom(format!("Upsert failed: {e}"))),
@@ -300,16 +297,15 @@ pub enum RelationshipIntegrity<Pk: PrimaryKey> {
 pub trait PrimaryKey:
     Debug + Eq + Hash + Send + Sync + Unpin + for<'a> FromRow<'a, sqlx::postgres::PgRow>
 {
-    type Api: CacheableApi + Send + Sync;
-
-    fn any_pk(&self) -> AnyPrimaryKey;
+    type Entity: DbEntity<Pk = Self>;
 
     fn create_select_query(&self) -> StaticPgQuery;
 
-    async fn upsert_from_api(&self, db_context: &DbContext, api: &Self::Api)
-        -> Result<(), DSError>;
+    fn cache_key(&self) -> CacheKey;
 
-    async fn verify_by_key(self, db_context: &DbContext) -> Result<Option<Self>, DSError>;
+    async fn verify_by_key(self, db_context: &DbContext) -> Result<Option<Self>, DSError> {
+        Self::Entity::verify_by_key(db_context, self).await
+    }
 }
 
 #[async_trait]

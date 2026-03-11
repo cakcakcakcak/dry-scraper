@@ -4,7 +4,7 @@ use serde_json;
 use sqlx::postgres::types::PgInterval;
 use sqlx::FromRow;
 
-use super::super::{NhlPlayKey, NhlPrimaryKey};
+use super::super::NhlPlayKey;
 use super::{DefendingSide, NhlGameContext, PeriodDescriptorJson, PeriodTypeJson};
 use crate::impl_pk_debug;
 use crate::{
@@ -105,27 +105,25 @@ impl DbStruct for NhlPlay {
 }
 #[async_trait]
 impl DbEntity for NhlPlay {
-    type Pk = NhlPrimaryKey;
+    type Pk = NhlPlayKey;
 
     fn pk(&self) -> Self::Pk {
-        Self::Pk::Play(NhlPlayKey {
+        NhlPlayKey {
             game_id: self.game_id,
             event_id: self.event_id,
-        })
+        }
     }
 
     fn select_key_query() -> StaticPgQueryAs<Self::Pk> {
-        sqlx::query_as::<_, Self::Pk>(
-            "SELECT 'nhl_play' AS table_name, game_id, event_id from nhl_play",
-        )
+        sqlx::query_as::<_, Self::Pk>("SELECT game_id, event_id from nhl_play")
     }
 
-    fn foreign_keys(&self) -> Vec<Self::Pk> {
-        vec![
-            Self::Pk::api_cache(&self.endpoint),
-            Self::Pk::game(self.game_id),
-        ]
-    }
+    // fn foreign_keys(&self) -> Vec<Self::Pk> {
+    //     vec![
+    //         Self::Pk::api_cache(&self.endpoint),
+    //         Self::Pk::game(self.game_id),
+    //     ]
+    // }
 
     fn upsert_query(&self) -> StaticPgQuery {
         bind!(

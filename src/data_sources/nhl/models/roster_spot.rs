@@ -80,29 +80,27 @@ impl DbStruct for NhlRosterSpot {
 
 #[async_trait]
 impl DbEntity for NhlRosterSpot {
-    type Pk = NhlPrimaryKey;
+    type Pk = NhlRosterSpotKey;
 
     fn pk(&self) -> Self::Pk {
-        Self::Pk::RosterSpot(NhlRosterSpotKey {
+        NhlRosterSpotKey {
             game_id: self.game_id,
             player_id: self.player_id,
-        })
+        }
     }
 
     fn select_key_query() -> StaticPgQueryAs<Self::Pk> {
-        sqlx::query_as::<_, Self::Pk>(
-            "SELECT 'nhl_roster_spot' AS table_name, game_id, player_id from nhl_roster_spot",
-        )
+        sqlx::query_as::<_, Self::Pk>("SELECT game_id, player_id from nhl_roster_spot")
     }
 
-    fn foreign_keys(&self) -> Vec<Self::Pk> {
-        vec![
-            Self::Pk::api_cache(&self.endpoint),
-            Self::Pk::game(self.game_id),
-            Self::Pk::player(self.player_id),
-            Self::Pk::team(self.team_id),
-        ]
-    }
+    // fn foreign_keys(&self) -> Vec<Self::Pk> {
+    //     vec![
+    //         Self::Pk::api_cache(&self.endpoint),
+    //         Self::Pk::game(self.game_id),
+    //         Self::Pk::player(self.player_id),
+    //         Self::Pk::team(self.team_id),
+    //     ]
+    // }
 
     fn upsert_query(&self) -> StaticPgQuery {
         bind!(
@@ -120,7 +118,7 @@ impl DbEntity for NhlRosterSpot {
                                         endpoint
                                     ) VALUES (
                                         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-                                    ON CONFLICT (game_id, player_id) DO UPDATE SET 
+                                    ON CONFLICT (game_id, player_id) DO UPDATE SET
                                         game_id = EXCLUDED.game_id,
                                         player_id = EXCLUDED.player_id,
                                         team_id = EXCLUDED.team_id,

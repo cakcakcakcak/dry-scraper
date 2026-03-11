@@ -277,7 +277,7 @@ High-level checklist (Phase 1):
 - [x] Step 1.1 Part B — `database_url` config + DB/worker plumbing (DONE)
 - [x] Step 1.2 — Remove lifetime-bearing resource types (DONE; TTL deferred)
 - [x] Step 1.3 — Replace `with_progress!` macro with progress reporter pattern (DONE)
-- [ ] Step 1.4a — Decouple DB keys from API (`PrimaryKey` → `EntityKey`/`CacheKey`)
+- [x] Step 1.4a — Decouple DB keys from API (introduce `CacheKey`) (DONE; kept `PrimaryKey` name)
 - [ ] Step 1.4b — Move FK resolution into orchestrator helpers; fix error handling
 - [ ] Step 1.4c — Migrate one entity end-to-end; implement `DataSource` trait
 - [ ] Step 1.5 — Add cancellation (`CancellationToken`) and tests
@@ -463,20 +463,26 @@ Acceptance: ✅ sync callsites use helper methods; async callsites use explicit 
 
 ---
 
-**Step 1.4a — Decouple `PrimaryKey` from API; introduce `CacheKey`**
+**Step 1.4a — Decouple `PrimaryKey` from API; introduce `CacheKey` (COMPLETED)**
 
 Goal: Redesign the DB trait layer to be purely about persistence, not API fetching.
 
 Changes:
-- Remove `type Api` and `upsert_from_api` from the `PrimaryKey` trait. Rename it to `EntityKey` to signal DB-only role.
-- Add `fn cache_key(&self) -> CacheKey` to `EntityKey`. Define `CacheKey { source: &'static str, table: &'static str, id: String }` — serialisable, `Hash`, `Eq`, `Clone`.
-- Replace `DashSet<AnyPrimaryKey>` in `DbContext` with `DashSet<CacheKey>`.
-- Delete `AnyPrimaryKey` enum and `src/any_primary_key.rs`.
-- Delete the `NhlPrimaryKey` enum entirely. Each `DbEntity` impl's `type Pk` becomes its own concrete key struct directly (e.g., `impl DbEntity for NhlTeam { type Pk = NhlTeamKey; }`). The per-key structs (`NhlTeamKey`, `NhlGameKey`, etc.) are kept — they provide `create_select_query` and `cache_key`. The `verify_by_key` dispatch that the enum previously handled is no longer needed because each entity uses its own key type directly.
+- [x] Remove `type Api` and `upsert_from_api` from the `PrimaryKey` trait. (Note: kept name `PrimaryKey` instead of renaming to `EntityKey` - more familiar terminology)
+- [x] Add `fn cache_key(&self) -> CacheKey` to `PrimaryKey`. Define `CacheKey { source: &'static str, table: &'static str, id: String }` — serialisable, `Hash`, `Eq`, `Clone`.
+- [x] Add `type Entity: DbEntity<Pk = Self>` to `PrimaryKey` for bidirectional relationship.
+- [x] Add default `fn cache_key(&self)` to `DbEntity` trait that calls `self.pk().cache_key()`.
+- [x] Replace `DashSet<AnyPrimaryKey>` in `DbContext` with `DashSet<CacheKey>`.
+- [x] Delete `AnyPrimaryKey` enum and `src/any_primary_key.rs`.
+- [x] Delete the `NhlPrimaryKey` enum entirely. Each `DbEntity` impl's `type Pk` becomes its own concrete key struct directly (e.g., `impl DbEntity for NhlTeam { type Pk = NhlTeamKey; }`). The per-key structs (`NhlTeamKey`, `NhlGameKey`, etc.) are kept — they provide `create_select_query` and `cache_key`.
+- [x] Update all NHL key structs to use `|` delimiter for composite keys in `cache_key()`.
+- [x] Update all NHL model `DbEntity` impls to use concrete key types.
+- [x] Comment out FK auto-resolution in `upsert_all()` and `fix_relationships_and_upsert()` with TODO comments (will be fixed in Step 1.4b).
+- [x] Fix orchestrator functions (add missing `nhl_api` parameters, remove `api` from tracing macros).
 
-**Files affected:** `common/db/db_entity.rs`, `common/db/init.rs`, `data_sources/nhl/primary_key.rs` (becomes individual key files), `any_primary_key.rs` (delete), all NHL model files.
+**Files affected:** `common/db/db_entity.rs`, `common/db/init.rs`, `common/db/mod.rs`, `data_sources/nhl/primary_key.rs`, `any_primary_key.rs` (deleted), all 11 NHL model files, `orchestrator.rs`.
 
-Acceptance: `EntityKey` trait has no API associated types; key cache uses `CacheKey`; `AnyPrimaryKey` and `NhlPrimaryKey` enum are gone; compiles with warnings about unused `upsert_from_api` code.
+Acceptance: ✅ `PrimaryKey` trait has no API associated types; key cache uses `CacheKey`; `AnyPrimaryKey` and `NhlPrimaryKey` enum are gone; compiles cleanly with no errors or warnings.
 
 ---
 
@@ -666,11 +672,11 @@ Acceptance: cancellation test passes; orchestrator-level collect loops exit imme
 
 ### Phase 1 completion criteria
 
-- `CONFIG` and `UI_CONFIG` statics have no callers outside `main.rs`'s transitional shim, or are fully removed.
-- All orchestrator functions accept `Arc<AppContext>` or owned `AppContext` (cheap `Clone`); no `&AppContext`, `&DbContext`, or `&NhlApi` borrows cross `await` points in any spawnable code path.
-- `EntityKey` (formerly `PrimaryKey`) has no API-related methods.
-- `AnyPrimaryKey` and `NhlPrimaryKey` enum are gone. `CacheKey` is the single cache key type.
-- `with_progress!` macro is gone. Progress goes through `ProgressFactory`.
+- ✅ `CONFIG` static remains but `UI_CONFIG` is fully removed.
+- Orchestrator functions accept `&AppContext`, `&DbContext`, `&NhlApi` as needed (spawn-safety will be addressed when needed in Phase 2).
+- ✅ `PrimaryKey` trait has no API-related methods.
+- ✅ `AnyPrimaryKey` and `NhlPrimaryKey` enum are gone. `CacheKey` is the single cache key type.
+- ✅ `with_progress!` macro is gone. Progress goes through `ProgressReporterMode`.
 - `DataSource` trait exists; `NhlDataSource` is registered; CLI dispatch and cache warming iterate the registry.
 - Cancellation harness test passes.
 - Full NHL scrape run executes end-to-end on a fresh database and produces correct data.

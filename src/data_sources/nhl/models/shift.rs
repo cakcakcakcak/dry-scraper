@@ -4,7 +4,6 @@ use serde_json;
 use sqlx::postgres::types::PgInterval;
 use sqlx::FromRow;
 
-use super::super::NhlPrimaryKey;
 use crate::data_sources::models::NhlDefaultContext;
 use crate::data_sources::NhlShiftKey;
 use crate::impl_pk_debug;
@@ -128,30 +127,28 @@ impl DbStruct for NhlShift {
 }
 #[async_trait]
 impl DbEntity for NhlShift {
-    type Pk = NhlPrimaryKey;
+    type Pk = NhlShiftKey;
 
     fn pk(&self) -> Self::Pk {
-        Self::Pk::Shift(NhlShiftKey {
+        NhlShiftKey {
             game_id: self.game_id,
             player_id: self.player_id,
             shift_number: self.shift_number,
-        })
+        }
     }
 
     fn select_key_query() -> StaticPgQueryAs<Self::Pk> {
-        sqlx::query_as::<_, Self::Pk>(
-            "SELECT 'nhl_shift' AS table_name, game_id, player_id, shift_number from nhl_shift",
-        )
+        sqlx::query_as::<_, Self::Pk>("SELECT game_id, player_id, shift_number from nhl_shift")
     }
 
-    fn foreign_keys(&self) -> Vec<Self::Pk> {
-        vec![
-            Self::Pk::api_cache(&self.endpoint),
-            Self::Pk::game(self.game_id),
-            Self::Pk::player(self.player_id),
-            Self::Pk::team(self.team_id),
-        ]
-    }
+    // fn foreign_keys(&self) -> Vec<Self::Pk> {
+    //     vec![
+    //         Self::Pk::api_cache(&self.endpoint),
+    //         Self::Pk::game(self.game_id),
+    //         Self::Pk::player(self.player_id),
+    //         Self::Pk::team(self.team_id),
+    //     ]
+    // }
 
     fn upsert_query(&self) -> StaticPgQuery {
         bind!(

@@ -1,4 +1,3 @@
-pub mod any_primary_key;
 pub mod common;
 pub mod config;
 pub mod data_sources;

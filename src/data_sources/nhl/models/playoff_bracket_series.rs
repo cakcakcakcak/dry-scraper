@@ -171,29 +171,29 @@ impl DbStruct for NhlPlayoffBracketSeries {
 }
 #[async_trait]
 impl DbEntity for NhlPlayoffBracketSeries {
-    type Pk = NhlPrimaryKey;
+    type Pk = NhlPlayoffBracketSeriesKey;
 
     fn pk(&self) -> Self::Pk {
-        Self::Pk::PlayoffBracketSeries(NhlPlayoffBracketSeriesKey {
+        NhlPlayoffBracketSeriesKey {
             season_id: self.season_id,
             series_letter: self.series_letter.clone(),
-        })
+        }
     }
 
     fn select_key_query() -> StaticPgQueryAs<Self::Pk> {
         sqlx::query_as::<_, Self::Pk>(
-            "SELECT 'nhl_playoff_bracket_series' AS table_name, season_id, series_letter from nhl_playoff_bracket_series",
+            "SELECT season_id, series_letter from nhl_playoff_bracket_series",
         )
     }
 
-    fn foreign_keys(&self) -> Vec<Self::Pk> {
-        vec![
-            Self::Pk::api_cache(&self.endpoint),
-            Self::Pk::season(self.season_id),
-            Self::Pk::team(self.top_seed_team_id),
-            Self::Pk::team(self.bottom_seed_team_id),
-        ]
-    }
+    // fn foreign_keys(&self) -> Vec<Self::Pk> {
+    //     vec![
+    //         Self::Pk::api_cache(&self.endpoint),
+    //         Self::Pk::season(self.season_id),
+    //         Self::Pk::team(self.top_seed_team_id),
+    //         Self::Pk::team(self.bottom_seed_team_id),
+    //     ]
+    // }
 
     fn upsert_query(&self) -> StaticPgQuery {
         bind!(

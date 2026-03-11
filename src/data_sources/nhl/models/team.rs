@@ -67,41 +67,37 @@ impl DbStruct for NhlTeam {
 }
 #[async_trait]
 impl DbEntity for NhlTeam {
-    type Pk = NhlPrimaryKey;
+    type Pk = NhlTeamKey;
 
     fn pk(&self) -> Self::Pk {
-        Self::Pk::Team(NhlTeamKey { id: self.id })
+        NhlTeamKey { id: self.id }
     }
 
     fn select_key_query() -> StaticPgQueryAs<Self::Pk> {
-        sqlx::query_as::<_, Self::Pk>("SELECT 'nhl_team' AS table_name, id from nhl_team")
+        sqlx::query_as::<_, Self::Pk>("SELECT id from nhl_team")
     }
 
     fn foreign_keys(&self) -> Vec<Self::Pk> {
-        let mut keys = vec![Self::Pk::api_cache(&self.endpoint)];
-        if let Some(franchise_id) = self.franchise_id {
-            keys.push(Self::Pk::franchise(franchise_id));
-        }
-        keys
+        vec![] // TODO: Step 1.4b - FK resolution moves to orchestrator
     }
 
     fn upsert_query(&self) -> StaticPgQuery {
         bind!(
             sqlx::query(
                 r#"INSERT INTO nhl_team (
-                                        id, 
-                                        franchise_id, 
-                                        full_name, 
-                                        league_id, 
-                                        raw_tricode, 
+                                        id,
+                                        franchise_id,
+                                        full_name,
+                                        league_id,
+                                        raw_tricode,
                                         tricode,
                                         raw_json,
                                         endpoint
                                     ) VALUES (
                                         $1,$2,$3,$4,$5,$6,$7,$8)
-                                    ON CONFLICT (id) DO UPDATE SET 
+                                    ON CONFLICT (id) DO UPDATE SET
                                         franchise_id = EXCLUDED.franchise_id,
-                                        full_name = EXCLUDED.full_name, 
+                                        full_name = EXCLUDED.full_name,
                                         league_id = EXCLUDED.league_id,
                                         raw_tricode = EXCLUDED.raw_tricode,
                                         tricode = EXCLUDED.tricode,

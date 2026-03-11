@@ -1,3 +1,22 @@
+use std::hash::{Hash, Hasher};
+
+/// Type-erased key for the DB key cache.
+/// Represents any entity key across all data sources.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CacheKey {
+    pub source: &'static str,
+    pub table: &'static str,
+    pub id: String,
+}
+
+impl Hash for CacheKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.source.hash(state);
+        self.table.hash(state);
+        self.id.hash(state);
+    }
+}
+
 pub type DbPool = sqlx::Pool<sqlx::Postgres>;
 pub struct SqlxJob {
     pub query: StaticPgQuery,
@@ -19,5 +38,6 @@ pub mod init;
 pub mod worker;
 
 pub use db_entity::{DbEntity, DbEntityVecExt, PrimaryKey};
+
 pub use init::DbContext;
 pub use worker::start_sqlx_worker;

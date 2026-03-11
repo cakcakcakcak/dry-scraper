@@ -151,55 +151,55 @@ impl DbStruct for NhlSeason {
 
 #[async_trait]
 impl DbEntity for NhlSeason {
-    type Pk = NhlPrimaryKey;
+    type Pk = NhlSeasonKey;
 
     fn pk(&self) -> Self::Pk {
-        Self::Pk::Season(NhlSeasonKey { id: self.id })
+        NhlSeasonKey { id: self.id }
     }
 
     fn select_key_query() -> StaticPgQueryAs<Self::Pk> {
-        sqlx::query_as::<_, Self::Pk>("SELECT 'nhl_season' AS table_name, id from nhl_season")
+        sqlx::query_as::<_, Self::Pk>("SELECT id from nhl_season")
     }
 
-    fn foreign_keys(&self) -> Vec<Self::Pk> {
-        vec![Self::Pk::api_cache(&self.endpoint)]
-    }
+    // fn foreign_keys(&self) -> Vec<Self::Pk> {
+    //     vec![Self::Pk::api_cache(&self.endpoint)]
+    // }
 
     fn upsert_query(&self) -> StaticPgQuery {
         bind!(
             sqlx::query(
                 r#"INSERT INTO nhl_season (
-                                        id, 
-                                        all_star_game_in_use, 
-                                        conferences_in_use, 
-                                        divisions_in_use, 
-                                        end_date, 
-                                        entry_draft_in_use, 
-                                        formatted_season_id, 
-                                        minimum_playoff_minutes_for_goalie_stats_leaders, 
-                                        minimum_regular_games_for_goalie_stats_leaders, 
-                                        nhl_stanley_cup_owner, 
-                                        number_of_games, 
-                                        olympics_participation, 
-                                        point_for_ot_loss_in_use, 
-                                        preseason_startdate, 
-                                        regular_season_end_date, 
-                                        row_in_use, 
-                                        season_ordinal, 
-                                        start_date, 
-                                        supplemental_draft_in_use, 
-                                        ties_in_use, 
-                                        total_playoff_games, 
-                                        total_regular_season_games, 
+                                        id,
+                                        all_star_game_in_use,
+                                        conferences_in_use,
+                                        divisions_in_use,
+                                        end_date,
+                                        entry_draft_in_use,
+                                        formatted_season_id,
+                                        minimum_playoff_minutes_for_goalie_stats_leaders,
+                                        minimum_regular_games_for_goalie_stats_leaders,
+                                        nhl_stanley_cup_owner,
+                                        number_of_games,
+                                        olympics_participation,
+                                        point_for_ot_loss_in_use,
+                                        preseason_startdate,
+                                        regular_season_end_date,
+                                        row_in_use,
+                                        season_ordinal,
+                                        start_date,
+                                        supplemental_draft_in_use,
+                                        ties_in_use,
+                                        total_playoff_games,
+                                        total_regular_season_games,
                                         wildcard_in_use,
                                         raw_json,
                                         endpoint
                                     ) VALUES (
                                         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
                                         $14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
-                                    ON CONFLICT (id) DO UPDATE SET 
+                                    ON CONFLICT (id) DO UPDATE SET
                                         all_star_game_in_use = EXCLUDED.all_star_game_in_use,
-                                        conferences_in_use = EXCLUDED.conferences_in_use, 
+                                        conferences_in_use = EXCLUDED.conferences_in_use,
                                         divisions_in_use = EXCLUDED.divisions_in_use,
                                         end_date = EXCLUDED.end_date,
                                         entry_draft_in_use = EXCLUDED.entry_draft_in_use,

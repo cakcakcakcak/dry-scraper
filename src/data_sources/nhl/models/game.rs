@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
 
-use super::super::{NhlGameKey, NhlPrimaryKey};
+use super::super::NhlGameKey;
 use super::{
     GameType, LocalizedNameJson, NhlDefaultContext, NhlPlayJson, NhlRosterSpotJson,
     PeriodDescriptorJson, PeriodTypeJson,
@@ -212,24 +212,24 @@ impl DbStruct for NhlGame {
 }
 #[async_trait]
 impl DbEntity for NhlGame {
-    type Pk = NhlPrimaryKey;
+    type Pk = NhlGameKey;
 
     fn pk(&self) -> Self::Pk {
-        Self::Pk::Game(NhlGameKey { id: self.id })
+        NhlGameKey { id: self.id }
     }
 
     fn select_key_query() -> StaticPgQueryAs<Self::Pk> {
-        sqlx::query_as::<_, Self::Pk>("SELECT 'nhl_game' AS table_name, id from nhl_game")
+        sqlx::query_as::<_, Self::Pk>("SELECT id from nhl_game")
     }
 
-    fn foreign_keys(&self) -> Vec<Self::Pk> {
-        vec![
-            Self::Pk::api_cache(&self.endpoint),
-            Self::Pk::season(self.season),
-            Self::Pk::team(self.away_team_id),
-            Self::Pk::team(self.home_team_id),
-        ]
-    }
+    // fn foreign_keys(&self) -> Vec<Self::Pk> {
+    //     vec![
+    //         Self::Pk::api_cache(&self.endpoint),
+    //         Self::Pk::season(self.season),
+    //         Self::Pk::team(self.away_team_id),
+    //         Self::Pk::team(self.home_team_id),
+    //     ]
+    // }
 
     fn upsert_query(&self) -> StaticPgQuery {
         bind!(

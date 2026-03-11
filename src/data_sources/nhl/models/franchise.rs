@@ -9,10 +9,10 @@ use crate::{
         db::{DbEntity, StaticPgQuery, StaticPgQueryAs},
         models::traits::{DbStruct, IntoDbStruct},
     },
+    data_sources::NhlFranchiseKey,
     impl_has_type_name, impl_pk_debug,
 };
 
-use super::super::{NhlFranchiseKey, NhlPrimaryKey};
 use super::NhlDefaultContext;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -60,35 +60,35 @@ impl DbStruct for NhlFranchise {
 }
 #[async_trait]
 impl DbEntity for NhlFranchise {
-    type Pk = NhlPrimaryKey;
+    type Pk = NhlFranchiseKey;
 
     fn pk(&self) -> Self::Pk {
-        Self::Pk::Franchise(NhlFranchiseKey { id: self.id })
+        NhlFranchiseKey { id: self.id }
     }
 
     fn select_key_query() -> StaticPgQueryAs<Self::Pk> {
-        sqlx::query_as::<_, Self::Pk>("SELECT 'nhl_franchise' AS table_name, id from nhl_franchise")
+        sqlx::query_as::<_, Self::Pk>("SELECT id from nhl_franchise")
     }
 
-    fn foreign_keys(&self) -> Vec<Self::Pk> {
-        vec![Self::Pk::api_cache(&self.endpoint)]
-    }
+    // fn foreign_keys(&self) -> Vec<Self::Pk> {
+    //     vec![Self::Pk::api_cache(&self.endpoint)]
+    // }
 
     fn upsert_query(&self) -> StaticPgQuery {
         bind!(
             sqlx::query(
                 r#"INSERT INTO nhl_franchise (
-                                        id, 
-                                        full_name, 
-                                        team_common_name, 
+                                        id,
+                                        full_name,
+                                        team_common_name,
                                         team_place_name,
                                         raw_json,
                                         endpoint
                                     ) VALUES (
                                         $1,$2,$3,$4,$5,$6)
-                                    ON CONFLICT (id) DO UPDATE SET 
+                                    ON CONFLICT (id) DO UPDATE SET
                                         full_name = EXCLUDED.full_name,
-                                        team_common_name = EXCLUDED.team_common_name, 
+                                        team_common_name = EXCLUDED.team_common_name,
                                         team_place_name = EXCLUDED.team_place_name,
                                         raw_json = EXCLUDED.raw_json,
                                         endpoint = EXCLUDED.endpoint,

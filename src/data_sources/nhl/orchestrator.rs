@@ -1,7 +1,6 @@
 use futures::stream::{self, StreamExt};
 use sqlx::postgres::PgQueryResult;
 
-use super::super::primary_key::*;
 use super::{api::NhlApi, models::*};
 
 use crate::{
@@ -21,12 +20,11 @@ use crate::{
 pub async fn get_resource<J, D, Fut>(
     app_context: &AppContext,
     db_context: &DbContext,
-    nhl_api: &NhlApi,
     fetch_fn: Fut,
 ) -> Result<Vec<D>, DSError>
 where
     J: IntoDbStruct<DbStruct = D>,
-    D: DbStruct + DbEntity<Pk = NhlPrimaryKey> + HasTypeName,
+    D: DbStruct + DbEntity + HasTypeName,
     Fut: std::future::Future<Output = Result<Vec<ItemParsedWithContext<J>>, DSError>>,
 {
     let j_name: &'static str = J::type_name();
@@ -45,9 +43,8 @@ where
     tracing::debug!("Parsed {db_struct_count}/{json_struct_count} `{j_name}`s into `{d_name}`s.",);
 
     tracing::debug!("Upserting {db_struct_count} `{d_name}`s into lp database.",);
-    let upsert_results: Vec<Option<PgQueryResult>> = db_structs
-        .upsert_all(app_context, db_context, nhl_api)
-        .await;
+    let upsert_results: Vec<Option<PgQueryResult>> =
+        db_structs.upsert_all(app_context, db_context).await;
     let ok_upsert_count: usize = upsert_results.len();
     tracing::debug!("Upserted {ok_upsert_count}/{db_struct_count} `{d_name}`s into lp database.");
 
@@ -60,13 +57,7 @@ pub async fn get_nhl_seasons(
     db_context: &DbContext,
     nhl_api: &NhlApi,
 ) -> Result<Vec<NhlSeason>, DSError> {
-    get_resource(
-        app_context,
-        db_context,
-        nhl_api,
-        nhl_api.list_seasons(db_context),
-    )
-    .await
+    get_resource(app_context, db_context, nhl_api.list_seasons(db_context)).await
 }
 
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
@@ -75,13 +66,7 @@ pub async fn get_nhl_franchises(
     db_context: &DbContext,
     nhl_api: &NhlApi,
 ) -> Result<Vec<NhlFranchise>, DSError> {
-    get_resource(
-        app_context,
-        db_context,
-        nhl_api,
-        nhl_api.list_franchises(db_context),
-    )
-    .await
+    get_resource(app_context, db_context, nhl_api.list_franchises(db_context)).await
 }
 
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
@@ -90,13 +75,7 @@ pub async fn get_nhl_teams(
     db_context: &DbContext,
     nhl_api: &NhlApi,
 ) -> Result<Vec<NhlTeam>, DSError> {
-    get_resource(
-        app_context,
-        db_context,
-        nhl_api,
-        nhl_api.list_teams(db_context),
-    )
-    .await
+    get_resource(app_context, db_context, nhl_api.list_teams(db_context)).await
 }
 
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
@@ -109,7 +88,6 @@ pub async fn get_nhl_shifts_in_game(
     get_resource(
         app_context,
         db_context,
-        nhl_api,
         nhl_api.list_shifts_for_game(db_context, game_id),
     )
     .await
@@ -138,8 +116,8 @@ pub async fn get_nhl_everything_in_season(
 
     for game in games {
         let (plays_res, roster_res, shifts_res) = tokio::join!(
-            get_nhl_plays_in_game(app_context, db_context, nhl_api, &game),
-            get_nhl_roster_spots_in_game(app_context, db_context, nhl_api, &game),
+            get_nhl_plays_in_game(app_context, db_context, &game),
+            get_nhl_roster_spots_in_game(app_context, db_context, &game),
             get_nhl_shifts_in_game(app_context, db_context, nhl_api, game.id),
         );
         plays_res?;
@@ -188,18 +166,17 @@ pub async fn get_nhl_all_games_in_season(
 
     tracing::info!("Upserting {number_of_games} games  into lp database.");
     let upsert_results: Vec<Option<PgQueryResult>> =
-        games.upsert_all(app_context, db_context, nhl_api).await;
+        games.upsert_all(app_context, db_context).await;
     let ok_upsert_count: usize = upsert_results.len();
     tracing::info!("Upserted {ok_upsert_count}/{number_of_games} games into lp database.");
 
     Ok(games)
 }
 
-#[tracing::instrument(skip(app_context, db_context, nhl_api))]
+#[tracing::instrument(skip(app_context, db_context))]
 pub async fn get_nhl_roster_spots_in_game(
     app_context: &AppContext,
     db_context: &DbContext,
-    nhl_api: &NhlApi,
     game: &NhlGame,
 ) -> Result<Vec<NhlRosterSpot>, DSError> {
     let game_id: i32 = game.id;
@@ -238,20 +215,17 @@ pub async fn get_nhl_roster_spots_in_game(
     tracing::info!("Parsed {roster_spot_count} roster spots into lp database structs.");
 
     tracing::info!("Upserting {roster_spot_count} roster spots lp database.",);
-    let upsert_results = roster_spots
-        .upsert_all(app_context, db_context, nhl_api)
-        .await;
+    let upsert_results = roster_spots.upsert_all(app_context, db_context).await;
     let ok_upsert_count = upsert_results.len();
     tracing::info!("Upserted {ok_upsert_count}/{roster_spot_count} roster spots into lp database.",);
 
     Ok(roster_spots)
 }
 
-#[tracing::instrument(skip(app_context, db_context, nhl_api))]
+#[tracing::instrument(skip(app_context, db_context))]
 pub async fn get_nhl_plays_in_game(
     app_context: &AppContext,
     db_context: &DbContext,
-    nhl_api: &NhlApi,
     game: &NhlGame,
 ) -> Result<Vec<NhlPlay>, DSError> {
     let game_id: i32 = game.id;
@@ -289,7 +263,7 @@ pub async fn get_nhl_plays_in_game(
     tracing::info!("Parsed {play_count} plays into lp database structs.",);
 
     tracing::info!("Upserting {play_count} plays into lp database.",);
-    let upsert_results = plays.upsert_all(app_context, db_context, nhl_api).await;
+    let upsert_results = plays.upsert_all(app_context, db_context).await;
     let ok_upsert_count = upsert_results.len();
     tracing::info!("Upserted {ok_upsert_count}/{play_count} plays into lp database.",);
 
@@ -308,7 +282,6 @@ pub async fn get_nhl_playoff_bracket_series(
     get_resource(
         app_context,
         db_context,
-        nhl_api,
         nhl_api.list_playoff_series_for_year(db_context, year_id),
     )
     .await
@@ -370,9 +343,7 @@ pub async fn get_nhl_playoff_series(
     tracing::info!("Parsed {series_game_count} games into lp database structs.",);
 
     tracing::info!("Upserting {series_game_count} games  into lp database.",);
-    let upsert_results = series_games
-        .upsert_all(app_context, db_context, nhl_api)
-        .await;
+    let upsert_results = series_games.upsert_all(app_context, db_context).await;
     let ok_upsert_count = upsert_results.len();
     tracing::info!("Upserted {ok_upsert_count}/{series_game_count} games into lp database.",);
 
@@ -413,7 +384,7 @@ pub async fn get_nhl_games_in_playoff_series(
     );
 
     tracing::info!("Upserting {ok_game_count} game play-by-play reports into lp database.");
-    let upsert_results = games.upsert_all(app_context, db_context, nhl_api).await;
+    let upsert_results = games.upsert_all(app_context, db_context).await;
     let ok_upsert_count = upsert_results.len();
     tracing::info!(
         "Upserted {ok_upsert_count}/{number_of_games} game play-by-play reports into lp database."

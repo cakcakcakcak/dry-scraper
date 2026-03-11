@@ -3,11 +3,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 use crate::{
-    any_primary_key::AnyPrimaryKey,
     bind,
     common::{
-        api::{cacheable_api::SimpleApi, CacheableApi},
-        db::{DbContext, DbEntity, PrimaryKey, StaticPgQuery, StaticPgQueryAs},
+        db::{CacheKey, DbContext, DbEntity, PrimaryKey, StaticPgQuery, StaticPgQueryAs},
         errors::DSError,
     },
     impl_has_type_name, impl_pk_debug, sqlx_operation_with_retries,
@@ -93,28 +91,18 @@ pub struct ApiCacheKey {
 }
 #[async_trait]
 impl PrimaryKey for ApiCacheKey {
-    type Api = SimpleApi;
-
-    fn any_pk(&self) -> AnyPrimaryKey {
-        AnyPrimaryKey::ApiCache(self.clone())
-    }
+    type Entity = ApiCache;
 
     fn create_select_query(&self) -> StaticPgQuery {
         sqlx::query("SELECT * FROM api_cache WHERE endpoint=$1").bind(self.endpoint.clone())
     }
 
-    async fn upsert_from_api(
-        &self,
-        db_context: &DbContext,
-        api: &SimpleApi,
-    ) -> Result<(), DSError> {
-        api.fetch_endpoint_cached(db_context, &self.endpoint)
-            .await?;
-        Ok(())
-    }
-
-    async fn verify_by_key(self, db_context: &DbContext) -> Result<Option<Self>, DSError> {
-        ApiCache::verify_by_key(db_context, self).await
+    fn cache_key(&self) -> CacheKey {
+        CacheKey {
+            source: "api_cache",
+            table: "api_cache",
+            id: self.endpoint.clone(),
+        }
     }
 }
 
