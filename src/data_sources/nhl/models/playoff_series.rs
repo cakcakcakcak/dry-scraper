@@ -119,7 +119,10 @@ impl IntoDbStruct for NhlPlayoffSeriesJson {
         });
         let season_id: i32 = games[0].season;
         let game_ids: Vec<i32> = games.iter().map(|game| game.id).collect();
-        let series_length: i32 = game_ids.len().try_into().unwrap();
+        let series_length: i32 = game_ids
+            .len()
+            .try_into()
+            .expect("Series length should fit in i32");
         NhlPlayoffSeries {
             season_id,
             round,

@@ -23,7 +23,7 @@ pub trait CacheableApi: Debug {
         db_context: &DbContext,
         endpoint: &str,
     ) -> Result<String, DSError> {
-        tracing::debug!("Querying api_cache for the endpoint we seek...");
+        tracing::debug!(endpoint, "Checking API cache");
         match sqlx_operation_with_retries!(
             sqlx::query("SELECT raw_data from api_cache WHERE endpoint = $1")
                 .bind(endpoint)
@@ -34,45 +34,37 @@ pub trait CacheableApi: Debug {
         {
             Some(row) => match row.try_get::<String, _>("raw_data") {
                 Ok(raw_data) => {
-                    tracing::debug!("Record found for endpoint. Retrieving raw_data...");
+                    tracing::debug!(endpoint, "Cache hit");
                     return Ok(raw_data);
                 }
                 Err(e) => {
                     tracing::warn!(
+                        endpoint,
                         error = %e,
-                        "Cached record for endpoint is unusable. Attempting to refresh from API..."
+                        "Cached record unusable, refreshing from API"
                     );
                 }
             },
             None => {
-                tracing::debug!("Cached record not found for endpoint. Querying API...");
+                tracing::debug!(endpoint, "Cache miss, fetching from API");
             }
         }
-        let response: reqwest::Response =
-            reqwest_with_retries!(self.client().get(endpoint).send().await)
-                .await
-                .map_err(|e| {
-                    tracing::warn!(
-                        error = %e,
-                        "Error encountered while fetching from API."
-                    );
-                    DSError::Api(e)
-                })?
-                .error_for_status()
-                .map_err(|e| {
-                    tracing::warn!(
-                        error = %e,
-                        "HTTP response code not 2xx."
-                    );
-                    DSError::Api(e)
-                })?;
+        // Not in cache or unusable, fetch from API
+        let response = reqwest_with_retries!(self.client().get(endpoint).send().await)
+            .await
+            .map_err(|e| {
+                tracing::error!(endpoint, error = %e, "Failed to fetch from API");
+                DSError::Api(e)
+            })?
+            .error_for_status()
+            .map_err(|e| {
+                tracing::error!(endpoint, error = %e, status = ?e.status(), "Non-2xx response from API");
+                DSError::Api(e)
+            })?;
 
-        tracing::debug!("Response received. Parsing and inserting into cache...");
+        tracing::debug!(endpoint, "Parsing response and caching");
         let raw_data = response.text().await.map_err(|e| {
-            tracing::warn!(
-                error = %e,
-                "Failed to parse response into text."
-            );
+            tracing::error!(endpoint, error = %e, "Failed to parse response body");
             DSError::Api(e)
         })?;
         let cache_record = ApiCache {
@@ -81,7 +73,6 @@ pub trait CacheableApi: Debug {
             last_updated: None,
         };
 
-        tracing::debug!("Upserting cache record with endpoint {endpoint} into lp database.");
         cache_record.upsert(db_context).await?;
         Ok(cache_record.raw_data)
     }

@@ -44,24 +44,13 @@ impl DbEntity for ApiCache {
         )
         .await
         {
-            Ok(Some(record)) => {
-                tracing::info!(
-                    "Record found in lp table api_cache for endpoint {}",
-                    id.endpoint
-                );
-                Ok(Some(record))
-            }
-            Ok(None) => {
-                tracing::info!(
-                    "Record NOT found in lp table api_cache for endpoint {}",
-                    id.endpoint
-                );
-                Ok(None)
-            }
+            Ok(Some(record)) => Ok(Some(record)),
+            Ok(None) => Ok(None),
             Err(e) => {
-                tracing::warn!(
-                    "Error encountered while querying api_cache for endpoint {}",
-                    id.endpoint
+                tracing::error!(
+                    endpoint = %id.endpoint,
+                    error = %e,
+                    "Failed to query api_cache"
                 );
                 Err(DSError::Database(e))
             }

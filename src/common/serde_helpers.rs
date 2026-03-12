@@ -147,7 +147,7 @@ impl AsLogged for String {
             Value::Null => Some(String::new()),
             serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
                 let s = value.to_string();
-                tracing::info!("Converting complex JSON value to string: {}", s);
+                tracing::debug!("Converting complex JSON value to string");
                 Some(s)
             }
         }
@@ -160,23 +160,23 @@ impl AsLogged for i32 {
             Value::Bool(false) => Some(0),
             Value::Number(n) => n.as_i64().and_then(|v| {
                 i32::try_from(v).ok().or_else(|| {
-                    tracing::info!("Number out of range for i32: {n}");
+                    tracing::debug!(value = %n, "Number out of range for i32");
                     None
                 })
             }),
             Value::String(s) => match s.parse::<i32>() {
                 Ok(n) => Some(n),
                 Err(e) => {
-                    tracing::info!("Could not parse string `{s}` as i32: {e}");
+                    tracing::debug!(value = %s, error = %e, "Could not parse string as i32");
                     None
                 }
             },
             Value::Null => {
-                tracing::info!("Unexpected value `serde_json::Value::Null`, converting to `0`.");
+                tracing::debug!("Null value converted to 0");
                 Some(0)
             }
             other => {
-                tracing::info!("Unable to meaningfully deserialize value {other} to `i32`");
+                tracing::debug!(value = ?other, "Unable to deserialize value to i32");
                 None
             }
         }
@@ -191,18 +191,16 @@ impl AsLogged for bool {
             Value::Number(n) => {
                 let number_val = n.as_i64();
                 if number_val != Some(0) && number_val != Some(1) {
-                    tracing::info!("Unexpected value {n} (expected 0 or 1), converting to `true`.");
+                    tracing::debug!(value = %n, "Unexpected number value (expected 0 or 1), converting to true");
                 }
                 Some(number_val != Some(0))
             }
             Value::Null => {
-                tracing::info!(
-                    "Unexpected value `serde_json::Value::Null`, converting to `false`."
-                );
+                tracing::debug!("Null value converted to false");
                 Some(false)
             }
             other => {
-                tracing::info!("Unable to meaningfully convert value {other} to bool");
+                tracing::debug!(value = ?other, "Unable to convert value to bool");
                 None
             }
         }

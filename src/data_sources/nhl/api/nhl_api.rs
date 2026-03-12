@@ -196,12 +196,15 @@ impl NhlApi {
 
         let season_id: i32 = format!("{}{}", year_id - 1, year_id)
             .parse::<i32>()
-            .unwrap();
+            .map_err(DSError::Parse)?;
         Ok(bracket
             .series
             .into_iter()
             .map(|series| {
-                let raw_json: serde_json::Value = serde_json::to_value(series.clone()).unwrap();
+                let raw_json: serde_json::Value = serde_json::to_value(&series).map_err(|e| {
+                    tracing::warn!(error = %e, "Failed to serialize playoff series to JSON");
+                    DSError::Serde(e)
+                })?;
                 Ok(ItemParsedWithContext {
                     item: series,
                     context: NhlSeasonContext {

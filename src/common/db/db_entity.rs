@@ -90,19 +90,12 @@ pub trait DbEntity:
         .await
         {
             Ok(Some(row)) => {
-                tracing::debug!(
-                    "Record found in database for key {:?}. Adding key to key cache",
-                    id
-                );
                 db_context.key_cache.insert(id.cache_key());
                 Self::from_row(&row).map(Some).map_err(DSError::from)
             }
-            Ok(None) => {
-                tracing::debug!("Record not found in database for key {:?}", id);
-                Ok(None)
-            }
+            Ok(None) => Ok(None),
             Err(e) => {
-                tracing::warn!("Failed to fetch from database using key {:?}: {:?}", id, e);
+                tracing::error!(key = ?id, error = %e, "Failed to fetch from database");
                 Err(DSError::from(e))
             }
         }
@@ -144,7 +137,6 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
         db_context: &DbContext,
     ) -> Vec<Option<PgQueryResult>> {
         if self.is_empty() {
-            tracing::debug!("No items to upsert, returning early");
             return Vec::new();
         }
 
@@ -159,7 +151,6 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
             .create_reporter(None, "Dispatching upsert queries...");
         for item in items {
             if db_context.key_cache.contains(&item.cache_key()) {
-                tracing::debug!("Key cache contains {:?}, skipping upsert.", item.pk());
                 pb.inc(1);
                 continue;
             }

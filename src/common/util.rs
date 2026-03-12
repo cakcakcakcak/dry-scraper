@@ -71,20 +71,11 @@ pub fn default_retry_strategy(cfg: &Config) -> impl Iterator<Item = std::time::D
 }
 
 pub fn is_transient_sqlx_error(e: &sqlx::Error) -> bool {
-    let is_transient = matches!(e, sqlx::Error::Io(_) | sqlx::Error::Tls(_));
-    if is_transient {
-        tracing::warn!("Retrying sqlx operation after transient error: {:?}", e);
-    }
-    is_transient
+    matches!(e, sqlx::Error::Io(_) | sqlx::Error::Tls(_))
 }
 
 fn is_transient_reqwest_error(e: &reqwest::Error) -> bool {
-    let is_transient =
-        e.is_timeout() || e.is_connect() || e.to_string().contains("IncompleteMessage");
-    if is_transient {
-        tracing::warn!("Retrying reqwest operation after transient error: {:?}", e);
-    }
-    is_transient
+    e.is_timeout() || e.is_connect() || e.to_string().contains("IncompleteMessage")
 }
 
 pub async fn sqlx_operation_with_retries<F, Fut, T>(
@@ -97,13 +88,7 @@ where
 {
     RetryIf::spawn(
         default_retry_strategy(cfg),
-        || async {
-            let res: Result<T, sqlx::Error> = operation().await;
-            if let Err(ref e) = res {
-                tracing::warn!("A sqlx operation failed after error: {:?}", e);
-            }
-            res
-        },
+        || async { operation().await },
         is_transient_sqlx_error,
     )
     .await
@@ -119,13 +104,7 @@ where
 {
     RetryIf::spawn(
         default_retry_strategy(cfg),
-        || async {
-            let res = operation().await;
-            if let Err(ref e) = res {
-                tracing::warn!("A reqwest operation failed after error {:?}", e);
-            }
-            res
-        },
+        || async { operation().await },
         is_transient_reqwest_error,
     )
     .await
