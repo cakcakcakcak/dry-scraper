@@ -19,6 +19,7 @@ pub struct DbContext {
     pub pool: DbPool,
     pub sqlx_tx: SqlxJobSender,
     pub key_cache: Arc<DashSet<CacheKey>>,
+    pub config: Arc<Config>,
 }
 impl DbContext {
     pub async fn connect(cfg: &Config) -> Result<DbContext, DSError> {
@@ -34,6 +35,7 @@ impl DbContext {
             pool,
             sqlx_tx,
             key_cache: Arc::new(DashSet::new()),
+            config: Arc::new(cfg.clone()),
         })
     }
 }

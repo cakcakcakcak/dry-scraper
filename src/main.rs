@@ -1,7 +1,7 @@
 use clap::Parser;
 use dry_scraper::config::{
     cli_args::{CliArgs, Commands, ScrapeSource},
-    CONFIG,
+    Config,
 };
 
 use dry_scraper::common::app_context::AppContext;
@@ -18,18 +18,15 @@ use std::sync::Arc;
 async fn main() -> Result<(), DSError> {
     _ = dotenvy::dotenv();
 
-    // console_subscriber::init();
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_env("LOG_LEVEL"))
         .init();
 
-    _ = &*CONFIG;
-
     let cli_args = CliArgs::parse();
+    let config = Arc::new(Config::from_env_and_args());
 
-    let db_context: DbContext = DbContext::connect(&CONFIG).await?;
-    let mut app_context: AppContext =
-        AppContext::new(std::sync::Arc::new((*CONFIG).clone()), cli_args.no_progress);
+    let db_context: DbContext = DbContext::connect(&config).await?;
+    let mut app_context: AppContext = AppContext::new(config.clone(), cli_args.no_progress);
 
     // register data sources
     let sources: Vec<Arc<dyn dry_scraper::common::data_source::DataSource>> =
@@ -44,7 +41,7 @@ async fn main() -> Result<(), DSError> {
             } => {
                 #[cfg(debug_assertions)]
                 if reset {
-                    reset_schema(&db_context.pool, &CONFIG).await?;
+                    reset_schema(&db_context.pool, &config).await?;
                 }
 
                 tracing::info!("Starting NHL scrape");

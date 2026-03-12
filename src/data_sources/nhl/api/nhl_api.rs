@@ -13,7 +13,7 @@ use crate::{
         NhlPlayoffBracketSeriesJson, NhlPlayoffSeriesJson, NhlSeasonContext, NhlSeasonJson,
         NhlShiftJson, NhlTeamJson,
     },
-    DSError, CONFIG,
+    DSError,
 };
 
 #[derive(Clone, Debug)]
@@ -129,7 +129,7 @@ impl NhlApi {
         );
         let result = stream::iter(player_ids)
             .map(|player_id| self.get_player(db_context, player_id))
-            .buffer_unordered(CONFIG.db_concurrency_limit)
+            .buffer_unordered(app_context.config.db_concurrency_limit)
             .inspect(|_| pb.inc(1))
             .collect()
             .await;
@@ -162,7 +162,7 @@ impl NhlApi {
             .create_reporter(Some(game_ids.len() as u64), "Fetching `NhlGameJson`s.");
         let result = stream::iter(game_ids)
             .map(|game_id| self.get_game(db_context, game_id))
-            .buffer_unordered(CONFIG.api_concurrency_limit)
+            .buffer_unordered(app_context.config.api_concurrency_limit)
             .inspect(|_| pb.inc(1))
             .collect()
             .await;

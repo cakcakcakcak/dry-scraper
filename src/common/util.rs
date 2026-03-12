@@ -19,25 +19,15 @@ macro_rules! bind {
 
 #[macro_export]
 macro_rules! sqlx_operation_with_retries {
-    // New variant: accepts cfg parameter
     ($cfg:expr, $($body:tt)*) => {
         $crate::common::util::sqlx_operation_with_retries(|| async { $($body)* }, $cfg)
-    };
-    // Old variant: reads CONFIG global (for backward compat during Step 1.1)
-    ($($body:tt)*) => {
-        $crate::common::util::sqlx_operation_with_retries(|| async { $($body)* }, &$crate::config::CONFIG)
     };
 }
 
 #[macro_export]
 macro_rules! reqwest_with_retries {
-    // New variant: accepts cfg parameter
     ($cfg:expr, $($body:tt)*) => {
         $crate::common::util::reqwest_with_retries(|| async { $($body)* }, $cfg)
-    };
-    // Old variant: reads CONFIG global (for backward compat during Step 1.1)
-    ($($body:tt)*) => {
-        $crate::common::util::reqwest_with_retries(|| async { $($body)* }, &$crate::config::CONFIG)
     };
 }
 

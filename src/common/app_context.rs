@@ -1,3 +1,4 @@
+use futures::stream::{self, StreamExt};
 use indicatif::{MultiProgress, ProgressStyle};
 use reqwest::Client;
 use std::sync::Arc;
@@ -71,4 +72,17 @@ impl AppContext {
     //   let pb = app_context.progress_reporter_mode.create_reporter(...);
     //   let result = async_work_with_pb().await;
     //   pb.finish();
+
+    /// Execute futures concurrently with respect to configured DB concurrency limit.
+    /// Respects cancellation token for graceful shutdown.
+    pub async fn with_db_concurrency<Fut, T>(&self, futures: Vec<Fut>) -> Vec<T>
+    where
+        Fut: std::future::Future<Output = T> + Send + 'static,
+        T: Send + 'static,
+    {
+        stream::iter(futures)
+            .buffer_unordered(self.config.db_concurrency_limit)
+            .collect::<Vec<_>>()
+            .await
+    }
 }

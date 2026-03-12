@@ -25,6 +25,7 @@ pub trait CacheableApi: Debug {
     ) -> Result<String, DSError> {
         tracing::debug!(endpoint, "Checking API cache");
         match sqlx_operation_with_retries!(
+            &db_context.config,
             sqlx::query("SELECT raw_data from api_cache WHERE endpoint = $1")
                 .bind(endpoint)
                 .fetch_optional(&db_context.pool)
@@ -50,7 +51,7 @@ pub trait CacheableApi: Debug {
             }
         }
         // Not in cache or unusable, fetch from API
-        let response = reqwest_with_retries!(self.client().get(endpoint).send().await)
+        let response = reqwest_with_retries!(&db_context.config, self.client().get(endpoint).send().await)
             .await
             .map_err(|e| {
                 tracing::error!(endpoint, error = %e, "Failed to fetch from API");

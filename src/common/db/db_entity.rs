@@ -17,7 +17,6 @@ use crate::{
         models::traits::HasTypeName,
         util::track_and_filter_errors,
     },
-    config::CONFIG,
     sqlx_operation_with_retries,
 };
 
@@ -83,6 +82,7 @@ pub trait DbEntity:
         id: &Self::Pk,
     ) -> Result<Option<Self>, DSError> {
         match sqlx_operation_with_retries!(
+            &db_context.config,
             id.create_select_query()
                 .fetch_optional(&db_context.pool)
                 .await
@@ -186,7 +186,7 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
                     Err(_) => Err(DSError::DatabaseCustom("Worker dropped".to_string())),
                 }
             })
-            .buffer_unordered(CONFIG.db_concurrency_limit)
+            .buffer_unordered(app_context.config.db_concurrency_limit)
             .collect()
             .await;
         pb.finish();

@@ -1,22 +1,17 @@
-use futures::stream::{self, StreamExt};
 use sqlx::postgres::PgQueryResult;
 
 use super::{api::NhlApi, models::*};
 
-use crate::{
-    common::{
-        app_context::AppContext,
-        db::{
-            all_foreign_keys_cached, find_missing_foreign_keys, CacheKey, DbContext, DbEntity,
-            DbEntityVecExt,
-        },
-        errors::DSError,
-        models::{
-            traits::HasTypeName, ApiCache, DataSourceError, ItemParsedWithContext,
-            ItemParsedWithContextVecExt,
-        },
+use crate::common::{
+    app_context::AppContext,
+    db::{
+        all_foreign_keys_cached, find_missing_foreign_keys, CacheKey, DbContext, DbEntity,
+        DbEntityVecExt,
     },
-    CONFIG,
+    errors::DSError,
+    models::{
+        traits::HasTypeName, DataSourceError, ItemParsedWithContext, ItemParsedWithContextVecExt,
+    },
 };
 
 /// Ensure all foreign keys referenced by entities exist in the database.
@@ -601,34 +596,4 @@ pub async fn get_nhl_games_in_playoff_series(
     );
 
     Ok(games)
-}
-
-pub async fn warm_nhl_key_cache(
-    _app_context: &AppContext,
-    db_context: &DbContext,
-) -> Result<(), DSError> {
-    let db_context = &db_context.clone();
-
-    tracing::debug!("Warming NHL database key cache");
-    let cache_warmers = vec![
-        ApiCache::warm_key_cache(db_context),
-        NhlSeason::warm_key_cache(db_context),
-        NhlFranchise::warm_key_cache(db_context),
-        NhlTeam::warm_key_cache(db_context),
-        NhlPlayer::warm_key_cache(db_context),
-        NhlGame::warm_key_cache(db_context),
-        NhlRosterSpot::warm_key_cache(db_context),
-        NhlPlay::warm_key_cache(db_context),
-        NhlShift::warm_key_cache(db_context),
-        NhlPlayoffBracketSeries::warm_key_cache(db_context),
-        NhlPlayoffSeries::warm_key_cache(db_context),
-        NhlPlayoffSeriesGame::warm_key_cache(db_context),
-    ];
-    stream::iter(cache_warmers)
-        .map(|fut| fut)
-        .buffer_unordered(CONFIG.db_concurrency_limit)
-        .collect::<Vec<_>>()
-        .await;
-    tracing::debug!("NHL key cache warmed");
-    Ok(())
 }

@@ -31,8 +31,6 @@ pub static DEFAULT_PROGRESS_SPINNER_STYLE: Lazy<ProgressStyle> = Lazy::new(|| {
         .expect("DEFAULT_PROGRESS_SPINNER_STYLE_FORMAT must be a valid indicatif template")
 });
 
-pub static CONFIG: Lazy<Config> = Lazy::new(Config::from_env_and_args);
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub database_url: String,

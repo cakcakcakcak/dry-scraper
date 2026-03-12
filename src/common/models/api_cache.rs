@@ -37,6 +37,7 @@ impl DbEntity for ApiCache {
         id: &Self::Pk,
     ) -> Result<Option<Self>, DSError> {
         match sqlx_operation_with_retries!(
+            &db_context.config,
             sqlx::query_as::<_, Self>(r#"SELECT * FROM api_cache WHERE endpoint=$1"#)
                 .bind(id.endpoint.clone())
                 .fetch_optional(&db_context.pool)
