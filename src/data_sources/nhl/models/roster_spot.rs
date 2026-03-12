@@ -10,7 +10,7 @@ use crate::{
     bind,
     common::{
         db::{CacheKey, DbEntity, StaticPgQuery, StaticPgQueryAs},
-        models::traits::{DbStruct, IntoDbStruct},
+        models::traits::IntoDbStruct,
     },
     impl_has_type_name,
 };
@@ -73,9 +73,6 @@ pub struct NhlRosterSpot {
     pub headshot: String,
     pub raw_json: serde_json::Value,
     pub endpoint: String,
-}
-impl DbStruct for NhlRosterSpot {
-    type IntoDbStruct = NhlRosterSpotJson;
 }
 
 #[async_trait]

@@ -1,9 +1,6 @@
 use std::fmt::Debug;
 
-use crate::{
-    common::app_context::AppContext,
-    common::models::traits::{DbStruct, IntoDbStruct},
-};
+use crate::{common::app_context::AppContext, common::models::traits::IntoDbStruct};
 
 #[derive(Clone, Debug)]
 pub struct ItemParsedWithContext<T: IntoDbStruct> {
@@ -22,7 +19,6 @@ where
 pub trait ItemParsedWithContextVecExt<J>
 where
     J: IntoDbStruct,
-    J::DbStruct: DbStruct,
 {
     fn into_db_structs(self, app_context: &AppContext, pb_msg: &str) -> Vec<J::DbStruct>;
 }
@@ -30,7 +26,6 @@ where
 impl<J> ItemParsedWithContextVecExt<J> for Vec<ItemParsedWithContext<J>>
 where
     J: IntoDbStruct,
-    J::DbStruct: DbStruct,
 {
     fn into_db_structs(self, app_context: &AppContext, pb_msg: &str) -> Vec<J::DbStruct> {
         app_context.with_progress_bar(self.len() as u64, pb_msg, |pb| {

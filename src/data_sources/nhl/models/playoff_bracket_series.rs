@@ -7,7 +7,7 @@ use crate::{
     bind,
     common::{
         db::{CacheKey, DbEntity, StaticPgQuery, StaticPgQueryAs},
-        models::traits::{DbStruct, IntoDbStruct},
+        models::traits::IntoDbStruct,
     },
     data_sources::models::{LocalizedNameJson, NhlSeasonContext},
     impl_has_type_name, impl_pk_debug,
@@ -165,9 +165,6 @@ pub struct NhlPlayoffBracketSeries {
     pub bottom_seed_team_dark_logo: String,
     pub endpoint: String,
     pub raw_json: serde_json::Value,
-}
-impl DbStruct for NhlPlayoffBracketSeries {
-    type IntoDbStruct = NhlPlayoffBracketSeriesJson;
 }
 #[async_trait]
 impl DbEntity for NhlPlayoffBracketSeries {

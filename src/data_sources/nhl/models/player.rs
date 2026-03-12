@@ -11,7 +11,7 @@ use crate::{
     bind,
     common::{
         db::{CacheKey, DbEntity, StaticPgQuery, StaticPgQueryAs},
-        models::traits::{DbStruct, IntoDbStruct},
+        models::traits::IntoDbStruct,
         serde_helpers::JsonExt,
     },
     impl_has_type_name, make_deserialize_to_type,
@@ -190,9 +190,6 @@ pub struct NhlPlayer {
     pub in_hhof: bool,
     pub endpoint: String,
     pub raw_json: serde_json::Value,
-}
-impl DbStruct for NhlPlayer {
-    type IntoDbStruct = NhlPlayerJson;
 }
 #[async_trait]
 impl DbEntity for NhlPlayer {

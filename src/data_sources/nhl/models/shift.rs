@@ -11,7 +11,7 @@ use crate::{
     bind,
     common::{
         db::{CacheKey, DbEntity, StaticPgQuery, StaticPgQueryAs},
-        models::traits::{DbStruct, IntoDbStruct},
+        models::traits::IntoDbStruct,
     },
     impl_has_type_name,
 };
@@ -121,9 +121,6 @@ pub struct NhlShift {
     pub type_code: i32,
     pub endpoint: String,
     pub raw_json: serde_json::Value,
-}
-impl DbStruct for NhlShift {
-    type IntoDbStruct = NhlShiftJson;
 }
 #[async_trait]
 impl DbEntity for NhlShift {

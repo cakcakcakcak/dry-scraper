@@ -9,7 +9,7 @@ use crate::{
     bind,
     common::{
         db::{CacheKey, DbEntity, StaticPgQuery, StaticPgQueryAs},
-        models::traits::{DbStruct, IntoDbStruct},
+        models::traits::IntoDbStruct,
     },
     impl_has_type_name, impl_pk_debug,
 };
@@ -61,9 +61,6 @@ pub struct NhlTeam {
     pub tricode: String,
     pub endpoint: String,
     pub raw_json: serde_json::Value,
-}
-impl DbStruct for NhlTeam {
-    type IntoDbStruct = NhlTeamJson;
 }
 #[async_trait]
 impl DbEntity for NhlTeam {

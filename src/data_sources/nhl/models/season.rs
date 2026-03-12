@@ -10,7 +10,7 @@ use crate::{
     bind,
     common::{
         db::{CacheKey, DbEntity, StaticPgQuery, StaticPgQueryAs},
-        models::traits::{DbStruct, IntoDbStruct},
+        models::traits::IntoDbStruct,
         serde_helpers::JsonExt,
     },
     data_sources::NhlSeasonKey,
@@ -144,9 +144,6 @@ pub struct NhlSeason {
     pub wildcard_in_use: bool,
     pub endpoint: String,
     pub raw_json: serde_json::Value,
-}
-impl DbStruct for NhlSeason {
-    type IntoDbStruct = NhlSeasonJson;
 }
 
 #[async_trait]

@@ -12,8 +12,8 @@ use crate::{
         },
         errors::DSError,
         models::{
-            traits::{DbStruct, HasTypeName, IntoDbStruct},
-            ApiCache, DataSourceError, ItemParsedWithContext, ItemParsedWithContextVecExt,
+            traits::HasTypeName, ApiCache, DataSourceError, ItemParsedWithContext,
+            ItemParsedWithContextVecExt,
         },
     },
     CONFIG,
@@ -57,82 +57,39 @@ where
     missing_fks
 }
 
-pub async fn get_resource<J, D, Fut>(
-    app_context: &AppContext,
-    db_context: &DbContext,
-    fetch_fn: Fut,
-) -> Result<Vec<D>, DSError>
-where
-    J: IntoDbStruct<DbStruct = D>,
-    D: DbStruct + DbEntity + HasTypeName,
-    Fut: std::future::Future<
-        Output = Result<Vec<Result<ItemParsedWithContext<J>, DSError>>, DSError>,
-    >,
-{
-    let j_name: &'static str = J::type_name();
-    let d_name: &'static str = D::type_name();
-
-    tracing::debug!(type_name = j_name, "Fetching from NHL API");
-    let json_struct_results: Vec<Result<ItemParsedWithContext<J>, DSError>> = fetch_fn.await?;
-    let total_count = json_struct_results.len();
-
-    // Partition successes and failures
-    let mut json_structs = Vec::new();
-    let mut parse_errors = Vec::new();
-    for result in json_struct_results {
-        match result {
-            Ok(item) => json_structs.push(item),
-            Err(e) => parse_errors.push(e),
-        }
-    }
-
-    let json_struct_count = json_structs.len();
-    if !parse_errors.is_empty() {
-        tracing::warn!(
-            type_name = j_name,
-            successful = json_struct_count,
-            failed = parse_errors.len(),
-            total = total_count,
-            "Parse errors occurred during fetch"
-        );
-    }
-
-    // Log parse errors (fire-and-forget)
-    if !parse_errors.is_empty() {
-        for error in parse_errors {
-            DataSourceError::track_error(error, db_context).await;
-        }
-    }
-
-    let db_structs: Vec<D> = json_structs.into_db_structs(
-        app_context,
-        &format!("Parsing `{j_name}`s into `{d_name}`s."),
-    );
-    let db_struct_count: usize = db_structs.len();
-
-    // Check for missing foreign keys before upserting
-    ensure_foreign_keys_exist(&db_structs, db_context).await;
-
-    let upsert_results: Vec<Option<PgQueryResult>> =
-        db_structs.upsert_all(app_context, db_context).await;
-    let ok_upsert_count: usize = upsert_results.len();
-    tracing::debug!(
-        type_name = d_name,
-        upserted = ok_upsert_count,
-        total = db_struct_count,
-        "Upsert complete"
-    );
-
-    Ok(db_structs)
-}
-
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
 pub async fn get_nhl_seasons(
     app_context: &AppContext,
     db_context: &DbContext,
     nhl_api: &NhlApi,
 ) -> Result<Vec<NhlSeason>, DSError> {
-    get_resource(app_context, db_context, nhl_api.list_seasons(db_context)).await
+    let season_results = nhl_api.list_seasons(db_context).await?;
+
+    let mut seasons = Vec::new();
+    let mut errors = Vec::new();
+    for result in season_results {
+        match result {
+            Ok(item) => seasons.push(item),
+            Err(e) => errors.push(e),
+        }
+    }
+
+    if !errors.is_empty() {
+        tracing::warn!(
+            successful = seasons.len(),
+            failed = errors.len(),
+            "Parse errors during season fetch"
+        );
+        for error in errors {
+            DataSourceError::track_error(error, db_context).await;
+        }
+    }
+
+    let db_seasons = seasons.into_db_structs(app_context, "Parsing seasons");
+    ensure_foreign_keys_exist(&db_seasons, db_context).await;
+
+    db_seasons.upsert_all(app_context, db_context).await;
+    Ok(db_seasons)
 }
 
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
@@ -141,7 +98,33 @@ pub async fn get_nhl_franchises(
     db_context: &DbContext,
     nhl_api: &NhlApi,
 ) -> Result<Vec<NhlFranchise>, DSError> {
-    get_resource(app_context, db_context, nhl_api.list_franchises(db_context)).await
+    let franchise_results = nhl_api.list_franchises(db_context).await?;
+
+    let mut franchises = Vec::new();
+    let mut errors = Vec::new();
+    for result in franchise_results {
+        match result {
+            Ok(item) => franchises.push(item),
+            Err(e) => errors.push(e),
+        }
+    }
+
+    if !errors.is_empty() {
+        tracing::warn!(
+            successful = franchises.len(),
+            failed = errors.len(),
+            "Parse errors during franchise fetch"
+        );
+        for error in errors {
+            DataSourceError::track_error(error, db_context).await;
+        }
+    }
+
+    let db_franchises = franchises.into_db_structs(app_context, "Parsing franchises");
+    ensure_foreign_keys_exist(&db_franchises, db_context).await;
+
+    db_franchises.upsert_all(app_context, db_context).await;
+    Ok(db_franchises)
 }
 
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
@@ -150,7 +133,33 @@ pub async fn get_nhl_teams(
     db_context: &DbContext,
     nhl_api: &NhlApi,
 ) -> Result<Vec<NhlTeam>, DSError> {
-    get_resource(app_context, db_context, nhl_api.list_teams(db_context)).await
+    let team_results = nhl_api.list_teams(db_context).await?;
+
+    let mut teams = Vec::new();
+    let mut errors = Vec::new();
+    for result in team_results {
+        match result {
+            Ok(item) => teams.push(item),
+            Err(e) => errors.push(e),
+        }
+    }
+
+    if !errors.is_empty() {
+        tracing::warn!(
+            successful = teams.len(),
+            failed = errors.len(),
+            "Parse errors during team fetch"
+        );
+        for error in errors {
+            DataSourceError::track_error(error, db_context).await;
+        }
+    }
+
+    let db_teams = teams.into_db_structs(app_context, "Parsing teams");
+    ensure_foreign_keys_exist(&db_teams, db_context).await;
+
+    db_teams.upsert_all(app_context, db_context).await;
+    Ok(db_teams)
 }
 
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
@@ -160,12 +169,35 @@ pub async fn get_nhl_shifts_in_game(
     nhl_api: &NhlApi,
     game_id: i32,
 ) -> Result<Vec<NhlShift>, DSError> {
-    get_resource(
-        app_context,
-        db_context,
-        nhl_api.list_shifts_for_game(db_context, game_id),
-    )
-    .await
+    let shift_results = nhl_api.list_shifts_for_game(db_context, game_id).await?;
+
+    let mut shifts = Vec::new();
+    let mut errors = Vec::new();
+    for result in shift_results {
+        match result {
+            Ok(item) => shifts.push(item),
+            Err(e) => errors.push(e),
+        }
+    }
+
+    if !errors.is_empty() {
+        tracing::warn!(
+            game_id,
+            successful = shifts.len(),
+            failed = errors.len(),
+            "Parse errors during shift fetch"
+        );
+        for error in errors {
+            DataSourceError::track_error(error, db_context).await;
+        }
+    }
+
+    let db_shifts =
+        shifts.into_db_structs(app_context, &format!("Parsing shifts for game {game_id}"));
+    ensure_foreign_keys_exist(&db_shifts, db_context).await;
+
+    db_shifts.upsert_all(app_context, db_context).await;
+    Ok(db_shifts)
 }
 
 #[tracing::instrument(skip(app_context, db_context, nhl_api, season))]
@@ -400,12 +432,37 @@ pub async fn get_nhl_playoff_bracket_series(
     let year_id: i32 = season_id.to_string()[4..]
         .parse::<i32>()
         .map_err(DSError::Parse)?;
-    get_resource(
-        app_context,
-        db_context,
-        nhl_api.list_playoff_series_for_year(db_context, year_id),
-    )
-    .await
+
+    let bracket_results = nhl_api
+        .list_playoff_series_for_year(db_context, year_id)
+        .await?;
+
+    let mut brackets = Vec::new();
+    let mut errors = Vec::new();
+    for result in bracket_results {
+        match result {
+            Ok(item) => brackets.push(item),
+            Err(e) => errors.push(e),
+        }
+    }
+
+    if !errors.is_empty() {
+        tracing::warn!(
+            season_id,
+            successful = brackets.len(),
+            failed = errors.len(),
+            "Parse errors during playoff bracket fetch"
+        );
+        for error in errors {
+            DataSourceError::track_error(error, db_context).await;
+        }
+    }
+
+    let db_brackets = brackets.into_db_structs(app_context, "Parsing playoff bracket series");
+    ensure_foreign_keys_exist(&db_brackets, db_context).await;
+
+    db_brackets.upsert_all(app_context, db_context).await;
+    Ok(db_brackets)
 }
 
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
