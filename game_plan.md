@@ -19,10 +19,13 @@ Single source of truth for the rewrite. Only this file is edited until a PR impl
   - Comprehensive tracing/error handling audit completed
   - All `unwrap()` calls replaced with proper error propagation
   - Compiles cleanly: `cargo check`, `cargo build`, `cargo clippy`, `cargo fmt` all pass
-- ⏳ **Step 1.4c** — Migrate one entity end-to-end; implement `DataSource` trait (NEXT)
+- ⏳ **Step 1.4c** — Define `DataSource` trait; organize `NhlDataSource` (NEXT)
+  - minimal scope: just `warm_cache()` for now
+  - defer `JobSpec` and job execution to phase 2
+  - prove the registry pattern works
 - ⏳ **Step 1.5** — Add cancellation (`CancellationToken`) and tests (AFTER 1.4c)
 
-**Next immediate action:** Implement `DataSource` trait and `NhlDataSource`, register in `main.rs`, migrate `NhlTeam` as proof-of-concept.
+**Next immediate action:** Define `DataSource` trait with `warm_cache()`, implement `NhlDataSource`, move cache warming logic into it, register in `AppContext` and call from `main.rs`.
 
 ---
 
@@ -567,18 +570,39 @@ Acceptance:
 
 ---
 
-**Step 1.4c — Migrate one entity end-to-end and implement `DataSource` trait**
+**Step 1.4c — Define `DataSource` trait and move cache warming into `NhlDataSource`**
 
-Goal: Prove the new patterns work end-to-end and set up the source registry.
+Goal: Create the source registry structure (to be used in phase 2 job system). start small: define the trait with just `warm_cache()`, move the existing logic into `NhlDataSource`, prove it works. defer job execution to phase 2 when `JobSpec` is designed.
 
 Changes:
-- Migrate one entity end-to-end as proof-of-concept (`NhlTeam` is a good candidate). Update its orchestrator function to use the new error handling pattern (parse errors logged to DB, not swallowed).
-- Reinstate the commented-out playoff series upsert in `get_nhl_playoff_series` using the new orchestrator pattern.
-- Implement `NhlDataSource` struct with the `DataSource` trait. Its `warm_cache` replaces the current `warm_nhl_key_cache` function, driving cache warming for all NHL entities via a `buffer_unordered`. Its `scrape` calls into the orchestrator. Register it in `main.rs`.
+- Define `DataSource` trait in new `src/common/data_source.rs`:
+  ```rust
+  pub trait DataSource: Send + Sync {
+      fn name(&self) -> &'static str;
+      async fn warm_cache(&self, app_context: &AppContext, db_context: &DbContext) -> Result<(), DSError>;
+  }
+  ```
+- Create `NhlDataSource` struct in new `src/data_sources/nhl/data_source.rs`:
+  ```rust
+  pub struct NhlDataSource {
+      api: NhlApi,
+  }
+  impl DataSource for NhlDataSource {
+      fn name(&self) -> &'static str { "nhl" }
+      async fn warm_cache(&self, app_context: &AppContext, db_context: &DbContext) -> Result<(), DSError> {
+          // move warm_nhl_key_cache logic here
+      }
+  }
+  ```
+- Add `sources: Vec<Arc<dyn DataSource>>` to `AppContext`. initialize with `vec![Arc::new(NhlDataSource::new())]` in `main.rs`.
+- Update `main.rs` to call `sources[0].warm_cache()` instead of directly calling `warm_nhl_key_cache()`.
+- Delete the `warm_nhl_key_cache()` function (its logic is now in `NhlDataSource::warm_cache`).
 
-**Files affected:** `data_sources/nhl/models/team.rs`, `data_sources/nhl/orchestrator.rs`, new `data_sources/nhl/data_source.rs`, `main.rs`.
+**Files affected:** new `src/common/data_source.rs`, new `src/data_sources/nhl/data_source.rs`, `src/common/app_context.rs`, `src/main.rs`.
 
-Acceptance: One entity (NhlTeam) migrated and upserts correctly using new patterns; playoff series records appear in DB after a scrape; `scrape nhl` CLI subcommand runs via `NhlDataSource`; parse errors are logged to `data_source_error` table instead of being silently swallowed.
+Acceptance: `DataSource` trait compiles; `NhlDataSource` implements it correctly; `AppContext` holds a registry; `main.rs` initializes the registry and calls `warm_cache` via it; `cargo build` passes; `scrape nhl` works end-to-end with the same behavior as before.
+
+**deferred to phase 2:** `JobSpec` enum, `DataSource::execute()`, job routing logic in executor. that design work will happen when we build the job system.
 
 ---
 
@@ -630,9 +654,10 @@ Acceptance: cancellation test passes; orchestrator-level collect loops exit imme
 - ✅ All builds pass (check, build, clippy, fmt)
 
 **Remaining Phase 1 criteria (to be completed in 1.4c and 1.5):**
-- [ ] `DataSource` trait exists; `NhlDataSource` is registered; CLI dispatch and cache warming iterate the registry. (Step 1.4c)
+- [ ] `DataSource` trait exists with `warm_cache()` method; `NhlDataSource` implements it; registry is in `AppContext`. (Step 1.4c)
+- [ ] `warm_nhl_key_cache` logic is moved into `NhlDataSource::warm_cache`; `main.rs` calls it via the registry. (Step 1.4c)
 - [ ] Cancellation harness test passes. (Step 1.5)
-- [ ] Full NHL scrape run executes end-to-end on a fresh database and produces correct data. (Step 1.4c/1.5)
+- [ ] Full NHL scrape run executes end-to-end on a fresh database and produces correct data. (Step 1.5)
 - [ ] `cargo build --release` and fast unit tests pass in CI on `feature/rewrite-foundation`. (Step 1.5)
 - ✅ Orchestrator functions accept `&AppContext`, `&DbContext`, `&NhlApi` as needed.
 - ✅ `CONFIG` static remains but `UI_CONFIG` is fully removed.
