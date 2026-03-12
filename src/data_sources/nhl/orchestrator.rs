@@ -13,9 +13,8 @@ use crate::{
         errors::DSError,
         models::{
             traits::{DbStruct, HasTypeName, IntoDbStruct},
-            ApiCache, ItemParsedWithContext, ItemParsedWithContextVecExt,
+            ApiCache, DataSourceError, ItemParsedWithContext, ItemParsedWithContextVecExt,
         },
-        util::track_and_filter_errors,
     },
     CONFIG,
 };
@@ -66,15 +65,39 @@ pub async fn get_resource<J, D, Fut>(
 where
     J: IntoDbStruct<DbStruct = D>,
     D: DbStruct + DbEntity + HasTypeName,
-    Fut: std::future::Future<Output = Result<Vec<ItemParsedWithContext<J>>, DSError>>,
+    Fut: std::future::Future<
+        Output = Result<Vec<Result<ItemParsedWithContext<J>, DSError>>, DSError>,
+    >,
 {
     let j_name: &'static str = J::type_name();
     let d_name: &'static str = D::type_name();
 
     tracing::debug!("Fetching all available `{j_name}`s from NHL API.");
-    let json_structs: Vec<ItemParsedWithContext<J>> = fetch_fn.await?;
-    let json_struct_count: usize = json_structs.len();
-    tracing::debug!("Successfully fetched {json_struct_count} `{j_name}`s from NHL API",);
+    let json_struct_results: Vec<Result<ItemParsedWithContext<J>, DSError>> = fetch_fn.await?;
+    let total_count = json_struct_results.len();
+
+    // Partition successes and failures
+    let mut json_structs = Vec::new();
+    let mut parse_errors = Vec::new();
+    for result in json_struct_results {
+        match result {
+            Ok(item) => json_structs.push(item),
+            Err(e) => parse_errors.push(e),
+        }
+    }
+
+    let json_struct_count = json_structs.len();
+    tracing::debug!(
+        "Successfully fetched {json_struct_count}/{total_count} `{j_name}`s from NHL API ({} parse errors)",
+        parse_errors.len()
+    );
+
+    // Log parse errors (fire-and-forget)
+    if !parse_errors.is_empty() {
+        for error in parse_errors {
+            DataSourceError::track_error(error, db_context).await;
+        }
+    }
 
     let db_structs: Vec<D> = json_structs.into_db_structs(
         app_context,
@@ -194,12 +217,29 @@ pub async fn get_nhl_all_games_in_season(
     let json_results: Vec<Result<ItemParsedWithContext<NhlGameJson>, DSError>> = nhl_api
         .get_many_games(app_context, db_context, game_ids)
         .await;
-    let ok_json_results: Vec<ItemParsedWithContext<NhlGameJson>> =
-        track_and_filter_errors(json_results, db_context).await;
+
+    // Partition successes and failures
+    let mut ok_json_results = Vec::new();
+    let mut parse_errors = Vec::new();
+    for result in json_results {
+        match result {
+            Ok(item) => ok_json_results.push(item),
+            Err(e) => parse_errors.push(e),
+        }
+    }
+
     let ok_json_result_count = ok_json_results.len();
     tracing::info!(
-        "Successfully fetched {ok_json_result_count}/{number_of_games} games from NHL API or cache."
+        "Successfully fetched {ok_json_result_count}/{number_of_games} games from NHL API or cache ({} parse errors)",
+        parse_errors.len()
     );
+
+    // Log parse errors (fire-and-forget)
+    if !parse_errors.is_empty() {
+        for error in parse_errors {
+            DataSourceError::track_error(error, db_context).await;
+        }
+    }
 
     let games: Vec<NhlGame> = ok_json_results.into_db_structs(
         app_context,
@@ -422,12 +462,29 @@ pub async fn get_nhl_games_in_playoff_series(
     let game_json_results: Vec<Result<ItemParsedWithContext<NhlGameJson>, DSError>> = nhl_api
         .get_many_games(app_context, db_context, game_ids)
         .await;
-    let game_jsons: Vec<ItemParsedWithContext<NhlGameJson>> =
-        track_and_filter_errors(game_json_results, db_context).await;
-    let ok_game_json_count: usize = game_jsons.len();
+
+    // Partition successes and failures
+    let mut game_jsons = Vec::new();
+    let mut parse_errors = Vec::new();
+    for result in game_json_results {
+        match result {
+            Ok(item) => game_jsons.push(item),
+            Err(e) => parse_errors.push(e),
+        }
+    }
+
+    let ok_game_json_count = game_jsons.len();
     tracing::info!(
-        "Fetched {ok_game_json_count}/{number_of_games} game play-by-play reports from NHL API or cache."
+        "Fetched {ok_game_json_count}/{number_of_games} game play-by-play reports from NHL API or cache ({} parse errors)",
+        parse_errors.len()
     );
+
+    // Log parse errors (fire-and-forget)
+    if !parse_errors.is_empty() {
+        for error in parse_errors {
+            DataSourceError::track_error(error, db_context).await;
+        }
+    }
     let games: Vec<NhlGame> = game_jsons.into_db_structs(
         app_context,
         &format!(

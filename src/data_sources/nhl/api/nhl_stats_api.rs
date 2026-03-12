@@ -8,7 +8,6 @@ use crate::common::{
     db::DbContext,
     errors::DSError,
     models::{traits::IntoDbStruct, ItemParsedWithContext},
-    util::track_and_filter_errors,
 };
 
 use super::super::models::{NhlApiDataArrayResponse, NhlDefaultContext};
@@ -52,7 +51,7 @@ impl NhlStatsApi {
         &self,
         endpoint: &str,
         db_context: &DbContext,
-    ) -> Result<Vec<ItemParsedWithContext<T>>, DSError>
+    ) -> Result<Vec<Result<ItemParsedWithContext<T>, DSError>>, DSError>
     where
         T: DeserializeOwned + Debug + IntoDbStruct<Context = NhlDefaultContext>,
     {
@@ -69,6 +68,6 @@ impl NhlStatsApi {
             })?;
 
         let results = data_array_response.map_json_array_to_json_structs(endpoint);
-        Ok(track_and_filter_errors(results, db_context).await)
+        Ok(results)
     }
 }

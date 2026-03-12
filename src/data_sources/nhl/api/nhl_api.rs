@@ -44,7 +44,7 @@ impl NhlApi {
     pub async fn list_seasons(
         &self,
         db_context: &DbContext,
-    ) -> Result<Vec<ItemParsedWithContext<NhlSeasonJson>>, DSError> {
+    ) -> Result<Vec<Result<ItemParsedWithContext<NhlSeasonJson>, DSError>>, DSError> {
         let endpoint = self.nhl_stats_api.endpoint("/season");
         self.nhl_stats_api
             .fetch_and_parse(&endpoint, db_context)
@@ -55,7 +55,7 @@ impl NhlApi {
     pub async fn list_teams(
         &self,
         db_context: &DbContext,
-    ) -> Result<Vec<ItemParsedWithContext<NhlTeamJson>>, DSError> {
+    ) -> Result<Vec<Result<ItemParsedWithContext<NhlTeamJson>, DSError>>, DSError> {
         let endpoint = self.nhl_stats_api.endpoint("/team");
         self.nhl_stats_api
             .fetch_and_parse(&endpoint, db_context)
@@ -75,14 +75,14 @@ impl NhlApi {
 
         results
             .pop()
-            .ok_or_else(|| DSError::ApiCustom(format!("NHL team with id {team_id} not found.")))
+            .ok_or_else(|| DSError::ApiCustom(format!("NHL team with id {team_id} not found.")))?
     }
 
     // Franchise methods
     pub async fn list_franchises(
         &self,
         db_context: &DbContext,
-    ) -> Result<Vec<ItemParsedWithContext<NhlFranchiseJson>>, DSError> {
+    ) -> Result<Vec<Result<ItemParsedWithContext<NhlFranchiseJson>, DSError>>, DSError> {
         let endpoint = self.nhl_stats_api.endpoint("/franchise");
         self.nhl_stats_api
             .fetch_and_parse(&endpoint, db_context)
@@ -94,7 +94,7 @@ impl NhlApi {
         &self,
         db_context: &DbContext,
         game_id: i32,
-    ) -> Result<Vec<ItemParsedWithContext<NhlShiftJson>>, DSError> {
+    ) -> Result<Vec<Result<ItemParsedWithContext<NhlShiftJson>, DSError>>, DSError> {
         let endpoint = self
             .nhl_stats_api
             .endpoint(&format!("/shiftcharts?cayenneExp=gameId={game_id}"));
@@ -175,7 +175,8 @@ impl NhlApi {
         &self,
         db_context: &DbContext,
         year_id: i32,
-    ) -> Result<Vec<ItemParsedWithContext<NhlPlayoffBracketSeriesJson>>, DSError> {
+    ) -> Result<Vec<Result<ItemParsedWithContext<NhlPlayoffBracketSeriesJson>, DSError>>, DSError>
+    {
         let endpoint = self
             .nhl_web_api
             .endpoint(&format!("/playoff-bracket/{year_id}"));
@@ -196,7 +197,7 @@ impl NhlApi {
         let season_id: i32 = format!("{}{}", year_id - 1, year_id)
             .parse::<i32>()
             .unwrap();
-        bracket
+        Ok(bracket
             .series
             .into_iter()
             .map(|series| {
@@ -210,7 +211,7 @@ impl NhlApi {
                     },
                 })
             })
-            .collect()
+            .collect())
     }
 
     // Playoff series methods
