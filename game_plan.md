@@ -1,12 +1,6 @@
-# Dry Scraper — Game Plan
-
-Single source of truth for the rewrite. Only this file is edited until a PR implements a specific subtask listed here.
-
----
-
 ## Current Status (as of latest commit)
 
-**Phase 1 Progress: 5/7 steps complete (71%)**
+**Phase 1 Progress: 6/7 steps complete (86%)**
 
 - ✅ **Step 1.1** — AppContext owns config and shared handles (DONE)
 - ✅ **Step 1.2** — Remove lifetime-bearing resource types (DONE)
@@ -19,41 +13,17 @@ Single source of truth for the rewrite. Only this file is edited until a PR impl
   - Comprehensive tracing/error handling audit completed
   - All `unwrap()` calls replaced with proper error propagation
   - Compiles cleanly: `cargo check`, `cargo build`, `cargo clippy`, `cargo fmt` all pass
-- ⏳ **Step 1.4c** — Define `DataSource` trait; organize `NhlDataSource` (NEXT)
-  - minimal scope: just `warm_cache()` for now
-  - defer `JobSpec` and job execution to phase 2
-  - prove the registry pattern works
-- ⏳ **Step 1.5** — Add cancellation (`CancellationToken`) and tests (AFTER 1.4c)
+- ✅ **Step 1.4c** — Define `DataSource` trait; organize `NhlDataSource` (DONE)
+  - `DataSource` trait defined with `warm_cache()` method
+  - `NhlDataSource` implements trait and owns `NhlApi`
+  - `sources: Vec<Arc<dyn DataSource>>` added to `AppContext`
+  - registry initialized in `main.rs` and called instead of direct function
+  - cache warming still works end-to-end
+  - all `unwrap()` calls replaced with proper error propagation
+  - Compiles cleanly with zero warnings
+- ⏳ **Step 1.5** — Add cancellation (`CancellationToken`) and tests (NEXT)
 
-**Next immediate action:** Define `DataSource` trait with `warm_cache()`, implement `NhlDataSource`, move cache warming logic into it, register in `AppContext` and call from `main.rs`.
-
----
-
-## Context: blank slate
-
-The database does not yet exist. `init_db()` creates it on first run via `sqlx::Postgres::create_database` and then runs sqlx migrations. This is an advantage: there is no live data to preserve, no migration compatibility burden, and no locked schema. We can freely change DB column names, types, and table layout as part of the rewrite without writing transition migrations. The migration files in `migrations/` are the schema definition and can be edited freely until a stable schema is decided on.
-
----
-
-## Target architecture
-
-```
-┌─────────────────────────────────────────────────┐
-│                 Library Crate                    │
-│                                                  │
-│  ┌─────────────┐  ┌──────────────────────────┐  │
-│  │   common/    │  │     data_sources/        │  │
-│  │  AppContext  │  │  ┌─────┐  ┌─────┐       │  │
-│  │  DbContext   │  │  │ nhl │  │ mlb │  ...  │  │
-│  │  DbEntity    │  │  └─────┘  └─────┘       │  │
-│  │  Progress    │  └──────────────────────────┘  │
-│  │  Retry       │                                │
-│  │  ApiCache    │  ┌──────────────────────────┐  │
-│  │  Errors      │  │     jobs/                │  │
-│  └─────────────┘  │  Job trait, JobSpec,      │  │
-│                    │  JobExecutor, JobHandle   │  │
-│                    └──────────────────────────┘  │
-│                                                  │
+**Next immediate action:** Implement cancellation support. thread `CancellationToken` through orchestrator functions, wrap long-running `buffer_unordered` loops in `tokio::select!`, add unit test.
 │  ┌──────────────────────────────────────────┐   │
 │  │     ipc/                                  │   │
 │  │  Protocol types, client/server helpers    │   │
