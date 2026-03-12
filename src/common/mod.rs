@@ -1,5 +1,6 @@
 pub mod api;
 pub mod app_context;
+pub mod data_source;
 pub mod db;
 pub mod errors;
 pub mod models;

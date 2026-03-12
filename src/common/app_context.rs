@@ -3,6 +3,7 @@ use reqwest::Client;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
+use crate::common::data_source::DataSource;
 use crate::common::progress::{ProgressReporter, ProgressReporterMode};
 use crate::config::Config;
 
@@ -12,6 +13,7 @@ pub struct AppContext {
     pub http: Client,
     pub progress_reporter_mode: ProgressReporterMode,
     pub cancellation_token: CancellationToken,
+    pub sources: Arc<Vec<Arc<dyn DataSource>>>,
 }
 
 impl AppContext {
@@ -32,7 +34,13 @@ impl AppContext {
             http: Client::new(),
             progress_reporter_mode,
             cancellation_token: CancellationToken::new(),
+            sources: Arc::new(Vec::new()),
         }
+    }
+
+    pub fn with_sources(mut self, sources: Vec<Arc<dyn DataSource>>) -> Self {
+        self.sources = Arc::new(sources);
+        self
     }
 
     pub fn with_progress_bar<F, R>(&self, total: u64, msg: &str, f: F) -> R
