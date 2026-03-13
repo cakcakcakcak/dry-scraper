@@ -146,6 +146,17 @@ pub async fn reset_schema(pool: &DbPool, cfg: &Config) -> Result<(), DSError> {
         .await?;
     }
 
+    // Delete migration records for dropped tables (versions 3-13 are NHL tables)
+    // Keep versions 1-2 (api_cache, data_source_error)
+    tracing::debug!("Clearing migration records for dropped tables");
+    sqlx_operation_with_retries!(
+        cfg,
+        sqlx::query("DELETE FROM _sqlx_migrations WHERE version > 2")
+            .execute(pool)
+            .await
+    )
+    .await?;
+
     // Re-run migrations to recreate dropped tables
     sqlx::migrate!("./migrations").run(pool).await?;
 

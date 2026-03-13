@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use async_trait::async_trait;
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::FromRow;
@@ -27,7 +28,7 @@ pub struct NhlSeasonJson {
     pub conferences_in_use: bool,
     #[serde(deserialize_with = "deserialize_to_bool")]
     pub divisions_in_use: bool,
-    pub end_date: chrono::NaiveDateTime,
+    pub end_date: NaiveDateTime,
     #[serde(deserialize_with = "deserialize_to_bool")]
     pub entry_draft_in_use: bool,
     pub formatted_season_id: String,
@@ -41,12 +42,12 @@ pub struct NhlSeasonJson {
     #[serde(deserialize_with = "deserialize_to_bool")]
     #[serde(rename = "pointForOTLossInUse")]
     pub point_for_ot_loss_in_use: bool,
-    pub preseason_startdate: Option<chrono::NaiveDateTime>,
-    pub regular_season_end_date: chrono::NaiveDateTime,
+    pub preseason_startdate: Option<NaiveDateTime>,
+    pub regular_season_end_date: NaiveDateTime,
     #[serde(deserialize_with = "deserialize_to_bool")]
     pub row_in_use: bool,
     pub season_ordinal: i32,
-    pub start_date: chrono::NaiveDateTime,
+    pub start_date: NaiveDateTime,
     #[serde(deserialize_with = "deserialize_to_bool")]
     pub supplemental_draft_in_use: bool,
     #[serde(deserialize_with = "deserialize_to_bool")]
@@ -123,7 +124,7 @@ pub struct NhlSeason {
     pub all_star_game_in_use: bool,
     pub conferences_in_use: bool,
     pub divisions_in_use: bool,
-    pub end_date: chrono::NaiveDateTime,
+    pub end_date: NaiveDateTime,
     pub entry_draft_in_use: bool,
     pub formatted_season_id: String,
     pub minimum_playoff_minutes_for_goalie_stats_leaders: i32,
@@ -132,11 +133,11 @@ pub struct NhlSeason {
     pub number_of_games: i32,
     pub olympics_participation: bool,
     pub point_for_ot_loss_in_use: bool,
-    pub preseason_startdate: Option<chrono::NaiveDateTime>,
-    pub regular_season_end_date: chrono::NaiveDateTime,
+    pub preseason_startdate: Option<NaiveDateTime>,
+    pub regular_season_end_date: NaiveDateTime,
     pub row_in_use: bool,
     pub season_ordinal: i32,
-    pub start_date: chrono::NaiveDateTime,
+    pub start_date: NaiveDateTime,
     pub supplemental_draft_in_use: bool,
     pub ties_in_use: bool,
     pub total_playoff_games: i32,
@@ -160,7 +161,7 @@ impl DbEntity for NhlSeason {
 
     fn foreign_keys(&self) -> Vec<CacheKey> {
         vec![CacheKey {
-            source: "nhl",
+            source: "api_cache",
             table: "api_cache",
             id: self.endpoint.clone(),
         }]

@@ -205,7 +205,7 @@ impl DbEntity for NhlPlayer {
 
     fn foreign_keys(&self) -> Vec<CacheKey> {
         let mut keys = vec![CacheKey {
-            source: "nhl",
+            source: "api_cache",
             table: "api_cache",
             id: self.endpoint.clone(),
         }];

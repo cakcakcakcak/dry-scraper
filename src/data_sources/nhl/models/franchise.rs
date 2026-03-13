@@ -69,7 +69,7 @@ impl DbEntity for NhlFranchise {
 
     fn foreign_keys(&self) -> Vec<CacheKey> {
         vec![CacheKey {
-            source: "nhl",
+            source: "api_cache",
             table: "api_cache",
             id: self.endpoint.clone(),
         }]

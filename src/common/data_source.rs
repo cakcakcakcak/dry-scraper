@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use std::any::Any;
 
 use crate::common::{app_context::AppContext, db::DbContext, errors::DSError};
 
@@ -13,4 +14,6 @@ pub trait DataSource: Send + Sync {
         app_context: &AppContext,
         db_context: &DbContext,
     ) -> Result<(), DSError>;
+
+    fn as_any(&self) -> &dyn Any;
 }

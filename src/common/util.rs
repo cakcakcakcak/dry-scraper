@@ -65,7 +65,10 @@ pub fn is_transient_sqlx_error(e: &sqlx::Error) -> bool {
 }
 
 fn is_transient_reqwest_error(e: &reqwest::Error) -> bool {
-    e.is_timeout() || e.is_connect() || e.to_string().contains("IncompleteMessage")
+    e.is_timeout()
+        || e.is_connect()
+        || e.to_string().contains("IncompleteMessage")
+        || e.status() == Some(reqwest::StatusCode::TOO_MANY_REQUESTS)
 }
 
 pub async fn sqlx_operation_with_retries<F, Fut, T>(

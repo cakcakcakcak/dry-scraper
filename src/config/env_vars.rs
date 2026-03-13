@@ -4,6 +4,8 @@ use std::env::VarError;
 pub struct EnvironmentVariables {
     pub database_url: Option<String>,
     pub api_concurrency_limit: Option<usize>,
+    pub api_delay_ms: Option<u64>,
+    pub nhl_api_rate_limit: Option<u32>,
     pub max_db_connections: Option<u32>,
     pub db_concurrency_limit: Option<usize>,
     pub db_query_batch_size: Option<usize>,
@@ -20,6 +22,8 @@ impl EnvironmentVariables {
         Self {
             database_url: Self::get_parsed_env_var_with_log("DATABASE_URL"),
             api_concurrency_limit: Self::get_parsed_env_var_with_log("API_CONCURRENCY_LIMIT"),
+            api_delay_ms: Self::get_parsed_env_var_with_log("API_DELAY_MS"),
+            nhl_api_rate_limit: Self::get_parsed_env_var_with_log("NHL_API_RATE_LIMIT"),
             max_db_connections: Self::get_parsed_env_var_with_log("MAX_DB_CONNECTIONS"),
             db_concurrency_limit: Self::get_parsed_env_var_with_log("DB_CONCURRENCY_LIMIT"),
             db_query_batch_size: Self::get_parsed_env_var_with_log("DB_QUERY_BATCH_SIZE"),

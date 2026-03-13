@@ -13,6 +13,10 @@ pub struct CliArgs {
     #[arg(long)]
     pub api_concurrency_limit: Option<usize>,
     #[arg(long)]
+    pub api_delay_ms: Option<u64>,
+    #[arg(long)]
+    pub nhl_api_rate_limit: Option<u32>,
+    #[arg(long)]
     pub max_db_connections: Option<u32>,
     #[arg(long)]
     pub db_concurrency_limit: Option<usize>,
@@ -45,9 +49,20 @@ pub enum Commands {
 pub enum ScrapeSource {
     /// Scrape NHL data
     Nhl {
-        /// Reset the database before scraping (debug builds only)
-        #[cfg(debug_assertions)]
-        #[arg(long)]
-        reset: bool,
+        #[command(subcommand)]
+        command: NhlCommand,
     },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum NhlCommand {
+    /// Fetch all base data (franchises, teams, seasons)
+    All,
+    /// Fetch a single game and all its data (plays, roster spots, shifts)
+    Game { game_id: u32 },
+    /// Fetch all games in a season (e.g., 20252026)
+    Season { season_id: u32 },
+    /// Reset the database schema (debug builds only)
+    #[cfg(debug_assertions)]
+    Reset,
 }

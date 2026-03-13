@@ -5,7 +5,8 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
-  outputs = { self, nixpkgs }:
+  outputs =
+    { self, nixpkgs }:
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
@@ -16,12 +17,13 @@
           cargo
           openssl.dev
           pkg-config
+          postgresql_18
           rustc
           rust-analyzer
           rustfmt
           clippy
         ];
-        
+
         shellHook = ''
           echo "🦀 Rust development environment"
           echo "cargo: $(cargo --version)"

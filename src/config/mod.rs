@@ -11,13 +11,15 @@ use cli_args::CliArgs;
 use env_vars::EnvironmentVariables;
 
 const DEFAULT_API_CONCURRENCY_LIMIT: usize = 32;
+const DEFAULT_API_DELAY_MS: u64 = 50;
+const DEFAULT_NHL_API_RATE_LIMIT: u32 = 5;
 const DEFAULT_MAX_DB_CONNECTIONS: u32 = 32;
 const DEFAULT_DB_CONCURRENCY_LIMIT: usize = 16;
-const DEFAULT_DB_QUERY_BATCH_SIZE: usize = 1_000;
-const DEFAULT_DB_QUERY_BATCH_TIMEOUT_MS: u64 = 2_000;
-const DEFAULT_RETRY_INTERVAL_MS: u64 = 100;
-const DEFAULT_RETRY_MAX_INTERVAL_MS: u64 = 10_000;
-const DEFAULT_RETRIES: usize = 5;
+const DEFAULT_DB_QUERY_BATCH_SIZE: usize = 1000;
+const DEFAULT_DB_QUERY_BATCH_TIMEOUT_MS: u64 = 100;
+const DEFAULT_RETRY_INTERVAL_MS: u64 = 500;
+const DEFAULT_RETRY_MAX_INTERVAL_MS: u64 = 5000;
+const DEFAULT_RETRIES: usize = 3;
 const DEFAULT_PROGRESS_BAR_STYLE_FORMAT: &str =
     "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {msg}";
 const DEFAULT_PROGRESS_SPINNER_STYLE_FORMAT: &str = "{spinner:.green} [{elapsed}] {msg}";
@@ -35,6 +37,8 @@ pub static DEFAULT_PROGRESS_SPINNER_STYLE: Lazy<ProgressStyle> = Lazy::new(|| {
 pub struct Config {
     pub database_url: String,
     pub api_concurrency_limit: usize,
+    pub api_delay_ms: u64,
+    pub nhl_api_rate_limit: u32,
     pub max_db_connections: u32,
     pub db_concurrency_limit: usize,
     pub db_query_batch_size: usize,
@@ -64,6 +68,16 @@ impl Config {
             .api_concurrency_limit
             .or(env_vars.api_concurrency_limit)
             .unwrap_or(DEFAULT_API_CONCURRENCY_LIMIT);
+
+        let api_delay_ms: u64 = cli_args
+            .api_delay_ms
+            .or(env_vars.api_delay_ms)
+            .unwrap_or(DEFAULT_API_DELAY_MS);
+
+        let nhl_api_rate_limit: u32 = cli_args
+            .nhl_api_rate_limit
+            .or(env_vars.nhl_api_rate_limit)
+            .unwrap_or(DEFAULT_NHL_API_RATE_LIMIT);
 
         let max_db_connections: u32 = cli_args
             .max_db_connections
@@ -113,6 +127,8 @@ impl Config {
         Config {
             database_url,
             api_concurrency_limit,
+            api_delay_ms,
+            nhl_api_rate_limit,
             max_db_connections,
             db_concurrency_limit,
             db_query_batch_size,

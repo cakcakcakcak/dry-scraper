@@ -5,6 +5,7 @@ use crate::common::{
     errors::DSError,
     models::ApiCache,
 };
+use crate::config::Config;
 
 use super::api::NhlApi;
 use super::models::*;
@@ -12,12 +13,18 @@ use futures::stream::{self, StreamExt};
 
 #[allow(dead_code)]
 pub struct NhlDataSource {
-    api: NhlApi,
+    pub api: NhlApi,
 }
 
 impl NhlDataSource {
     pub fn new() -> Self {
-        Self { api: NhlApi::new() }
+        Self::with_config(&Config::from_env_and_args())
+    }
+
+    pub fn with_config(config: &Config) -> Self {
+        Self {
+            api: NhlApi::with_config(config),
+        }
     }
 }
 
@@ -66,5 +73,9 @@ impl DataSource for NhlDataSource {
 
         tracing::debug!("NHL key cache warmed");
         Ok(())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }

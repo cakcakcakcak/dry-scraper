@@ -1,6 +1,6 @@
 use sqlx::postgres::PgQueryResult;
 
-use super::{api::NhlApi, models::*};
+use super::{api::NhlApi, models::*, primary_key::NhlSeasonKey};
 
 use crate::common::{
     app_context::AppContext,
@@ -32,11 +32,29 @@ where
     let missing_fks = find_missing_foreign_keys(entities, db_context);
     let type_name = T::type_name();
 
+    // Group missing FKs by table for better reporting
+    let mut fk_by_table = std::collections::HashMap::new();
+    for fk in &missing_fks {
+        fk_by_table
+            .entry(&fk.table)
+            .or_insert_with(Vec::new)
+            .push(&fk.id);
+    }
+
+    let mut table_summary = String::new();
+    for (table, ids) in &fk_by_table {
+        if !table_summary.is_empty() {
+            table_summary.push_str(", ");
+        }
+        table_summary.push_str(&format!("{}: {}", table, ids.len()));
+    }
+
     tracing::warn!(
-        "{} `{}` entities reference {} missing foreign keys. Some upserts may fail if FKs don't exist.",
+        "{} `{}` entities reference {} missing foreign keys ({}). Some upserts may fail if FKs don't exist.",
         entities.len(),
         type_name,
-        missing_fks.len()
+        missing_fks.len(),
+        table_summary
     );
 
     if tracing::enabled!(tracing::Level::DEBUG) {
@@ -307,6 +325,88 @@ pub async fn get_nhl_all_games_in_season(
     Ok(games)
 }
 
+#[tracing::instrument(skip(app_context, db_context, nhl_api))]
+pub async fn get_nhl_season_games(
+    app_context: &AppContext,
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
+    season_id: i32,
+) -> Result<Vec<NhlGame>, DSError> {
+    tracing::info!(season_id = season_id, "Fetching season games");
+
+    // First, ensure the season exists in the database
+    let season_key = NhlSeasonKey { id: season_id };
+    let season = match NhlSeason::fetch_from_db_by_key(db_context, &season_key).await? {
+        Some(s) => s,
+        None => {
+            tracing::warn!(season_id = season_id, "Season not found, fetching from API");
+            // Fetch all seasons to ensure it exists
+            get_nhl_seasons(app_context, db_context, nhl_api).await?;
+
+            // Try again
+            match NhlSeason::fetch_from_db_by_key(db_context, &season_key).await? {
+                Some(s) => s,
+                None => {
+                    return Err(DSError::DatabaseCustom(format!(
+                        "Season {} not found in database after fetch",
+                        season_id
+                    )))
+                }
+            }
+        }
+    };
+
+    // Fetch all games in the season
+    get_nhl_all_games_in_season(app_context, db_context, nhl_api, &season).await
+}
+
+#[tracing::instrument(skip(app_context, db_context, nhl_api))]
+pub async fn get_nhl_game(
+    app_context: &AppContext,
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
+    game_id: i32,
+) -> Result<NhlGame, DSError> {
+    tracing::info!(game_id = game_id, "Fetching single game");
+
+    let json_result = nhl_api.get_game(db_context, game_id).await;
+
+    // Handle parse errors
+    let game_json = match json_result {
+        Ok(item) => item,
+        Err(e) => {
+            tracing::warn!(
+                game_id = game_id,
+                "Parse error occurred while fetching game"
+            );
+            DataSourceError::track_error(e, db_context).await;
+            return Err(DSError::ApiCustom(format!(
+                "Failed to fetch or parse game {game_id}"
+            )));
+        }
+    };
+
+    let game: NhlGame = game_json.into_db_struct();
+
+    // Check for missing foreign keys (teams, season) before upserting
+    ensure_foreign_keys_exist(std::slice::from_ref(&game), db_context).await;
+
+    let _upsert_result = game.upsert(db_context).await;
+    tracing::info!(game_id = game_id, "Game upserted");
+
+    // Fetch ancillary game data (plays, roster spots, shifts)
+    let (plays_res, roster_res, shifts_res) = tokio::join!(
+        get_nhl_plays_in_game(app_context, db_context, &game),
+        get_nhl_roster_spots_in_game(app_context, db_context, &game),
+        get_nhl_shifts_in_game(app_context, db_context, nhl_api, game.id),
+    );
+    plays_res?;
+    roster_res?;
+    shifts_res?;
+
+    Ok(game)
+}
+
 #[tracing::instrument(skip(app_context, db_context))]
 pub async fn get_nhl_roster_spots_in_game(
     app_context: &AppContext,
@@ -347,7 +447,54 @@ pub async fn get_nhl_roster_spots_in_game(
     );
     let roster_spot_count = roster_spots.len();
 
-    // Check for missing foreign keys (game, players, teams) before upserting
+    // Create minimal player stubs from roster spot data to satisfy FK constraints
+    let players: Vec<NhlPlayer> = roster_spots
+        .iter()
+        .map(|rs| NhlPlayer {
+            id: rs.player_id,
+            first_name: rs.first_name.clone(),
+            last_name: rs.last_name.clone(),
+            is_active: true,
+            current_team_id: Some(rs.team_id),
+            current_team_abbrev: None,
+            full_team_name: None,
+            team_common_name: None,
+            team_place_name_with_preposition: None,
+            team_logo: None,
+            sweater_number: Some(rs.sweater_number),
+            position: rs.position_code.clone(),
+            headshot: rs.headshot.clone(),
+            hero_image: String::new(),
+            height_in_inches: None,
+            height_in_centimeters: None,
+            weight_in_pounds: None,
+            weight_in_kilograms: None,
+            birth_date: chrono::NaiveDate::from_ymd_opt(1900, 1, 1).unwrap(),
+            birth_city: String::new(),
+            birth_state_province: None,
+            birth_country: String::new(),
+            shoots_catches: None,
+            draft_year: None,
+            draft_team_abbreviation: None,
+            draft_round: None,
+            draft_pick_in_round: None,
+            draft_overall_pick: None,
+            player_slug: format!(
+                "{}-{}",
+                rs.first_name.to_lowercase(),
+                rs.last_name.to_lowercase()
+            ),
+            in_top100_all_time: false,
+            in_hhof: false,
+            raw_json: serde_json::json!({}),
+            endpoint: rs.endpoint.clone(),
+        })
+        .collect();
+
+    // Upsert player stubs first to satisfy FK constraints
+    players.upsert_all(app_context, db_context).await;
+
+    // Check for missing foreign keys (game, teams) before upserting
     ensure_foreign_keys_exist(&roster_spots, db_context).await;
 
     let upsert_results = roster_spots.upsert_all(app_context, db_context).await;
