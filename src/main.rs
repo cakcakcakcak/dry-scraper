@@ -14,17 +14,26 @@ use dry_scraper::common::db::init::reset_schema;
 use dry_scraper::data_sources::nhl::{
     data_source::NhlDataSource,
     orchestrator::{
-        get_nhl_franchises, get_nhl_game, get_nhl_season_games, get_nhl_seasons, get_nhl_teams,
+        get_nhl_everything_in_season, get_nhl_franchises, get_nhl_game, get_nhl_seasons,
+        get_nhl_teams,
     },
 };
 use std::sync::Arc;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[tokio::main]
 async fn main() -> Result<(), DSError> {
     _ = dotenvy::dotenv();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_env("LOG_LEVEL"))
+    // Initialize tracing with indicatif support to prevent progress bar conflicts
+    let indicatif_layer = tracing_indicatif::IndicatifLayer::new();
+    let filter = EnvFilter::try_from_env("LOG_LEVEL")
+        .unwrap_or_else(|_| EnvFilter::new("warn,dry_scraper::data_sources=info"));
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer().with_writer(indicatif_layer.get_stderr_writer()))
+        .with(indicatif_layer)
         .init();
 
     let cli_args = CliArgs::parse();
@@ -58,39 +67,30 @@ async fn main() -> Result<(), DSError> {
                         nhl_source.warm_cache(&app_context, &db_context).await?;
 
                         // Fetch base data (franchises, teams, seasons)
-                        get_nhl_franchises(&app_context, &db_context, &nhl_source.api).await?;
-                        get_nhl_seasons(&app_context, &db_context, &nhl_source.api).await?;
-                        get_nhl_teams(&app_context, &db_context, &nhl_source.api).await?;
+                        _ = get_nhl_franchises(&app_context, &db_context, &nhl_source.api).await?;
+                        let seasons =
+                            get_nhl_seasons(&app_context, &db_context, &nhl_source.api).await?;
+                        _ = get_nhl_teams(&app_context, &db_context, &nhl_source.api).await?;
 
                         match command {
-                            NhlCommand::All => {
-                                tracing::info!("NHL scrape complete");
-                            }
+                            NhlCommand::All => for _season in seasons {},
                             NhlCommand::Game { game_id } => {
-                                tracing::info!(game_id = game_id, "Fetching single game");
-                                let game = get_nhl_game(
+                                let _game = get_nhl_game(
                                     &app_context,
                                     &db_context,
                                     &nhl_source.api,
                                     game_id as i32,
                                 )
                                 .await?;
-                                tracing::info!(game_id = game.id, "Game fetched successfully");
                             }
                             NhlCommand::Season { season_id } => {
-                                tracing::info!(season_id = season_id, "Fetching season games");
-                                let games = get_nhl_season_games(
+                                get_nhl_everything_in_season(
                                     &app_context,
                                     &db_context,
                                     &nhl_source.api,
                                     season_id as i32,
                                 )
                                 .await?;
-                                tracing::info!(
-                                    season_id = season_id,
-                                    game_count = games.len(),
-                                    "Season games fetched successfully"
-                                );
                             }
                             #[cfg(debug_assertions)]
                             NhlCommand::Reset => unreachable!(),

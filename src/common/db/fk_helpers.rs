@@ -34,30 +34,36 @@ where
 
 /// Group cache keys by their table name for batch fetching.
 ///
-/// Returns a HashMap where keys are table names and values are vectors of IDs
-/// that need to be fetched for that table.
+/// Returns a HashMap where keys are table names and values are vectors of
+/// `CacheKey` objects (preserving source and id information).
 ///
 /// # Example
 ///
 /// ```rust,ignore
 /// let missing = find_missing_foreign_keys(&games, db_context);
 /// let grouped = group_cache_keys_by_table(&missing);
-/// // grouped might be: {"team" => ["1", "5"], "season" => ["20232024"]}
+/// // grouped might be: {"team" => [CacheKey, CacheKey], "player" => [CacheKey]}
 ///
 /// // Then fetch each group:
-/// if let Some(team_ids) = grouped.get("team") {
-///     let teams = fetch_teams_by_ids(team_ids).await?;
-///     teams.upsert_all(app_context, db_context).await;
+/// for (table, cache_keys) in grouped {
+///     let ids: Vec<i32> = cache_keys.iter()
+///         .filter_map(|ck| ck.id.parse().ok())
+///         .collect();
+///     match table.as_str() {
+///         "team" => { /* fetch teams with ids */ },
+///         "player" => { /* fetch players with ids */ },
+///         _ => {}
+///     }
 /// }
 /// ```
-pub fn group_cache_keys_by_table(keys: &[CacheKey]) -> HashMap<String, Vec<String>> {
-    let mut grouped: HashMap<String, Vec<String>> = HashMap::new();
+pub fn group_cache_keys_by_table(keys: &[CacheKey]) -> HashMap<String, Vec<CacheKey>> {
+    let mut grouped: HashMap<String, Vec<CacheKey>> = HashMap::new();
 
     for key in keys {
         grouped
             .entry(key.table.to_string())
             .or_default()
-            .push(key.id.clone());
+            .push(key.clone());
     }
 
     grouped

@@ -3,7 +3,6 @@ use tokio_retry::{
     RetryIf,
 };
 
-use crate::common::{db::DbContext, errors::DSError, models::DataSourceError};
 use crate::config::Config;
 
 #[macro_export]
@@ -101,25 +100,4 @@ where
         is_transient_reqwest_error,
     )
     .await
-}
-
-#[tracing::instrument(skip(results, db_context))]
-pub async fn track_and_filter_errors<T>(
-    results: Vec<Result<T, DSError>>,
-    db_context: &DbContext,
-) -> Vec<T> {
-    let futures = results.into_iter().map(|res| async move {
-        match res {
-            Ok(val) => Some(val),
-            Err(e) => {
-                DataSourceError::track_error(e, db_context).await;
-                None
-            }
-        }
-    });
-    futures::future::join_all(futures)
-        .await
-        .into_iter()
-        .flatten()
-        .collect()
 }

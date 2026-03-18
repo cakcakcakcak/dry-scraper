@@ -1,73 +1,153 @@
-use sqlx::postgres::PgQueryResult;
+use futures::stream::{self, StreamExt};
 
 use super::{api::NhlApi, models::*, primary_key::NhlSeasonKey};
 
 use crate::common::{
     app_context::AppContext,
     db::{
-        all_foreign_keys_cached, find_missing_foreign_keys, CacheKey, DbContext, DbEntity,
-        DbEntityVecExt,
+        all_foreign_keys_cached, find_missing_foreign_keys, group_cache_keys_by_table, DbContext,
+        DbEntity, DbEntityVecExt,
     },
     errors::DSError,
     models::{
-        traits::HasTypeName, DataSourceError, ItemParsedWithContext, ItemParsedWithContextVecExt,
+        partition_and_track_errors,
+        traits::{HasTypeName, IntoDbStruct},
+        DataSourceError, ItemParsedWithContext, ItemParsedWithContextVecExt,
     },
 };
 
-/// Ensure all foreign keys referenced by entities exist in the database.
+/// Ensure all foreign keys referenced by entities exist, fetching them if necessary.
 ///
-/// This checks the key cache for missing FKs and logs warnings if any are found.
-/// It does NOT fetch missing entities - the caller must ensure proper ordering
-/// (e.g., fetch teams before games that reference them).
+/// First checks the cache for missing FKs. If any are missing, attempts to fetch them
+/// from the API and upsert to the database. Only logs warnings if fetching fails.
 ///
-/// Returns the list of missing foreign keys for diagnostic purposes.
-async fn ensure_foreign_keys_exist<T>(entities: &[T], db_context: &DbContext) -> Vec<CacheKey>
+/// Returns the number of entities fetched, or an error if fetching failed.
+async fn ensure_and_fetch_foreign_keys<T>(
+    entities: &[T],
+    app_context: &AppContext,
+    db_context: &DbContext,
+    api: &NhlApi,
+) -> Result<usize, DSError>
 where
     T: DbEntity + HasTypeName,
 {
     if all_foreign_keys_cached(entities, db_context) {
-        return Vec::new();
+        return Ok(0);
     }
 
     let missing_fks = find_missing_foreign_keys(entities, db_context);
-    let type_name = T::type_name();
+    let grouped = group_cache_keys_by_table(&missing_fks);
 
-    // Group missing FKs by table for better reporting
-    let mut fk_by_table = std::collections::HashMap::new();
-    for fk in &missing_fks {
-        fk_by_table
-            .entry(&fk.table)
-            .or_insert_with(Vec::new)
-            .push(&fk.id);
+    // Fetch different FK types in parallel
+    let fetch_futures: Vec<_> = grouped
+        .into_iter()
+        .map(|(table, cache_keys)| async move {
+            match table.as_str() {
+                "player" => {
+                    tracing::info!("Fetching {} missing players", cache_keys.len());
+                    let player_ids: Vec<i32> = cache_keys
+                        .iter()
+                        .filter_map(|ck| ck.id.parse::<i32>().ok())
+                        .collect();
+
+                    let results = api
+                        .get_many_players(app_context, db_context, player_ids)
+                        .await;
+                    let players: Vec<NhlPlayer> = results
+                        .into_iter()
+                        .filter_map(|r| r.ok())
+                        .map(|parsed| parsed.item.into_db_struct(parsed.context))
+                        .collect();
+
+                    if players.len() < cache_keys.len() {
+                        tracing::warn!(
+                            "Failed to fetch {} of {} missing players",
+                            cache_keys.len() - players.len(),
+                            cache_keys.len()
+                        );
+                    }
+
+                    let count = players.len();
+                    let _ = players.upsert_all(app_context, db_context).await;
+                    count
+                }
+                "game" => {
+                    tracing::info!("Fetching {} missing games", cache_keys.len());
+                    let game_ids: Vec<i32> = cache_keys
+                        .iter()
+                        .filter_map(|ck| ck.id.parse::<i32>().ok())
+                        .collect();
+
+                    let pb = app_context
+                        .progress_reporter_mode
+                        .create_reporter(Some(game_ids.len() as u64), "Fetching missing games");
+
+                    let results: Vec<_> = stream::iter(game_ids)
+                        .map(|game_id| async move {
+                            get_nhl_game(app_context, db_context, api, game_id).await
+                        })
+                        .buffer_unordered(app_context.config.db_concurrency_limit)
+                        .inspect(|_| pb.inc(1))
+                        .collect()
+                        .await;
+
+                    pb.finish();
+
+                    let games: Vec<_> = results.into_iter().filter_map(|r| r.ok()).collect();
+                    if games.len() < cache_keys.len() {
+                        tracing::warn!(
+                            "Failed to fetch {} of {} missing games",
+                            cache_keys.len() - games.len(),
+                            cache_keys.len()
+                        );
+                    }
+                    games.len()
+                }
+                "team" => {
+                    tracing::warn!(
+                        "{} missing team FKs - teams should be fetched at startup",
+                        cache_keys.len()
+                    );
+                    0
+                }
+                "season" => {
+                    tracing::warn!(
+                        "{} missing season FKs - seasons should be fetched at startup",
+                        cache_keys.len()
+                    );
+                    0
+                }
+                "franchise" => {
+                    tracing::warn!(
+                        "{} missing franchise FKs - franchises should be fetched at startup",
+                        cache_keys.len()
+                    );
+                    0
+                }
+                "api_cache" => {
+                    // API cache entries are created during fetch, not fetched separately
+                    tracing::debug!("Skipping {} api_cache FK entries", cache_keys.len());
+                    0
+                }
+                _ => {
+                    tracing::warn!(
+                        "Unknown FK table type: {} ({} keys)",
+                        table,
+                        cache_keys.len()
+                    );
+                    0
+                }
+            }
+        })
+        .collect();
+
+    let results = futures::future::join_all(fetch_futures).await;
+    let total_fetched: usize = results.into_iter().sum();
+
+    if total_fetched > 0 {
+        tracing::info!("Fetched {} missing foreign key entities", total_fetched);
     }
-
-    let mut table_summary = String::new();
-    for (table, ids) in &fk_by_table {
-        if !table_summary.is_empty() {
-            table_summary.push_str(", ");
-        }
-        table_summary.push_str(&format!("{}: {}", table, ids.len()));
-    }
-
-    tracing::warn!(
-        "{} `{}` entities reference {} missing foreign keys ({}). Some upserts may fail if FKs don't exist.",
-        entities.len(),
-        type_name,
-        missing_fks.len(),
-        table_summary
-    );
-
-    if tracing::enabled!(tracing::Level::DEBUG) {
-        let sample_size = missing_fks.len().min(10);
-        tracing::debug!(
-            "Missing FK sample ({}/{}): {:#?}",
-            sample_size,
-            missing_fks.len(),
-            &missing_fks.iter().take(sample_size).collect::<Vec<_>>()
-        );
-    }
-
-    missing_fks
+    Ok(total_fetched)
 }
 
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
@@ -78,30 +158,15 @@ pub async fn get_nhl_seasons(
 ) -> Result<Vec<NhlSeason>, DSError> {
     let season_results = nhl_api.list_seasons(db_context).await?;
 
-    let mut seasons = Vec::new();
-    let mut errors = Vec::new();
-    for result in season_results {
-        match result {
-            Ok(item) => seasons.push(item),
-            Err(e) => errors.push(e),
-        }
-    }
-
-    if !errors.is_empty() {
-        tracing::warn!(
-            successful = seasons.len(),
-            failed = errors.len(),
-            "Parse errors during season fetch"
-        );
-        for error in errors {
-            DataSourceError::track_error(error, db_context).await;
-        }
-    }
+    let (seasons, _) = partition_and_track_errors(
+        season_results,
+        db_context,
+        "Parse errors during season fetch",
+    )
+    .await;
 
     let db_seasons = seasons.into_db_structs(app_context, "Parsing seasons");
-    ensure_foreign_keys_exist(&db_seasons, db_context).await;
-
-    db_seasons.upsert_all(app_context, db_context).await;
+    let _ = db_seasons.upsert_all(app_context, db_context).await;
     Ok(db_seasons)
 }
 
@@ -113,30 +178,15 @@ pub async fn get_nhl_franchises(
 ) -> Result<Vec<NhlFranchise>, DSError> {
     let franchise_results = nhl_api.list_franchises(db_context).await?;
 
-    let mut franchises = Vec::new();
-    let mut errors = Vec::new();
-    for result in franchise_results {
-        match result {
-            Ok(item) => franchises.push(item),
-            Err(e) => errors.push(e),
-        }
-    }
-
-    if !errors.is_empty() {
-        tracing::warn!(
-            successful = franchises.len(),
-            failed = errors.len(),
-            "Parse errors during franchise fetch"
-        );
-        for error in errors {
-            DataSourceError::track_error(error, db_context).await;
-        }
-    }
+    let (franchises, _) = partition_and_track_errors(
+        franchise_results,
+        db_context,
+        "Parse errors during franchise fetch",
+    )
+    .await;
 
     let db_franchises = franchises.into_db_structs(app_context, "Parsing franchises");
-    ensure_foreign_keys_exist(&db_franchises, db_context).await;
-
-    db_franchises.upsert_all(app_context, db_context).await;
+    let _ = db_franchises.upsert_all(app_context, db_context).await;
     Ok(db_franchises)
 }
 
@@ -148,30 +198,12 @@ pub async fn get_nhl_teams(
 ) -> Result<Vec<NhlTeam>, DSError> {
     let team_results = nhl_api.list_teams(db_context).await?;
 
-    let mut teams = Vec::new();
-    let mut errors = Vec::new();
-    for result in team_results {
-        match result {
-            Ok(item) => teams.push(item),
-            Err(e) => errors.push(e),
-        }
-    }
-
-    if !errors.is_empty() {
-        tracing::warn!(
-            successful = teams.len(),
-            failed = errors.len(),
-            "Parse errors during team fetch"
-        );
-        for error in errors {
-            DataSourceError::track_error(error, db_context).await;
-        }
-    }
+    let (teams, _) =
+        partition_and_track_errors(team_results, db_context, "Parse errors during team fetch")
+            .await;
 
     let db_teams = teams.into_db_structs(app_context, "Parsing teams");
-    ensure_foreign_keys_exist(&db_teams, db_context).await;
-
-    db_teams.upsert_all(app_context, db_context).await;
+    let _ = db_teams.upsert_all(app_context, db_context).await;
     Ok(db_teams)
 }
 
@@ -184,68 +216,111 @@ pub async fn get_nhl_shifts_in_game(
 ) -> Result<Vec<NhlShift>, DSError> {
     let shift_results = nhl_api.list_shifts_for_game(db_context, game_id).await?;
 
-    let mut shifts = Vec::new();
-    let mut errors = Vec::new();
-    for result in shift_results {
-        match result {
-            Ok(item) => shifts.push(item),
-            Err(e) => errors.push(e),
-        }
-    }
-
-    if !errors.is_empty() {
-        tracing::warn!(
-            game_id,
-            successful = shifts.len(),
-            failed = errors.len(),
-            "Parse errors during shift fetch"
-        );
-        for error in errors {
-            DataSourceError::track_error(error, db_context).await;
-        }
-    }
+    let (shifts, _) = partition_and_track_errors(
+        shift_results,
+        db_context,
+        &format!("Parse errors during shift fetch for game {game_id}"),
+    )
+    .await;
 
     let db_shifts =
         shifts.into_db_structs(app_context, &format!("Parsing shifts for game {game_id}"));
-    ensure_foreign_keys_exist(&db_shifts, db_context).await;
-
-    db_shifts.upsert_all(app_context, db_context).await;
+    let _ = db_shifts.upsert_all(app_context, db_context).await;
     Ok(db_shifts)
 }
 
-#[tracing::instrument(skip(app_context, db_context, nhl_api, season))]
+#[tracing::instrument(skip(app_context, db_context, nhl_api))]
 pub async fn get_nhl_everything_in_season(
     app_context: &AppContext,
     db_context: &DbContext,
     nhl_api: &NhlApi,
-    season: &NhlSeason,
+    season_id: i32,
 ) -> Result<(), DSError> {
-    let mut games: Vec<NhlGame> =
-        get_nhl_all_games_in_season(app_context, db_context, nhl_api, season).await?;
+    // Fetch regular season and playoff bracket in parallel
+    let (regular_games_res, playoff_bracket_series_res) = tokio::join!(
+        get_nhl_all_games_in_season(app_context, db_context, nhl_api, season_id),
+        get_nhl_playoff_bracket_series(app_context, db_context, nhl_api, season_id),
+    );
 
-    let playoff_bracket_series: Vec<NhlPlayoffBracketSeries> =
-        get_nhl_playoff_bracket_series(app_context, db_context, nhl_api, season).await?;
+    let mut games = regular_games_res?;
+    let playoff_bracket_series = playoff_bracket_series_res?;
 
-    for bracket_series in playoff_bracket_series {
-        let series: NhlPlayoffSeries =
-            get_nhl_playoff_series(app_context, db_context, nhl_api, &bracket_series).await?;
-        let mut playoff_games: Vec<NhlGame> =
-            get_nhl_games_in_playoff_series(app_context, db_context, nhl_api, &series).await?;
+    // Fetch all playoff series in parallel
+    let playoff_series_futures: Vec<_> = playoff_bracket_series
+        .into_iter()
+        .map(|bracket_series| async move {
+            let series = get_nhl_playoff_series(
+                app_context,
+                db_context,
+                nhl_api,
+                bracket_series.season_id,
+                &bracket_series.series_letter,
+            )
+            .await?;
+            get_nhl_games_in_playoff_series(app_context, db_context, nhl_api, &series.game_ids)
+                .await
+        })
+        .collect();
+
+    let playoff_game_results: Vec<Result<Vec<NhlGame>, DSError>> =
+        futures::future::join_all(playoff_series_futures).await;
+
+    for result in playoff_game_results {
+        let mut playoff_games = result?;
         games.append(&mut playoff_games);
     }
 
-    for game in games {
-        let (plays_res, roster_res, shifts_res) = tokio::join!(
-            get_nhl_plays_in_game(app_context, db_context, &game),
-            get_nhl_roster_spots_in_game(app_context, db_context, &game),
-            get_nhl_shifts_in_game(app_context, db_context, nhl_api, game.id),
-        );
-        plays_res?;
-        roster_res?;
-        shifts_res?;
+    // Fetch ancillary data for all games in parallel
+    let ancillary_futures: Vec<_> = games
+        .iter()
+        .map(|game| async move {
+            tokio::try_join!(
+                get_nhl_plays_in_game(app_context, db_context, nhl_api, game),
+                get_nhl_roster_spots_in_game(app_context, db_context, nhl_api, game),
+                get_nhl_shifts_in_game(app_context, db_context, nhl_api, game.id),
+            )
+        })
+        .collect();
+
+    let ancillary_results: Vec<_> = futures::future::join_all(ancillary_futures).await;
+
+    // Check for errors
+    for result in ancillary_results {
+        result?;
     }
 
     Ok(())
+}
+
+/// Fetch multiple games, handle errors, ensure FKs, and upsert to database.
+///
+/// This is a helper function for batch game processing used by both regular season
+/// and playoff game fetching. It handles the full pipeline: fetch → partition errors →
+/// track errors → parse → FK check → upsert.
+async fn fetch_and_upsert_games(
+    app_context: &AppContext,
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
+    game_ids: Vec<i32>,
+    parse_msg: &str,
+    error_context: &str,
+) -> Result<Vec<NhlGame>, DSError> {
+    let json_results = nhl_api
+        .get_many_games(app_context, db_context, game_ids)
+        .await;
+
+    let (ok_jsons, _) = partition_and_track_errors(
+        json_results,
+        db_context,
+        &format!("Parse errors occurred while {error_context}"),
+    )
+    .await;
+
+    let games = ok_jsons.into_db_structs(app_context, parse_msg);
+    _ = ensure_and_fetch_foreign_keys(&games, app_context, db_context, nhl_api).await?;
+    let _ = games.upsert_all(app_context, db_context).await;
+
+    Ok(games)
 }
 
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
@@ -253,12 +328,24 @@ pub async fn get_nhl_all_games_in_season(
     app_context: &AppContext,
     db_context: &DbContext,
     nhl_api: &NhlApi,
-    season: &NhlSeason,
+    season_id: i32,
 ) -> Result<Vec<NhlGame>, DSError> {
-    let number_of_games: i32 = season.total_regular_season_games;
-    let season_id: String = season.id.to_string();
+    // Fetch the season to get total_regular_season_games
+    let season_key = NhlSeasonKey { id: season_id };
+    let season = match NhlSeason::fetch_from_db_by_key(db_context, &season_key).await? {
+        Some(s) => s,
+        None => {
+            return Err(DSError::DatabaseCustom(format!(
+                "Season {} not found in database. Fetch seasons first.",
+                season_id
+            )))
+        }
+    };
 
-    let prefix: String = format!("{}02", &season_id[..4]);
+    let number_of_games: i32 = season.total_regular_season_games;
+    let season_id_str: String = season_id.to_string();
+
+    let prefix: String = format!("{}02", &season_id_str[..4]);
     let game_ids: Vec<i32> = (1..=number_of_games)
         .map(|game_number| {
             let id_string: String = format!("{prefix}{game_number:04}");
@@ -269,56 +356,24 @@ pub async fn get_nhl_all_games_in_season(
         .collect();
 
     tracing::info!(
-        season_id = %season_id,
+        season_id = %season_id_str,
         game_count = number_of_games,
         "Fetching regular season games"
     );
-    let json_results: Vec<Result<ItemParsedWithContext<NhlGameJson>, DSError>> = nhl_api
-        .get_many_games(app_context, db_context, game_ids)
-        .await;
 
-    // Partition successes and failures
-    let mut ok_json_results = Vec::new();
-    let mut parse_errors = Vec::new();
-    for result in json_results {
-        match result {
-            Ok(item) => ok_json_results.push(item),
-            Err(e) => parse_errors.push(e),
-        }
-    }
-
-    let ok_json_result_count = ok_json_results.len();
-    if !parse_errors.is_empty() {
-        tracing::warn!(
-            season_id = %season_id,
-            successful = ok_json_result_count,
-            failed = parse_errors.len(),
-            total = number_of_games,
-            "Parse errors occurred while fetching games"
-        );
-    }
-
-    // Log parse errors (fire-and-forget)
-    if !parse_errors.is_empty() {
-        for error in parse_errors {
-            DataSourceError::track_error(error, db_context).await;
-        }
-    }
-
-    let games: Vec<NhlGame> = ok_json_results.into_db_structs(
+    let games = fetch_and_upsert_games(
         app_context,
-        &format!("Parsing `NhlGameJson`s from {season_id} season."),
-    );
+        db_context,
+        nhl_api,
+        game_ids,
+        &format!("Parsing `NhlGameJson`s from {season_id_str} season"),
+        &format!("fetching regular season games for season {season_id_str}"),
+    )
+    .await?;
 
-    // Check for missing foreign keys (teams, season) before upserting
-    ensure_foreign_keys_exist(&games, db_context).await;
-
-    let upsert_results: Vec<Option<PgQueryResult>> =
-        games.upsert_all(app_context, db_context).await;
-    let ok_upsert_count: usize = upsert_results.len();
     tracing::info!(
-        season_id = %season_id,
-        upserted = ok_upsert_count,
+        season_id = %season_id_str,
+        upserted = games.len(),
         "Regular season games upserted"
     );
 
@@ -336,7 +391,7 @@ pub async fn get_nhl_season_games(
 
     // First, ensure the season exists in the database
     let season_key = NhlSeasonKey { id: season_id };
-    let season = match NhlSeason::fetch_from_db_by_key(db_context, &season_key).await? {
+    let _season = match NhlSeason::fetch_from_db_by_key(db_context, &season_key).await? {
         Some(s) => s,
         None => {
             tracing::warn!(season_id = season_id, "Season not found, fetching from API");
@@ -357,7 +412,7 @@ pub async fn get_nhl_season_games(
     };
 
     // Fetch all games in the season
-    get_nhl_all_games_in_season(app_context, db_context, nhl_api, &season).await
+    get_nhl_all_games_in_season(app_context, db_context, nhl_api, season_id).await
 }
 
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
@@ -367,8 +422,6 @@ pub async fn get_nhl_game(
     nhl_api: &NhlApi,
     game_id: i32,
 ) -> Result<NhlGame, DSError> {
-    tracing::info!(game_id = game_id, "Fetching single game");
-
     let json_result = nhl_api.get_game(db_context, game_id).await;
 
     // Handle parse errors
@@ -389,15 +442,20 @@ pub async fn get_nhl_game(
     let game: NhlGame = game_json.into_db_struct();
 
     // Check for missing foreign keys (teams, season) before upserting
-    ensure_foreign_keys_exist(std::slice::from_ref(&game), db_context).await;
+    _ = ensure_and_fetch_foreign_keys(
+        std::slice::from_ref(&game),
+        app_context,
+        db_context,
+        nhl_api,
+    )
+    .await?;
 
     let _upsert_result = game.upsert(db_context).await;
-    tracing::info!(game_id = game_id, "Game upserted");
 
     // Fetch ancillary game data (plays, roster spots, shifts)
     let (plays_res, roster_res, shifts_res) = tokio::join!(
-        get_nhl_plays_in_game(app_context, db_context, &game),
-        get_nhl_roster_spots_in_game(app_context, db_context, &game),
+        get_nhl_plays_in_game(app_context, db_context, nhl_api, &game),
+        get_nhl_roster_spots_in_game(app_context, db_context, nhl_api, &game),
         get_nhl_shifts_in_game(app_context, db_context, nhl_api, game.id),
     );
     plays_res?;
@@ -407,10 +465,11 @@ pub async fn get_nhl_game(
     Ok(game)
 }
 
-#[tracing::instrument(skip(app_context, db_context))]
+#[tracing::instrument(skip(app_context, db_context, nhl_api))]
 pub async fn get_nhl_roster_spots_in_game(
     app_context: &AppContext,
     db_context: &DbContext,
+    nhl_api: &NhlApi,
     game: &NhlGame,
 ) -> Result<Vec<NhlRosterSpot>, DSError> {
     let game_id: i32 = game.id;
@@ -445,74 +504,24 @@ pub async fn get_nhl_roster_spots_in_game(
         app_context,
         &format!("Parsing `NhlRosterSpotJson`s from {game_id}."),
     );
-    let roster_spot_count = roster_spots.len();
 
-    // Create minimal player stubs from roster spot data to satisfy FK constraints
-    let players: Vec<NhlPlayer> = roster_spots
-        .iter()
-        .map(|rs| NhlPlayer {
-            id: rs.player_id,
-            first_name: rs.first_name.clone(),
-            last_name: rs.last_name.clone(),
-            is_active: true,
-            current_team_id: Some(rs.team_id),
-            current_team_abbrev: None,
-            full_team_name: None,
-            team_common_name: None,
-            team_place_name_with_preposition: None,
-            team_logo: None,
-            sweater_number: Some(rs.sweater_number),
-            position: rs.position_code.clone(),
-            headshot: rs.headshot.clone(),
-            hero_image: String::new(),
-            height_in_inches: None,
-            height_in_centimeters: None,
-            weight_in_pounds: None,
-            weight_in_kilograms: None,
-            birth_date: chrono::NaiveDate::from_ymd_opt(1900, 1, 1).unwrap(),
-            birth_city: String::new(),
-            birth_state_province: None,
-            birth_country: String::new(),
-            shoots_catches: None,
-            draft_year: None,
-            draft_team_abbreviation: None,
-            draft_round: None,
-            draft_pick_in_round: None,
-            draft_overall_pick: None,
-            player_slug: format!(
-                "{}-{}",
-                rs.first_name.to_lowercase(),
-                rs.last_name.to_lowercase()
-            ),
-            in_top100_all_time: false,
-            in_hhof: false,
-            raw_json: serde_json::json!({}),
-            endpoint: rs.endpoint.clone(),
-        })
-        .collect();
+    _ = ensure_and_fetch_foreign_keys(&roster_spots, app_context, db_context, nhl_api).await?;
 
-    // Upsert player stubs first to satisfy FK constraints
-    players.upsert_all(app_context, db_context).await;
-
-    // Check for missing foreign keys (game, teams) before upserting
-    ensure_foreign_keys_exist(&roster_spots, db_context).await;
-
-    let upsert_results = roster_spots.upsert_all(app_context, db_context).await;
-    let ok_upsert_count = upsert_results.len();
+    let _ = roster_spots.upsert_all(app_context, db_context).await;
     tracing::debug!(
         game_id = game.id,
-        upserted = ok_upsert_count,
-        total = roster_spot_count,
+        upserted = roster_spots.len(),
         "Roster spots upserted"
     );
 
     Ok(roster_spots)
 }
 
-#[tracing::instrument(skip(app_context, db_context))]
+#[tracing::instrument(skip(app_context, db_context, nhl_api))]
 pub async fn get_nhl_plays_in_game(
     app_context: &AppContext,
     db_context: &DbContext,
+    nhl_api: &NhlApi,
     game: &NhlGame,
 ) -> Result<Vec<NhlPlay>, DSError> {
     let game_id: i32 = game.id;
@@ -546,19 +555,11 @@ pub async fn get_nhl_plays_in_game(
         app_context,
         &format!("Parsing `NhlPlayJson`s from {game_id}."),
     );
-    let play_count = plays.len();
 
-    // Check for missing foreign keys (game) before upserting
-    ensure_foreign_keys_exist(&plays, db_context).await;
+    _ = ensure_and_fetch_foreign_keys(&plays, app_context, db_context, nhl_api).await?;
 
-    let upsert_results = plays.upsert_all(app_context, db_context).await;
-    let ok_upsert_count = upsert_results.len();
-    tracing::debug!(
-        game_id = game.id,
-        upserted = ok_upsert_count,
-        total = play_count,
-        "Plays upserted"
-    );
+    let _ = plays.upsert_all(app_context, db_context).await;
+    tracing::debug!(game_id = game.id, upserted = plays.len(), "Plays upserted");
 
     Ok(plays)
 }
@@ -568,9 +569,8 @@ pub async fn get_nhl_playoff_bracket_series(
     app_context: &AppContext,
     db_context: &DbContext,
     nhl_api: &NhlApi,
-    season: &NhlSeason,
+    season_id: i32,
 ) -> Result<Vec<NhlPlayoffBracketSeries>, DSError> {
-    let season_id: i32 = season.id;
     let year_id: i32 = season_id.to_string()[4..]
         .parse::<i32>()
         .map_err(DSError::Parse)?;
@@ -579,31 +579,15 @@ pub async fn get_nhl_playoff_bracket_series(
         .list_playoff_series_for_year(db_context, year_id)
         .await?;
 
-    let mut brackets = Vec::new();
-    let mut errors = Vec::new();
-    for result in bracket_results {
-        match result {
-            Ok(item) => brackets.push(item),
-            Err(e) => errors.push(e),
-        }
-    }
-
-    if !errors.is_empty() {
-        tracing::warn!(
-            season_id,
-            successful = brackets.len(),
-            failed = errors.len(),
-            "Parse errors during playoff bracket fetch"
-        );
-        for error in errors {
-            DataSourceError::track_error(error, db_context).await;
-        }
-    }
+    let (brackets, _) = partition_and_track_errors(
+        bracket_results,
+        db_context,
+        &format!("Parse errors during playoff bracket fetch for season {season_id}"),
+    )
+    .await;
 
     let db_brackets = brackets.into_db_structs(app_context, "Parsing playoff bracket series");
-    ensure_foreign_keys_exist(&db_brackets, db_context).await;
-
-    db_brackets.upsert_all(app_context, db_context).await;
+    let _ = db_brackets.upsert_all(app_context, db_context).await;
     Ok(db_brackets)
 }
 
@@ -612,21 +596,24 @@ pub async fn get_nhl_playoff_series(
     app_context: &AppContext,
     db_context: &DbContext,
     nhl_api: &NhlApi,
-    bracket_series: &NhlPlayoffBracketSeries,
+    season_id: i32,
+    series_letter: &str,
 ) -> Result<NhlPlayoffSeries, DSError> {
-    let season_id: i32 = bracket_series.season_id;
-    let series_letter: &str = &bracket_series.series_letter;
     let series_json: ItemParsedWithContext<NhlPlayoffSeriesJson> = nhl_api
         .get_playoff_series(db_context, season_id, series_letter)
         .await?;
 
     let series: NhlPlayoffSeries = series_json.clone().into_db_struct();
 
-    // Check for missing foreign keys (season, teams, bracket series) before upserting
-    ensure_foreign_keys_exist(std::slice::from_ref(&series), db_context).await;
+    _ = ensure_and_fetch_foreign_keys(
+        std::slice::from_ref(&series),
+        app_context,
+        db_context,
+        nhl_api,
+    )
+    .await?;
 
-    // Upsert the playoff series now that FKs are checked
-    let _upsert_result = series.upsert(db_context).await?;
+    series.upsert(db_context).await?;
 
     let series_game_jsons: Vec<ItemParsedWithContext<NhlPlayoffSeriesGameJson>> = series_json
         .item
@@ -658,15 +645,13 @@ pub async fn get_nhl_playoff_series(
     ),
     );
 
-    // Check for missing foreign keys (season, teams, series, bracket series) before upserting
-    ensure_foreign_keys_exist(&series_games, db_context).await;
+    _ = ensure_and_fetch_foreign_keys(&series_games, app_context, db_context, nhl_api).await?;
 
-    let upsert_results = series_games.upsert_all(app_context, db_context).await;
-    let ok_upsert_count = upsert_results.len();
+    let _ = series_games.upsert_all(app_context, db_context).await;
     tracing::debug!(
         season_id,
         series_letter,
-        upserted = ok_upsert_count,
+        upserted = series_games.len(),
         "Playoff series games upserted"
     );
 
@@ -678,69 +663,27 @@ pub async fn get_nhl_games_in_playoff_series(
     app_context: &AppContext,
     db_context: &DbContext,
     nhl_api: &NhlApi,
-    series: &NhlPlayoffSeries,
+    game_ids: &[i32],
 ) -> Result<Vec<NhlGame>, DSError> {
-    let game_ids: Vec<i32> = series.game_ids.to_vec();
-    let number_of_games: usize = game_ids.len();
-    let series_letter: &str = &series.series_letter;
-    let season_id: i32 = series.season_id;
+    let game_ids_vec: Vec<i32> = game_ids.to_vec();
+    let number_of_games: usize = game_ids_vec.len();
 
     tracing::info!(
-        season_id,
-        series_letter,
         game_count = number_of_games,
         "Fetching playoff game play-by-play"
     );
-    let game_json_results: Vec<Result<ItemParsedWithContext<NhlGameJson>, DSError>> = nhl_api
-        .get_many_games(app_context, db_context, game_ids)
-        .await;
 
-    // Partition successes and failures
-    let mut game_jsons = Vec::new();
-    let mut parse_errors = Vec::new();
-    for result in game_json_results {
-        match result {
-            Ok(item) => game_jsons.push(item),
-            Err(e) => parse_errors.push(e),
-        }
-    }
-
-    let ok_game_json_count = game_jsons.len();
-    if !parse_errors.is_empty() {
-        tracing::warn!(
-            season_id,
-            series_letter,
-            successful = ok_game_json_count,
-            failed = parse_errors.len(),
-            total = number_of_games,
-            "Parse errors occurred while fetching playoff games"
-        );
-    }
-
-    // Log parse errors (fire-and-forget)
-    if !parse_errors.is_empty() {
-        for error in parse_errors {
-            DataSourceError::track_error(error, db_context).await;
-        }
-    }
-    let games: Vec<NhlGame> = game_jsons.into_db_structs(
+    let games = fetch_and_upsert_games(
         app_context,
-        &format!(
-        "Parsing `NhlPlayoffSeriesGameJson`s from Series {series_letter} from {season_id} season."
-    ),
-    );
+        db_context,
+        nhl_api,
+        game_ids_vec,
+        "Parsing playoff game JSONs",
+        "fetching playoff games",
+    )
+    .await?;
 
-    // Check for missing foreign keys (season, teams) before upserting
-    ensure_foreign_keys_exist(&games, db_context).await;
-
-    let upsert_results = games.upsert_all(app_context, db_context).await;
-    let ok_upsert_count = upsert_results.len();
-    tracing::info!(
-        season_id,
-        series_letter,
-        upserted = ok_upsert_count,
-        "Playoff game play-by-play upserted"
-    );
+    tracing::info!(upserted = games.len(), "Playoff game play-by-play upserted");
 
     Ok(games)
 }

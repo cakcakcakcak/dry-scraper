@@ -14,8 +14,7 @@ use crate::{
             StaticPgQueryAs,
         },
         errors::DSError,
-        models::traits::HasTypeName,
-        util::track_and_filter_errors,
+        models::{partition_and_track_errors, traits::HasTypeName},
     },
     sqlx_operation_with_retries,
 };
@@ -127,7 +126,7 @@ pub trait DbEntityVecExt<T: DbEntity> {
         &self,
         app_context: &AppContext,
         db_context: &DbContext,
-    ) -> Vec<Option<PgQueryResult>>;
+    ) -> (Vec<Option<PgQueryResult>>, usize);
 }
 impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
     #[tracing::instrument(skip(self, app_context, db_context))]
@@ -135,9 +134,9 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
         &self,
         app_context: &AppContext,
         db_context: &DbContext,
-    ) -> Vec<Option<PgQueryResult>> {
+    ) -> (Vec<Option<PgQueryResult>>, usize) {
         if self.is_empty() {
-            return Vec::new();
+            return (Vec::new(), 0);
         }
 
         let items: Vec<T> = self.clone();
@@ -191,7 +190,14 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
             .await;
         pb.finish();
 
-        track_and_filter_errors(results, db_context).await
+        let (successes, failed_count) = partition_and_track_errors(
+            results,
+            db_context,
+            &format!("Database upsert failures for `{type_name}`"),
+        )
+        .await;
+
+        (successes, failed_count)
     }
 }
 
