@@ -50,42 +50,24 @@ pub trait CacheableApi: Debug {
                 tracing::debug!(endpoint, "Cache miss, fetching from API");
             }
         }
-        // Not in cache or unusable, fetch from API
-        let response =
-            reqwest_with_retries!(&db_context.config, self.client().get(endpoint).send().await)
-                .await
-                .map_err(|e| {
-                    tracing::error!(endpoint, error = %e, "Failed to fetch from API");
-                    DSError::Api(e)
-                })?;
-
-        // Check status and log headers on error
-        if !response.status().is_success() {
-            let status = response.status();
-            let headers = response.headers();
-            let header_str: String = headers
-                .iter()
-                .filter_map(|(name, value)| value.to_str().ok().map(|v| format!("{}: {}", name, v)))
-                .collect::<Vec<_>>()
-                .join(", ");
-            tracing::error!(endpoint, status = ?status, headers = %header_str, "Non-2xx response from API");
-
-            return response
-                .error_for_status()
-                .map(|_| String::new())
-                .map_err(DSError::Api);
-        }
+        // Not in cache or unusable, fetch from API.
+        // error_for_status() is called inside the retry closure so that 429 responses
+        // are treated as transient errors and retried with backoff.
+        let response = reqwest_with_retries!(&db_context.config, {
+            let resp = self.client().get(endpoint).send().await?;
+            resp.error_for_status()
+        })
+        .await
+        .map_err(|e| {
+            if e.status() == Some(reqwest::StatusCode::TOO_MANY_REQUESTS) {
+                tracing::warn!(endpoint, "Rate limited (429), retries exhausted");
+            } else {
+                tracing::error!(endpoint, error = %e, "Failed to fetch from API");
+            }
+            DSError::Api(e)
+        })?;
 
         tracing::debug!(endpoint, "Parsing response and caching");
-
-        // Log response headers to inspect rate limit info
-        let headers = response.headers();
-        let header_str: String = headers
-            .iter()
-            .filter_map(|(name, value)| value.to_str().ok().map(|v| format!("{}: {}", name, v)))
-            .collect::<Vec<_>>()
-            .join(", ");
-        tracing::debug!(endpoint, headers = %header_str, "Response headers");
 
         let raw_data = response.text().await.map_err(|e| {
             tracing::error!(endpoint, error = %e, "Failed to parse response body");

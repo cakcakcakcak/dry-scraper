@@ -122,6 +122,20 @@ where
                     tracing::debug!("Skipping {} api_cache FK entries", cache_keys.len());
                     0
                 }
+                "playoff_series" => {
+                    tracing::warn!(
+                        "{} missing playoff_series FKs - playoff series should be fetched before playoff series games",
+                        cache_keys.len()
+                    );
+                    0
+                }
+                "playoff_bracket_series" => {
+                    tracing::warn!(
+                        "{} missing playoff_bracket_series FKs - playoff bracket series should be fetched before playoff series",
+                        cache_keys.len()
+                    );
+                    0
+                }
                 _ => {
                     tracing::warn!(
                         "Unknown FK table type: {} ({} keys)",
@@ -254,9 +268,8 @@ pub async fn get_nhl_everything_in_season(
     }
     playoff_spinner.finish();
 
-    // Fetch ancillary data for all games in parallel
-    let ancillary_futures: Vec<_> = games
-        .iter()
+    // Fetch ancillary data for all games, bounded by concurrency limit
+    let ancillary_results: Vec<_> = stream::iter(games.iter())
         .map(|game| async move {
             tokio::try_join!(
                 get_nhl_plays_in_game(app_context, db_context, nhl_api, game),
@@ -264,9 +277,9 @@ pub async fn get_nhl_everything_in_season(
                 get_nhl_shifts_in_game(app_context, db_context, nhl_api, game.id),
             )
         })
-        .collect();
-
-    let ancillary_results: Vec<_> = futures::future::join_all(ancillary_futures).await;
+        .buffer_unordered(app_context.config.db_concurrency_limit)
+        .collect()
+        .await;
 
     for result in ancillary_results {
         result?;
