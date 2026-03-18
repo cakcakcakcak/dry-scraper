@@ -145,12 +145,8 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
         tracing::debug!("Upserting {} `{type_name}`s to database", items.len());
         let mut receivers = Vec::new();
 
-        let pb = app_context
-            .progress_reporter_mode
-            .create_reporter(None, "Dispatching upsert queries...");
         for item in items {
             if db_context.key_cache.contains(&item.cache_key()) {
-                pb.inc(1);
                 continue;
             }
 
@@ -164,16 +160,11 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
             }
 
             receivers.push((item, result_rx));
-            pb.inc(1);
         }
-        pb.finish();
 
         let _ = db_context.sqlx_tx.send(SqlxJobOrFlush::Flush).await;
 
         // Wait for all results in parallel
-        let pb = app_context
-            .progress_reporter_mode
-            .create_reporter(None, "Awaiting upsert results...");
         let results: Vec<_> = stream::iter(receivers)
             .map(|(item, rx)| async move {
                 match rx.await {
@@ -188,7 +179,6 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
             .buffer_unordered(app_context.config.db_concurrency_limit)
             .collect()
             .await;
-        pb.finish();
 
         let (successes, failed_count) = partition_and_track_errors(
             results,

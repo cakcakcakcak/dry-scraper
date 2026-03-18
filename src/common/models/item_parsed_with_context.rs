@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::{common::app_context::AppContext, common::models::traits::IntoDbStruct};
+use crate::common::models::traits::IntoDbStruct;
 
 #[derive(Clone, Debug)]
 pub struct ItemParsedWithContext<T: IntoDbStruct> {
@@ -20,19 +20,14 @@ pub trait ItemParsedWithContextVecExt<J>
 where
     J: IntoDbStruct,
 {
-    fn into_db_structs(self, app_context: &AppContext, pb_msg: &str) -> Vec<J::DbStruct>;
+    fn into_db_structs(self) -> Vec<J::DbStruct>;
 }
 
 impl<J> ItemParsedWithContextVecExt<J> for Vec<ItemParsedWithContext<J>>
 where
     J: IntoDbStruct,
 {
-    fn into_db_structs(self, app_context: &AppContext, pb_msg: &str) -> Vec<J::DbStruct> {
-        app_context.with_progress_bar(self.len() as u64, pb_msg, |pb| {
-            self.into_iter()
-                .map(|game_json| game_json.into_db_struct())
-                .inspect(|_| pb.inc(1))
-                .collect()
-        })
+    fn into_db_structs(self) -> Vec<J::DbStruct> {
+        self.into_iter().map(|item| item.into_db_struct()).collect()
     }
 }

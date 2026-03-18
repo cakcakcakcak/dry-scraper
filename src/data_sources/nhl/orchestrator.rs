@@ -158,7 +158,7 @@ pub async fn get_nhl_seasons(
     )
     .await;
 
-    let db_seasons = seasons.into_db_structs(app_context, "Parsing seasons");
+    let db_seasons = seasons.into_db_structs();
     let _ = db_seasons.upsert_all(app_context, db_context).await;
     Ok(db_seasons)
 }
@@ -178,7 +178,7 @@ pub async fn get_nhl_franchises(
     )
     .await;
 
-    let db_franchises = franchises.into_db_structs(app_context, "Parsing franchises");
+    let db_franchises = franchises.into_db_structs();
     let _ = db_franchises.upsert_all(app_context, db_context).await;
     Ok(db_franchises)
 }
@@ -195,7 +195,7 @@ pub async fn get_nhl_teams(
         partition_and_track_errors(team_results, db_context, "Parse errors during team fetch")
             .await;
 
-    let db_teams = teams.into_db_structs(app_context, "Parsing teams");
+    let db_teams = teams.into_db_structs();
     let _ = db_teams.upsert_all(app_context, db_context).await;
     Ok(db_teams)
 }
@@ -216,8 +216,7 @@ pub async fn get_nhl_shifts_in_game(
     )
     .await;
 
-    let db_shifts =
-        shifts.into_db_structs(app_context, &format!("Parsing shifts for game {game_id}"));
+    let db_shifts = shifts.into_db_structs();
     let _ = db_shifts.upsert_all(app_context, db_context).await;
     Ok(db_shifts)
 }
@@ -309,7 +308,6 @@ async fn fetch_and_upsert_games(
     db_context: &DbContext,
     nhl_api: &NhlApi,
     game_ids: Vec<i32>,
-    parse_msg: &str,
     error_context: &str,
 ) -> Result<Vec<NhlGame>, DSError> {
     let json_results = nhl_api
@@ -323,7 +321,7 @@ async fn fetch_and_upsert_games(
     )
     .await;
 
-    let games = ok_jsons.into_db_structs(app_context, parse_msg);
+    let games = ok_jsons.into_db_structs();
     _ = ensure_and_fetch_foreign_keys(&games, app_context, db_context, nhl_api).await?;
     let _ = games.upsert_all(app_context, db_context).await;
 
@@ -373,7 +371,6 @@ pub async fn get_nhl_all_games_in_season(
         db_context,
         nhl_api,
         game_ids,
-        &format!("Parsing `NhlGameJson`s from {season_id_str} season"),
         &format!("fetching regular season games for season {season_id_str}"),
     )
     .await?;
@@ -479,7 +476,7 @@ pub async fn get_nhl_roster_spots_in_game(
     nhl_api: &NhlApi,
     game: &NhlGame,
 ) -> Result<Vec<NhlRosterSpot>, DSError> {
-    let game_id: i32 = game.id;
+    let _game_id: i32 = game.id;
     let game_json: NhlGameJson = serde_json::from_value(game.raw_json.clone())?;
 
     let roster_spot_jsons: Vec<NhlRosterSpotJson> = game_json.roster_spots;
@@ -507,10 +504,7 @@ pub async fn get_nhl_roster_spots_in_game(
             })
             .collect();
 
-    let roster_spots: Vec<NhlRosterSpot> = roster_spot_jsons_with_context.into_db_structs(
-        app_context,
-        &format!("Parsing `NhlRosterSpotJson`s from {game_id}."),
-    );
+    let roster_spots: Vec<NhlRosterSpot> = roster_spot_jsons_with_context.into_db_structs();
 
     _ = ensure_and_fetch_foreign_keys(&roster_spots, app_context, db_context, nhl_api).await?;
 
@@ -531,7 +525,7 @@ pub async fn get_nhl_plays_in_game(
     nhl_api: &NhlApi,
     game: &NhlGame,
 ) -> Result<Vec<NhlPlay>, DSError> {
-    let game_id: i32 = game.id;
+    let _game_id: i32 = game.id;
     let game_json: NhlGameJson = serde_json::from_value(game.raw_json.clone())?;
 
     let play_jsons: Vec<NhlPlayJson> = game_json.plays;
@@ -558,10 +552,7 @@ pub async fn get_nhl_plays_in_game(
             })
             .collect();
 
-    let plays: Vec<NhlPlay> = play_jsons_with_context.into_db_structs(
-        app_context,
-        &format!("Parsing `NhlPlayJson`s from {game_id}."),
-    );
+    let plays: Vec<NhlPlay> = play_jsons_with_context.into_db_structs();
 
     _ = ensure_and_fetch_foreign_keys(&plays, app_context, db_context, nhl_api).await?;
 
@@ -593,7 +584,7 @@ pub async fn get_nhl_playoff_bracket_series(
     )
     .await;
 
-    let db_brackets = brackets.into_db_structs(app_context, "Parsing playoff bracket series");
+    let db_brackets = brackets.into_db_structs();
     let _ = db_brackets.upsert_all(app_context, db_context).await;
     Ok(db_brackets)
 }
@@ -645,12 +636,7 @@ pub async fn get_nhl_playoff_series(
             },
         }})
         .collect();
-    let series_games: Vec<NhlPlayoffSeriesGame> = series_game_jsons.into_db_structs(
-        app_context,
-        &format!(
-        "Parsing `NhlPlayoffSeriesGameJson`s from Series {series_letter} from {season_id} season."
-    ),
-    );
+    let series_games: Vec<NhlPlayoffSeriesGame> = series_game_jsons.into_db_structs();
 
     _ = ensure_and_fetch_foreign_keys(&series_games, app_context, db_context, nhl_api).await?;
 
@@ -685,7 +671,6 @@ pub async fn get_nhl_games_in_playoff_series(
         db_context,
         nhl_api,
         game_ids_vec,
-        "Parsing playoff game JSONs",
         "fetching playoff games",
     )
     .await?;
