@@ -18,14 +18,13 @@ pub struct AppContext {
 }
 
 impl AppContext {
-    pub fn new(cfg: Arc<Config>, disable_progress: bool) -> Self {
+    pub fn new(cfg: Arc<Config>, mp: MultiProgress, disable_progress: bool) -> Self {
         let progress_reporter_mode = if !disable_progress {
-            let mp = Arc::new(MultiProgress::new());
             let style = ProgressStyle::default_bar()
                 .template(&cfg.progress_bar_style_format)
                 .unwrap_or_else(|_| ProgressStyle::default_bar())
                 .progress_chars("##-");
-            ProgressReporterMode::Indicatif(mp, style)
+            ProgressReporterMode::Indicatif(Arc::new(mp), style)
         } else {
             ProgressReporterMode::Noop
         };

@@ -156,18 +156,12 @@ impl NhlApi {
         db_context: &DbContext,
         player_ids: Vec<i32>,
     ) -> Vec<Result<ItemParsedWithContext<NhlPlayerJson>, DSError>> {
-        let pb = app_context.progress_reporter_mode.create_reporter(
-            Some(player_ids.len() as u64),
-            "Fetching many `NhlPlayerJson`s",
-        );
-        let result = stream::iter(player_ids)
+        tracing::debug!(count = player_ids.len(), "Fetching players");
+        stream::iter(player_ids)
             .map(|player_id| self.get_player(db_context, player_id))
             .buffer_unordered(app_context.config.db_concurrency_limit)
-            .inspect(|_| pb.inc(1))
             .collect()
-            .await;
-        pb.finish();
-        result
+            .await
     }
 
     // Game methods
@@ -191,17 +185,12 @@ impl NhlApi {
         db_context: &DbContext,
         game_ids: Vec<i32>,
     ) -> Vec<Result<ItemParsedWithContext<NhlGameJson>, DSError>> {
-        let pb = app_context
-            .progress_reporter_mode
-            .create_reporter(Some(game_ids.len() as u64), "Fetching `NhlGameJson`s.");
-        let result = stream::iter(game_ids)
+        tracing::debug!(count = game_ids.len(), "Fetching games");
+        stream::iter(game_ids)
             .map(|game_id| self.get_game(db_context, game_id))
             .buffer_unordered(app_context.config.api_concurrency_limit)
-            .inspect(|_| pb.inc(1))
             .collect()
-            .await;
-        pb.finish();
-        result
+            .await
     }
 
     // Playoff bracket methods

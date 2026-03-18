@@ -78,20 +78,13 @@ where
                         .filter_map(|ck| ck.id.parse::<i32>().ok())
                         .collect();
 
-                    let pb = app_context
-                        .progress_reporter_mode
-                        .create_reporter(Some(game_ids.len() as u64), "Fetching missing games");
-
                     let results: Vec<_> = stream::iter(game_ids)
                         .map(|game_id| async move {
                             get_nhl_game(app_context, db_context, api, game_id).await
                         })
                         .buffer_unordered(app_context.config.db_concurrency_limit)
-                        .inspect(|_| pb.inc(1))
                         .collect()
                         .await;
-
-                    pb.finish();
 
                     let games: Vec<_> = results.into_iter().filter_map(|r| r.ok()).collect();
                     if games.len() < cache_keys.len() {
@@ -270,21 +263,35 @@ pub async fn get_nhl_everything_in_season(
         games.append(&mut playoff_games);
     }
 
+    // Single top-level progress bar: one tick per game as ancillary data completes.
+    // This is the only place in the codebase that should create a progress bar —
+    // it's the one long-running operation where the user has no other feedback.
+    let pb = app_context.progress_reporter_mode.create_reporter(
+        Some(games.len() as u64),
+        &format!("Fetching game details for season {season_id}"),
+    );
+
     // Fetch ancillary data for all games in parallel
     let ancillary_futures: Vec<_> = games
         .iter()
-        .map(|game| async move {
-            tokio::try_join!(
-                get_nhl_plays_in_game(app_context, db_context, nhl_api, game),
-                get_nhl_roster_spots_in_game(app_context, db_context, nhl_api, game),
-                get_nhl_shifts_in_game(app_context, db_context, nhl_api, game.id),
-            )
+        .map(|game| {
+            let pb = &pb;
+            async move {
+                let result = tokio::try_join!(
+                    get_nhl_plays_in_game(app_context, db_context, nhl_api, game),
+                    get_nhl_roster_spots_in_game(app_context, db_context, nhl_api, game),
+                    get_nhl_shifts_in_game(app_context, db_context, nhl_api, game.id),
+                );
+                pb.inc(1);
+                result
+            }
         })
         .collect();
 
     let ancillary_results: Vec<_> = futures::future::join_all(ancillary_futures).await;
 
-    // Check for errors
+    pb.finish();
+
     for result in ancillary_results {
         result?;
     }

@@ -18,29 +18,58 @@ use dry_scraper::data_sources::nhl::{
         get_nhl_teams,
     },
 };
+use indicatif::MultiProgress;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+/// Routes tracing output through MultiProgress::suspend so that log lines
+/// don't clobber progress bar rendering.
+#[derive(Clone)]
+struct SuspendingWriter(MultiProgress);
+
+impl std::io::Write for SuspendingWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.suspend(|| std::io::stderr().write_all(buf))?;
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        std::io::stderr().flush()
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SuspendingWriter {
+    type Writer = Self;
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), DSError> {
     _ = dotenvy::dotenv();
 
-    // Initialize tracing with indicatif support to prevent progress bar conflicts
-    let indicatif_layer = tracing_indicatif::IndicatifLayer::new();
+    // Create MultiProgress first so we can share it with the tracing writer.
+    // This ensures log output is routed through MultiProgress::suspend, preventing
+    // tracing events from clobbering progress bar rendering.
+    let mp = MultiProgress::new();
+
     let filter = EnvFilter::try_from_env("LOG_LEVEL")
         .unwrap_or_else(|_| EnvFilter::new("warn,dry_scraper::data_sources=info"));
 
     tracing_subscriber::registry()
         .with(filter)
-        .with(tracing_subscriber::fmt::layer().with_writer(indicatif_layer.get_stderr_writer()))
-        .with(indicatif_layer)
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(SuspendingWriter(mp.clone()))
+                .with_ansi(true),
+        )
         .init();
 
     let cli_args = CliArgs::parse();
     let config = Arc::new(Config::from_env_and_args());
 
     let db_context: DbContext = DbContext::connect(&config).await?;
-    let mut app_context: AppContext = AppContext::new(config.clone(), cli_args.no_progress);
+    let mut app_context: AppContext = AppContext::new(config.clone(), mp, cli_args.no_progress);
 
     // register data sources
     let sources: Vec<Arc<dyn dry_scraper::common::data_source::DataSource>> =
