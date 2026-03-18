@@ -12,7 +12,11 @@ pub trait ProgressReporter: Send {
 #[derive(Clone)]
 pub enum ProgressReporterMode {
     Noop,
-    Indicatif(Arc<MultiProgress>, ProgressStyle),
+    Indicatif {
+        mp: Arc<MultiProgress>,
+        bar_style: ProgressStyle,
+        spinner_style: ProgressStyle,
+    },
     // Channel variant added in Phase 2
 }
 
@@ -24,9 +28,24 @@ impl ProgressReporterMode {
     ) -> Box<dyn ProgressReporter + Send> {
         match self {
             Self::Noop => Box::new(NoopReporter),
-            Self::Indicatif(mp, style) => {
-                let pb = mp.add(ProgressBar::new(total.unwrap_or(0)));
-                pb.set_style(style.clone());
+            Self::Indicatif {
+                mp,
+                bar_style,
+                spinner_style,
+            } => {
+                let pb = match total {
+                    Some(n) => {
+                        let pb = mp.add(ProgressBar::new(n));
+                        pb.set_style(bar_style.clone());
+                        pb
+                    }
+                    None => {
+                        let pb = mp.add(ProgressBar::new_spinner());
+                        pb.set_style(spinner_style.clone());
+                        pb.enable_steady_tick(std::time::Duration::from_millis(100));
+                        pb
+                    }
+                };
                 pb.set_message(msg.to_string());
                 Box::new(IndicatifReporter { pb })
             }

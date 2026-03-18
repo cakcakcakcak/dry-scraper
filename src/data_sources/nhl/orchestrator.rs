@@ -228,37 +228,31 @@ pub async fn get_nhl_everything_in_season(
     nhl_api: &NhlApi,
     season_id: i32,
 ) -> Result<(), DSError> {
-    let (regular_games_res, playoff_bracket_series_res) = tokio::join!(
-        get_nhl_all_games_in_season(app_context, db_context, nhl_api, season_id),
-        get_nhl_playoff_bracket_series(app_context, db_context, nhl_api, season_id),
-    );
+    let mut games =
+        get_nhl_all_games_in_season(app_context, db_context, nhl_api, season_id).await?;
 
-    let mut games = regular_games_res?;
-    let playoff_bracket_series = playoff_bracket_series_res?;
+    let playoff_spinner = app_context
+        .progress_reporter_mode
+        .create_reporter(None, "Fetching playoff games...");
 
-    let playoff_series_futures: Vec<_> = playoff_bracket_series
-        .into_iter()
-        .map(|bracket_series| async move {
-            let series = get_nhl_playoff_series(
-                app_context,
-                db_context,
-                nhl_api,
-                bracket_series.season_id,
-                &bracket_series.series_letter,
-            )
-            .await?;
+    let playoff_bracket_series =
+        get_nhl_playoff_bracket_series(app_context, db_context, nhl_api, season_id).await?;
+
+    for bracket_series in playoff_bracket_series {
+        let series = get_nhl_playoff_series(
+            app_context,
+            db_context,
+            nhl_api,
+            bracket_series.season_id,
+            &bracket_series.series_letter,
+        )
+        .await?;
+        let mut playoff_games =
             get_nhl_games_in_playoff_series(app_context, db_context, nhl_api, &series.game_ids)
-                .await
-        })
-        .collect();
-
-    let playoff_game_results: Vec<Result<Vec<NhlGame>, DSError>> =
-        futures::future::join_all(playoff_series_futures).await;
-
-    for result in playoff_game_results {
-        let mut playoff_games = result?;
+                .await?;
         games.append(&mut playoff_games);
     }
+    playoff_spinner.finish();
 
     // Fetch ancillary data for all games in parallel
     let ancillary_futures: Vec<_> = games
