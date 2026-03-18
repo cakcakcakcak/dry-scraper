@@ -228,7 +228,6 @@ pub async fn get_nhl_everything_in_season(
     nhl_api: &NhlApi,
     season_id: i32,
 ) -> Result<(), DSError> {
-    // Fetch regular season and playoff bracket in parallel
     let (regular_games_res, playoff_bracket_series_res) = tokio::join!(
         get_nhl_all_games_in_season(app_context, db_context, nhl_api, season_id),
         get_nhl_playoff_bracket_series(app_context, db_context, nhl_api, season_id),
@@ -237,7 +236,6 @@ pub async fn get_nhl_everything_in_season(
     let mut games = regular_games_res?;
     let playoff_bracket_series = playoff_bracket_series_res?;
 
-    // Fetch all playoff series in parallel
     let playoff_series_futures: Vec<_> = playoff_bracket_series
         .into_iter()
         .map(|bracket_series| async move {
@@ -262,34 +260,19 @@ pub async fn get_nhl_everything_in_season(
         games.append(&mut playoff_games);
     }
 
-    // Single top-level progress bar: one tick per game as ancillary data completes.
-    // This is the only place in the codebase that should create a progress bar —
-    // it's the one long-running operation where the user has no other feedback.
-    let pb = app_context.progress_reporter_mode.create_reporter(
-        Some(games.len() as u64),
-        &format!("Fetching game details for season {season_id}"),
-    );
-
     // Fetch ancillary data for all games in parallel
     let ancillary_futures: Vec<_> = games
         .iter()
-        .map(|game| {
-            let pb = &pb;
-            async move {
-                let result = tokio::try_join!(
-                    get_nhl_plays_in_game(app_context, db_context, nhl_api, game),
-                    get_nhl_roster_spots_in_game(app_context, db_context, nhl_api, game),
-                    get_nhl_shifts_in_game(app_context, db_context, nhl_api, game.id),
-                );
-                pb.inc(1);
-                result
-            }
+        .map(|game| async move {
+            tokio::try_join!(
+                get_nhl_plays_in_game(app_context, db_context, nhl_api, game),
+                get_nhl_roster_spots_in_game(app_context, db_context, nhl_api, game),
+                get_nhl_shifts_in_game(app_context, db_context, nhl_api, game.id),
+            )
         })
         .collect();
 
     let ancillary_results: Vec<_> = futures::future::join_all(ancillary_futures).await;
-
-    pb.finish();
 
     for result in ancillary_results {
         result?;
