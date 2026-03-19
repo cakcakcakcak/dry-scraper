@@ -375,39 +375,6 @@ pub async fn get_nhl_all_games_in_season(
 }
 
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
-pub async fn get_nhl_season_games(
-    app_context: &AppContext,
-    db_context: &DbContext,
-    nhl_api: &NhlApi,
-    season_id: i32,
-) -> Result<Vec<NhlGame>, DSError> {
-    tracing::info!(season_id = season_id, "Fetching season games");
-
-    // First, ensure the season exists in the database
-    let season_key = NhlSeasonKey { id: season_id };
-    let _season = match NhlSeason::fetch_from_db_by_key(db_context, &season_key).await? {
-        Some(s) => s,
-        None => {
-            tracing::warn!(season_id = season_id, "Season not found, fetching from API");
-            // Fetch all seasons to ensure it exists
-            get_nhl_seasons(app_context, db_context, nhl_api).await?;
-
-            // Try again
-            match NhlSeason::fetch_from_db_by_key(db_context, &season_key).await? {
-                Some(s) => s,
-                None => {
-                    return Err(DSError::DatabaseCustom(format!(
-                        "Season {} not found in database after fetch",
-                        season_id
-                    )))
-                }
-            }
-        }
-    };
-
-    // Fetch all games in the season
-    get_nhl_all_games_in_season(app_context, db_context, nhl_api, season_id).await
-}
 
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
 pub async fn get_nhl_game(
