@@ -184,8 +184,7 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
             results,
             db_context,
             &format!("Database upsert failures for `{type_name}`"),
-        )
-        .await;
+        );
 
         (successes, failed_count)
     }

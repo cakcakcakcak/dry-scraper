@@ -28,7 +28,7 @@ use crate::{
 ///     results,
 ///     db_context,
 ///     "Parse errors during thing fetch"
-/// ).await;
+/// );
 ///
 /// // Internal: Database upsert errors
 /// let results = items.upsert_all(app_context, db_context).await;
@@ -36,9 +36,9 @@ use crate::{
 ///     results,
 ///     db_context,
 ///     "Database upsert failures"
-/// ).await;
+/// );
 /// ```
-pub async fn partition_and_track_errors<T>(
+pub fn partition_and_track_errors<T>(
     results: Vec<Result<T, DSError>>,
     db_context: &DbContext,
     operation_description: &str,
@@ -54,7 +54,7 @@ pub async fn partition_and_track_errors<T>(
             "{operation_description}"
         );
         for error in errors.into_iter().filter_map(Result::err) {
-            DataSourceError::track_error(error, db_context).await;
+            DataSourceError::track_error(error, db_context);
         }
     }
 
@@ -73,7 +73,7 @@ impl DataSourceError {
             occurred_at: chrono::Local::now().naive_local(),
         }
     }
-    pub async fn upsert_fire_and_forget(self, db_context: &DbContext) {
+    pub fn upsert_fire_and_forget(self, db_context: &DbContext) {
         let db_context = db_context.clone();
         tokio::spawn(async move {
             let _ = bind!(
@@ -87,7 +87,7 @@ impl DataSourceError {
             .await;
         });
     }
-    pub async fn track_error(error: DSError, db_context: &DbContext) {
-        Self::new(error).upsert_fire_and_forget(db_context).await
+    pub fn track_error(error: DSError, db_context: &DbContext) {
+        Self::new(error).upsert_fire_and_forget(db_context);
     }
 }

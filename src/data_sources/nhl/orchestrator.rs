@@ -169,8 +169,7 @@ pub async fn get_nhl_seasons(
         season_results,
         db_context,
         "Parse errors during season fetch",
-    )
-    .await;
+    );
 
     let db_seasons = seasons.into_db_structs();
     let _ = db_seasons.upsert_all(app_context, db_context).await;
@@ -189,8 +188,7 @@ pub async fn get_nhl_franchises(
         franchise_results,
         db_context,
         "Parse errors during franchise fetch",
-    )
-    .await;
+    );
 
     let db_franchises = franchises.into_db_structs();
     let _ = db_franchises.upsert_all(app_context, db_context).await;
@@ -206,8 +204,7 @@ pub async fn get_nhl_teams(
     let team_results = nhl_api.list_teams(db_context).await?;
 
     let (teams, _) =
-        partition_and_track_errors(team_results, db_context, "Parse errors during team fetch")
-            .await;
+        partition_and_track_errors(team_results, db_context, "Parse errors during team fetch");
 
     let db_teams = teams.into_db_structs();
     let _ = db_teams.upsert_all(app_context, db_context).await;
@@ -227,8 +224,7 @@ pub async fn get_nhl_shifts_in_game(
         shift_results,
         db_context,
         &format!("Parse errors during shift fetch for game {game_id}"),
-    )
-    .await;
+    );
 
     let db_shifts = shifts.into_db_structs();
     let _ = db_shifts.upsert_all(app_context, db_context).await;
@@ -308,8 +304,7 @@ async fn fetch_and_upsert_games(
         json_results,
         db_context,
         &format!("Parse errors occurred while {error_context}"),
-    )
-    .await;
+    );
 
     let games = ok_jsons.into_db_structs();
     _ = ensure_and_fetch_foreign_keys(&games, app_context, db_context, nhl_api).await?;
@@ -325,7 +320,6 @@ pub async fn get_nhl_all_games_in_season(
     nhl_api: &NhlApi,
     season_id: i32,
 ) -> Result<Vec<NhlGame>, DSError> {
-    // Fetch the season to get total_regular_season_games
     let season_key = NhlSeasonKey { id: season_id };
     let season = match NhlSeason::fetch_from_db_by_key(db_context, &season_key).await? {
         Some(s) => s,
@@ -375,7 +369,6 @@ pub async fn get_nhl_all_games_in_season(
 }
 
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
-
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
 pub async fn get_nhl_game(
     app_context: &AppContext,
@@ -393,7 +386,7 @@ pub async fn get_nhl_game(
                 game_id = game_id,
                 "Parse error occurred while fetching game"
             );
-            DataSourceError::track_error(e, db_context).await;
+            DataSourceError::track_error(e, db_context);
             return Err(DSError::ApiCustom(format!(
                 "Failed to fetch or parse game {game_id}"
             )));
@@ -538,8 +531,7 @@ pub async fn get_nhl_playoff_bracket_series(
         bracket_results,
         db_context,
         &format!("Parse errors during playoff bracket fetch for season {season_id}"),
-    )
-    .await;
+    );
 
     let db_brackets = brackets.into_db_structs();
     let _ = db_brackets.upsert_all(app_context, db_context).await;

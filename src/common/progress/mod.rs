@@ -17,7 +17,6 @@ pub enum ProgressReporterMode {
         bar_style: ProgressStyle,
         spinner_style: ProgressStyle,
     },
-    // Channel variant added in Phase 2
 }
 
 impl ProgressReporterMode {

@@ -8,6 +8,7 @@ use governor::state::{InMemoryState, NotKeyed};
 use governor::{Quota, RateLimiter};
 
 use super::{nhl_stats_api::NhlStatsApi, nhl_web_api::NhlWebApi};
+use crate::common::progress::ProgressReporter;
 use crate::{
     common::{
         api::CacheableApi, app_context::AppContext, db::DbContext, models::ItemParsedWithContext,
@@ -159,7 +160,7 @@ impl NhlApi {
         tracing::debug!(count = player_ids.len(), "Fetching players");
         stream::iter(player_ids)
             .map(|player_id| self.get_player(db_context, player_id))
-            .buffer_unordered(app_context.config.db_concurrency_limit)
+            .buffer_unordered(app_context.config.api_concurrency_limit)
             .collect()
             .await
     }
@@ -186,11 +187,14 @@ impl NhlApi {
         game_ids: Vec<i32>,
     ) -> Vec<Result<ItemParsedWithContext<NhlGameJson>, DSError>> {
         tracing::debug!(count = game_ids.len(), "Fetching games");
-        stream::iter(game_ids)
+
+        let results = stream::iter(game_ids)
             .map(|game_id| self.get_game(db_context, game_id))
             .buffer_unordered(app_context.config.api_concurrency_limit)
             .collect()
-            .await
+            .await;
+
+        results
     }
 
     // Playoff bracket methods
