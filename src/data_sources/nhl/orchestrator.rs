@@ -163,7 +163,7 @@ pub async fn get_nhl_seasons(
     db_context: &DbContext,
     nhl_api: &NhlApi,
 ) -> Result<Vec<NhlSeason>, DSError> {
-    let season_results = nhl_api.list_seasons(db_context).await?;
+    let season_results = nhl_api.get_list_seasons(db_context).await?;
 
     let (seasons, _) = partition_and_track_errors(
         season_results,
@@ -182,7 +182,7 @@ pub async fn get_nhl_franchises(
     db_context: &DbContext,
     nhl_api: &NhlApi,
 ) -> Result<Vec<NhlFranchise>, DSError> {
-    let franchise_results = nhl_api.list_franchises(db_context).await?;
+    let franchise_results = nhl_api.get_list_franchises(db_context).await?;
 
     let (franchises, _) = partition_and_track_errors(
         franchise_results,
@@ -201,7 +201,7 @@ pub async fn get_nhl_teams(
     db_context: &DbContext,
     nhl_api: &NhlApi,
 ) -> Result<Vec<NhlTeam>, DSError> {
-    let team_results = nhl_api.list_teams(db_context).await?;
+    let team_results = nhl_api.get_list_teams(db_context).await?;
 
     let (teams, _) =
         partition_and_track_errors(team_results, db_context, "Parse errors during team fetch");
@@ -218,7 +218,9 @@ pub async fn get_nhl_shifts_in_game(
     nhl_api: &NhlApi,
     game_id: i32,
 ) -> Result<Vec<NhlShift>, DSError> {
-    let shift_results = nhl_api.list_shifts_for_game(db_context, game_id).await?;
+    let shift_results = nhl_api
+        .get_list_shifts_for_game(db_context, game_id)
+        .await?;
 
     let (shifts, _) = partition_and_track_errors(
         shift_results,
@@ -376,7 +378,7 @@ pub async fn get_nhl_game(
     nhl_api: &NhlApi,
     game_id: i32,
 ) -> Result<NhlGame, DSError> {
-    let json_result = nhl_api.get_game(db_context, game_id).await;
+    let json_result = nhl_api.get_game(app_context, db_context, game_id).await;
 
     // Handle parse errors
     let game_json = match json_result {
@@ -524,7 +526,7 @@ pub async fn get_nhl_playoff_bracket_series(
         .map_err(DSError::Parse)?;
 
     let bracket_results = nhl_api
-        .list_playoff_series_for_year(db_context, year_id)
+        .get_list_playoff_series_for_year(db_context, year_id)
         .await?;
 
     let (brackets, _) = partition_and_track_errors(

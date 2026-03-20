@@ -8,7 +8,6 @@ use governor::state::{InMemoryState, NotKeyed};
 use governor::{Quota, RateLimiter};
 
 use super::{nhl_stats_api::NhlStatsApi, nhl_web_api::NhlWebApi};
-use crate::common::progress::ProgressReporter;
 use crate::{
     common::{
         api::CacheableApi, app_context::AppContext, db::DbContext, models::ItemParsedWithContext,
@@ -56,7 +55,8 @@ impl NhlApi {
         let quota = Quota::per_second(
             NonZeroU32::new(config.nhl_api_rate_limit)
                 .expect("nhl_api_rate_limit must be non-zero"),
-        );
+        )
+        .allow_burst(NonZeroU32::new(1).unwrap());
         Self {
             nhl_stats_api: NhlStatsApi::new(),
             nhl_web_api: NhlWebApi::new(),
@@ -69,7 +69,7 @@ impl NhlApi {
     }
 
     // Season methods
-    pub async fn list_seasons(
+    pub async fn get_list_seasons(
         &self,
         db_context: &DbContext,
     ) -> Result<Vec<Result<ItemParsedWithContext<NhlSeasonJson>, DSError>>, DSError> {
@@ -81,7 +81,7 @@ impl NhlApi {
     }
 
     // Team methods
-    pub async fn list_teams(
+    pub async fn get_list_teams(
         &self,
         db_context: &DbContext,
     ) -> Result<Vec<Result<ItemParsedWithContext<NhlTeamJson>, DSError>>, DSError> {
@@ -110,7 +110,7 @@ impl NhlApi {
     }
 
     // Franchise methods
-    pub async fn list_franchises(
+    pub async fn get_list_franchises(
         &self,
         db_context: &DbContext,
     ) -> Result<Vec<Result<ItemParsedWithContext<NhlFranchiseJson>, DSError>>, DSError> {
@@ -122,7 +122,7 @@ impl NhlApi {
     }
 
     // Shift methods
-    pub async fn list_shifts_for_game(
+    pub async fn get_list_shifts_for_game(
         &self,
         db_context: &DbContext,
         game_id: i32,
@@ -157,21 +157,30 @@ impl NhlApi {
         db_context: &DbContext,
         player_ids: Vec<i32>,
     ) -> Vec<Result<ItemParsedWithContext<NhlPlayerJson>, DSError>> {
-        tracing::debug!(count = player_ids.len(), "Fetching players");
-        stream::iter(player_ids)
+        let count = player_ids.len();
+        tracing::debug!(count, "Fetching players");
+
+        app_context.init_progress(Some(count), "Fetching players");
+        let result = stream::iter(player_ids)
             .map(|player_id| self.get_player(db_context, player_id))
             .buffer_unordered(app_context.config.api_concurrency_limit)
+            .inspect(|_| app_context.inc_progress(1))
             .collect()
-            .await
+            .await;
+        app_context.finish_progress();
+        result
     }
 
     // Game methods
     pub async fn get_game(
         &self,
+        app_context: &AppContext,
         db_context: &DbContext,
         game_id: i32,
     ) -> Result<ItemParsedWithContext<NhlGameJson>, DSError> {
         self.rate_limit().await;
+        app_context.inc_progress(1);
+
         let endpoint = self
             .nhl_web_api
             .endpoint(&format!("/gamecenter/{game_id}/play-by-play"));
@@ -186,19 +195,22 @@ impl NhlApi {
         db_context: &DbContext,
         game_ids: Vec<i32>,
     ) -> Vec<Result<ItemParsedWithContext<NhlGameJson>, DSError>> {
+        let count = game_ids.len();
         tracing::debug!(count = game_ids.len(), "Fetching games");
 
+        app_context.init_progress(Some(count), "Fetching games");
         let results = stream::iter(game_ids)
-            .map(|game_id| self.get_game(db_context, game_id))
+            .map(|game_id| self.get_game(app_context, db_context, game_id))
             .buffer_unordered(app_context.config.api_concurrency_limit)
             .collect()
             .await;
+        app_context.finish_progress();
 
         results
     }
 
     // Playoff bracket methods
-    pub async fn list_playoff_series_for_year(
+    pub async fn get_list_playoff_series_for_year(
         &self,
         db_context: &DbContext,
         year_id: i32,

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 pub trait ProgressReporter: Send {
-    fn inc(&self, n: u64);
-    fn set_len(&self, len: u64);
+    fn inc(&self, n: usize);
+    fn set_len(&self, len: usize);
     fn set_message(&self, msg: &str);
     fn finish(&self);
 }
@@ -22,7 +22,7 @@ pub enum ProgressReporterMode {
 impl ProgressReporterMode {
     pub fn create_reporter(
         &self,
-        total: Option<u64>,
+        total: Option<usize>,
         msg: &str,
     ) -> Box<dyn ProgressReporter + Send> {
         match self {
@@ -34,7 +34,7 @@ impl ProgressReporterMode {
             } => {
                 let pb = match total {
                     Some(n) => {
-                        let pb = mp.add(ProgressBar::new(n));
+                        let pb = mp.add(ProgressBar::new(n as u64));
                         pb.set_style(bar_style.clone());
                         pb
                     }
@@ -54,8 +54,8 @@ impl ProgressReporterMode {
 
 pub struct NoopReporter;
 impl ProgressReporter for NoopReporter {
-    fn inc(&self, _n: u64) {}
-    fn set_len(&self, _len: u64) {}
+    fn inc(&self, _n: usize) {}
+    fn set_len(&self, _len: usize) {}
     fn set_message(&self, _msg: &str) {}
     fn finish(&self) {}
 }
@@ -64,11 +64,11 @@ pub struct IndicatifReporter {
     pb: ProgressBar,
 }
 impl ProgressReporter for IndicatifReporter {
-    fn inc(&self, n: u64) {
-        self.pb.inc(n)
+    fn inc(&self, n: usize) {
+        self.pb.inc(n as u64)
     }
-    fn set_len(&self, len: u64) {
-        self.pb.set_length(len)
+    fn set_len(&self, len: usize) {
+        self.pb.set_length(len as u64)
     }
     fn set_message(&self, msg: &str) {
         self.pb.set_message(msg.to_string())

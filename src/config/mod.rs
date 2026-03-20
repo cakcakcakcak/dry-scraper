@@ -10,7 +10,7 @@ pub mod env_vars;
 use cli_args::CliArgs;
 use env_vars::EnvironmentVariables;
 
-const DEFAULT_API_CONCURRENCY_LIMIT: usize = 32;
+const DEFAULT_API_CONCURRENCY_LIMIT: usize = 10;
 const DEFAULT_API_DELAY_MS: u64 = 50;
 const DEFAULT_NHL_API_RATE_LIMIT: u32 = 5;
 const DEFAULT_MAX_DB_CONNECTIONS: u32 = 32;
