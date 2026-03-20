@@ -1,6 +1,6 @@
 #![allow(async_fn_in_trait)]
 
-use futures::stream::{self, StreamExt};
+use futures::future::join_all;
 use std::{cmp::Eq, fmt::Debug, hash::Hash};
 
 use async_trait::async_trait;
@@ -8,7 +8,6 @@ use sqlx::{postgres::PgQueryResult, FromRow};
 
 use crate::{
     common::{
-        app_context::AppContext,
         db::{
             CacheKey, DbContext, SqlxJob, SqlxJobOrFlush, SqlxJobResult, StaticPgQuery,
             StaticPgQueryAs,
@@ -61,25 +60,14 @@ pub trait DbEntity:
     fn select_key_query() -> StaticPgQueryAs<Self::Pk>;
 
     #[tracing::instrument(skip(db_context))]
-    async fn verify_by_key(
-        db_context: &DbContext,
-        id: Self::Pk,
-    ) -> Result<Option<Self::Pk>, DSError> {
-        if db_context.key_cache.contains(&id.cache_key()) {
-            return Ok(None);
-        }
-        match Self::fetch_from_db_by_key(db_context, &id).await {
-            Ok(Some(_)) => Ok(None),
-            Ok(None) => Ok(Some(id)),
-            Err(e) => return Err(e),
-        }
-    }
-
-    #[tracing::instrument(skip(db_context))]
     async fn fetch_from_db_by_key(
         db_context: &DbContext,
         id: &Self::Pk,
     ) -> Result<Option<Self>, DSError> {
+        if !db_context.key_cache.contains(&id.cache_key()) {
+            return Ok(None);
+        }
+
         match sqlx_operation_with_retries!(
             &db_context.config,
             id.create_select_query()
@@ -88,10 +76,7 @@ pub trait DbEntity:
         )
         .await
         {
-            Ok(Some(row)) => {
-                db_context.key_cache.insert(id.cache_key());
-                Self::from_row(&row).map(Some).map_err(DSError::from)
-            }
+            Ok(Some(row)) => Self::from_row(&row).map(Some).map_err(DSError::from),
             Ok(None) => Ok(None),
             Err(e) => {
                 tracing::error!(key = ?id, error = %e, "Failed to fetch from database");
@@ -122,19 +107,11 @@ pub trait DbEntity:
 }
 
 pub trait DbEntityVecExt<T: DbEntity> {
-    async fn upsert_all(
-        &self,
-        app_context: &AppContext,
-        db_context: &DbContext,
-    ) -> (Vec<Option<PgQueryResult>>, usize);
+    async fn upsert_all(&self, db_context: &DbContext) -> (Vec<Option<PgQueryResult>>, usize);
 }
 impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
-    #[tracing::instrument(skip(self, app_context, db_context))]
-    async fn upsert_all(
-        &self,
-        app_context: &AppContext,
-        db_context: &DbContext,
-    ) -> (Vec<Option<PgQueryResult>>, usize) {
+    #[tracing::instrument(skip(self, db_context))]
+    async fn upsert_all(&self, db_context: &DbContext) -> (Vec<Option<PgQueryResult>>, usize) {
         if self.is_empty() {
             return (Vec::new(), 0);
         }
@@ -164,21 +141,17 @@ impl<T: DbEntity> DbEntityVecExt<T> for Vec<T> {
 
         let _ = db_context.sqlx_tx.send(SqlxJobOrFlush::Flush).await;
 
-        // Wait for all results in parallel
-        let results: Vec<_> = stream::iter(receivers)
-            .map(|(item, rx)| async move {
-                match rx.await {
-                    Ok(Ok(pg_result)) => {
-                        db_context.key_cache.insert(item.cache_key());
-                        Ok(Some(pg_result))
-                    }
-                    Ok(Err(e)) => Err(DSError::DatabaseCustom(format!("Upsert failed: {e}"))),
-                    Err(_) => Err(DSError::DatabaseCustom("Worker dropped".to_string())),
+        let results: Vec<_> = join_all(receivers.into_iter().map(|(item, rx)| async move {
+            match rx.await {
+                Ok(Ok(pg_result)) => {
+                    db_context.key_cache.insert(item.cache_key());
+                    Ok(Some(pg_result))
                 }
-            })
-            .buffer_unordered(app_context.config.db_concurrency_limit)
-            .collect()
-            .await;
+                Ok(Err(e)) => Err(DSError::DatabaseCustom(format!("Upsert failed: {e}"))),
+                Err(_) => Err(DSError::DatabaseCustom("Worker dropped".to_string())),
+            }
+        }))
+        .await;
 
         let (successes, failed_count) = partition_and_track_errors(
             results,
@@ -199,8 +172,4 @@ pub trait PrimaryKey:
     fn create_select_query(&self) -> StaticPgQuery;
 
     fn cache_key(&self) -> CacheKey;
-
-    async fn verify_by_key(self, db_context: &DbContext) -> Result<Option<Self>, DSError> {
-        Self::Entity::verify_by_key(db_context, self).await
-    }
 }

@@ -96,10 +96,9 @@ async fn main() -> Result<(), DSError> {
                         nhl_source.warm_cache(&app_context, &db_context).await?;
 
                         // Fetch base data (franchises, teams, seasons)
-                        _ = get_nhl_franchises(&app_context, &db_context, &nhl_source.api).await?;
-                        let seasons =
-                            get_nhl_seasons(&app_context, &db_context, &nhl_source.api).await?;
-                        _ = get_nhl_teams(&app_context, &db_context, &nhl_source.api).await?;
+                        _ = get_nhl_franchises(&db_context, &nhl_source.api).await?;
+                        let seasons = get_nhl_seasons(&db_context, &nhl_source.api).await?;
+                        _ = get_nhl_teams(&db_context, &nhl_source.api).await?;
 
                         match command {
                             NhlCommand::All => for _season in seasons {},

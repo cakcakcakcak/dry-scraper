@@ -6,7 +6,7 @@ use crate::common::{
     app_context::AppContext,
     db::{
         all_foreign_keys_cached, find_missing_foreign_keys, group_cache_keys_by_table, DbContext,
-        DbEntity, DbEntityVecExt,
+        DbEntity, DbEntityVecExt, SqlxJobOrFlush,
     },
     errors::DSError,
     models::{
@@ -68,7 +68,7 @@ where
                     }
 
                     let count = players.len();
-                    let _ = players.upsert_all(app_context, db_context).await;
+                    let _ = players.upsert_all(db_context).await;
                     count
                 }
                 "game" => {
@@ -157,9 +157,8 @@ where
     Ok(total_fetched)
 }
 
-#[tracing::instrument(skip(app_context, db_context, nhl_api))]
+#[tracing::instrument(skip(db_context, nhl_api))]
 pub async fn get_nhl_seasons(
-    app_context: &AppContext,
     db_context: &DbContext,
     nhl_api: &NhlApi,
 ) -> Result<Vec<NhlSeason>, DSError> {
@@ -172,13 +171,12 @@ pub async fn get_nhl_seasons(
     );
 
     let db_seasons = seasons.into_db_structs();
-    let _ = db_seasons.upsert_all(app_context, db_context).await;
+    let _ = db_seasons.upsert_all(db_context).await;
     Ok(db_seasons)
 }
 
-#[tracing::instrument(skip(app_context, db_context, nhl_api))]
+#[tracing::instrument(skip(db_context, nhl_api))]
 pub async fn get_nhl_franchises(
-    app_context: &AppContext,
     db_context: &DbContext,
     nhl_api: &NhlApi,
 ) -> Result<Vec<NhlFranchise>, DSError> {
@@ -191,13 +189,12 @@ pub async fn get_nhl_franchises(
     );
 
     let db_franchises = franchises.into_db_structs();
-    let _ = db_franchises.upsert_all(app_context, db_context).await;
+    let _ = db_franchises.upsert_all(db_context).await;
     Ok(db_franchises)
 }
 
-#[tracing::instrument(skip(app_context, db_context, nhl_api))]
+#[tracing::instrument(skip(db_context, nhl_api))]
 pub async fn get_nhl_teams(
-    app_context: &AppContext,
     db_context: &DbContext,
     nhl_api: &NhlApi,
 ) -> Result<Vec<NhlTeam>, DSError> {
@@ -207,13 +204,12 @@ pub async fn get_nhl_teams(
         partition_and_track_errors(team_results, db_context, "Parse errors during team fetch");
 
     let db_teams = teams.into_db_structs();
-    let _ = db_teams.upsert_all(app_context, db_context).await;
+    let _ = db_teams.upsert_all(db_context).await;
     Ok(db_teams)
 }
 
-#[tracing::instrument(skip(app_context, db_context, nhl_api))]
+#[tracing::instrument(skip(db_context, nhl_api))]
 pub async fn get_nhl_shifts_in_game(
-    app_context: &AppContext,
     db_context: &DbContext,
     nhl_api: &NhlApi,
     game_id: i32,
@@ -229,7 +225,7 @@ pub async fn get_nhl_shifts_in_game(
     );
 
     let db_shifts = shifts.into_db_structs();
-    let _ = db_shifts.upsert_all(app_context, db_context).await;
+    let _ = db_shifts.upsert_all(db_context).await;
     Ok(db_shifts)
 }
 
@@ -248,7 +244,9 @@ pub async fn get_nhl_everything_in_season(
         .create_reporter(None, "Fetching playoff games...");
 
     let playoff_bracket_series =
-        get_nhl_playoff_bracket_series(app_context, db_context, nhl_api, season_id).await?;
+        get_nhl_playoff_bracket_series(db_context, nhl_api, season_id).await?;
+
+    let _ = db_context.sqlx_tx.send(SqlxJobOrFlush::Flush).await;
 
     for bracket_series in playoff_bracket_series {
         let series = get_nhl_playoff_series(
@@ -272,7 +270,7 @@ pub async fn get_nhl_everything_in_season(
             tokio::try_join!(
                 get_nhl_plays_in_game(app_context, db_context, nhl_api, game),
                 get_nhl_roster_spots_in_game(app_context, db_context, nhl_api, game),
-                get_nhl_shifts_in_game(app_context, db_context, nhl_api, game.id),
+                get_nhl_shifts_in_game(db_context, nhl_api, game.id),
             )
         })
         .buffer_unordered(app_context.config.db_concurrency_limit)
@@ -310,7 +308,7 @@ async fn fetch_and_upsert_games(
 
     let games = ok_jsons.into_db_structs();
     _ = ensure_and_fetch_foreign_keys(&games, app_context, db_context, nhl_api).await?;
-    let _ = games.upsert_all(app_context, db_context).await;
+    let _ = games.upsert_all(db_context).await;
 
     Ok(games)
 }
@@ -412,7 +410,7 @@ pub async fn get_nhl_game(
     let (plays_res, roster_res, shifts_res) = tokio::join!(
         get_nhl_plays_in_game(app_context, db_context, nhl_api, &game),
         get_nhl_roster_spots_in_game(app_context, db_context, nhl_api, &game),
-        get_nhl_shifts_in_game(app_context, db_context, nhl_api, game.id),
+        get_nhl_shifts_in_game(db_context, nhl_api, game.id),
     );
     plays_res?;
     roster_res?;
@@ -460,7 +458,7 @@ pub async fn get_nhl_roster_spots_in_game(
 
     _ = ensure_and_fetch_foreign_keys(&roster_spots, app_context, db_context, nhl_api).await?;
 
-    let _ = roster_spots.upsert_all(app_context, db_context).await;
+    let _ = roster_spots.upsert_all(db_context).await;
     tracing::debug!(
         game_id = game.id,
         upserted = roster_spots.len(),
@@ -508,15 +506,14 @@ pub async fn get_nhl_plays_in_game(
 
     _ = ensure_and_fetch_foreign_keys(&plays, app_context, db_context, nhl_api).await?;
 
-    let _ = plays.upsert_all(app_context, db_context).await;
+    let _ = plays.upsert_all(db_context).await;
     tracing::debug!(game_id = game.id, upserted = plays.len(), "Plays upserted");
 
     Ok(plays)
 }
 
-#[tracing::instrument(skip(app_context, db_context, nhl_api))]
+#[tracing::instrument(skip(db_context, nhl_api))]
 pub async fn get_nhl_playoff_bracket_series(
-    app_context: &AppContext,
     db_context: &DbContext,
     nhl_api: &NhlApi,
     season_id: i32,
@@ -536,7 +533,7 @@ pub async fn get_nhl_playoff_bracket_series(
     );
 
     let db_brackets = brackets.into_db_structs();
-    let _ = db_brackets.upsert_all(app_context, db_context).await;
+    let _ = db_brackets.upsert_all(db_context).await;
     Ok(db_brackets)
 }
 
@@ -591,7 +588,7 @@ pub async fn get_nhl_playoff_series(
 
     _ = ensure_and_fetch_foreign_keys(&series_games, app_context, db_context, nhl_api).await?;
 
-    let _ = series_games.upsert_all(app_context, db_context).await;
+    let _ = series_games.upsert_all(db_context).await;
     tracing::debug!(
         season_id,
         series_letter,

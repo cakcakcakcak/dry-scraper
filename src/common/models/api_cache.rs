@@ -36,6 +36,10 @@ impl DbEntity for ApiCache {
         db_context: &DbContext,
         id: &Self::Pk,
     ) -> Result<Option<Self>, DSError> {
+        // check in-memory cache first
+        if !db_context.key_cache.contains(&id.cache_key()) {
+            return Ok(None);
+        }
         match sqlx_operation_with_retries!(
             &db_context.config,
             sqlx::query_as::<_, Self>(r#"SELECT * FROM api_cache WHERE endpoint=$1"#)

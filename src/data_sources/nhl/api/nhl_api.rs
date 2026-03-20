@@ -1,10 +1,8 @@
 use std::fmt::Debug;
 use std::num::NonZeroU32;
+use std::sync::Arc;
 
-use async_trait::async_trait;
 use futures::stream::{self, StreamExt};
-use governor::clock::DefaultClock;
-use governor::state::{InMemoryState, NotKeyed};
 use governor::{Quota, RateLimiter};
 
 use super::{nhl_stats_api::NhlStatsApi, nhl_web_api::NhlWebApi};
@@ -24,7 +22,6 @@ use crate::{
 pub struct NhlApi {
     nhl_stats_api: NhlStatsApi,
     nhl_web_api: NhlWebApi,
-    rate_limiter: RateLimiter<NotKeyed, InMemoryState, DefaultClock>,
 }
 
 impl Debug for NhlApi {
@@ -33,17 +30,6 @@ impl Debug for NhlApi {
             .field("nhl_stats_api", &self.nhl_stats_api)
             .field("nhl_web_api", &self.nhl_web_api)
             .finish()
-    }
-}
-impl Default for NhlApi {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-#[async_trait]
-impl CacheableApi for NhlApi {
-    fn client(&self) -> &reqwest::Client {
-        &self.nhl_stats_api.client
     }
 }
 impl NhlApi {
@@ -57,15 +43,11 @@ impl NhlApi {
                 .expect("nhl_api_rate_limit must be non-zero"),
         )
         .allow_burst(NonZeroU32::new(1).unwrap());
+        let rate_limiter = Arc::new(RateLimiter::direct(quota));
         Self {
-            nhl_stats_api: NhlStatsApi::new(),
-            nhl_web_api: NhlWebApi::new(),
-            rate_limiter: RateLimiter::direct(quota),
+            nhl_stats_api: NhlStatsApi::new(Arc::clone(&rate_limiter)),
+            nhl_web_api: NhlWebApi::new(Arc::clone(&rate_limiter)),
         }
-    }
-
-    async fn rate_limit(&self) {
-        self.rate_limiter.until_ready().await;
     }
 
     // Season methods
@@ -73,7 +55,6 @@ impl NhlApi {
         &self,
         db_context: &DbContext,
     ) -> Result<Vec<Result<ItemParsedWithContext<NhlSeasonJson>, DSError>>, DSError> {
-        self.rate_limit().await;
         let endpoint = self.nhl_stats_api.endpoint("/season");
         self.nhl_stats_api
             .fetch_and_parse(&endpoint, db_context)
@@ -85,7 +66,6 @@ impl NhlApi {
         &self,
         db_context: &DbContext,
     ) -> Result<Vec<Result<ItemParsedWithContext<NhlTeamJson>, DSError>>, DSError> {
-        self.rate_limit().await;
         let endpoint = self.nhl_stats_api.endpoint("/team");
         self.nhl_stats_api
             .fetch_and_parse(&endpoint, db_context)
@@ -97,7 +77,6 @@ impl NhlApi {
         db_context: &DbContext,
         team_id: i32,
     ) -> Result<ItemParsedWithContext<NhlTeamJson>, DSError> {
-        self.rate_limit().await;
         let endpoint = self.nhl_stats_api.endpoint(&format!("/team/id/{team_id}"));
         let mut results = self
             .nhl_stats_api
@@ -114,7 +93,6 @@ impl NhlApi {
         &self,
         db_context: &DbContext,
     ) -> Result<Vec<Result<ItemParsedWithContext<NhlFranchiseJson>, DSError>>, DSError> {
-        self.rate_limit().await;
         let endpoint = self.nhl_stats_api.endpoint("/franchise");
         self.nhl_stats_api
             .fetch_and_parse(&endpoint, db_context)
@@ -127,7 +105,6 @@ impl NhlApi {
         db_context: &DbContext,
         game_id: i32,
     ) -> Result<Vec<Result<ItemParsedWithContext<NhlShiftJson>, DSError>>, DSError> {
-        self.rate_limit().await;
         let endpoint = self
             .nhl_stats_api
             .endpoint(&format!("/shiftcharts?cayenneExp=gameId={game_id}"));
@@ -142,7 +119,6 @@ impl NhlApi {
         db_context: &DbContext,
         player_id: i32,
     ) -> Result<ItemParsedWithContext<NhlPlayerJson>, DSError> {
-        self.rate_limit().await;
         let endpoint = self
             .nhl_web_api
             .endpoint(&format!("/player/{player_id}/landing"));
@@ -178,7 +154,6 @@ impl NhlApi {
         db_context: &DbContext,
         game_id: i32,
     ) -> Result<ItemParsedWithContext<NhlGameJson>, DSError> {
-        self.rate_limit().await;
         app_context.inc_progress(1);
 
         let endpoint = self
@@ -216,7 +191,6 @@ impl NhlApi {
         year_id: i32,
     ) -> Result<Vec<Result<ItemParsedWithContext<NhlPlayoffBracketSeriesJson>, DSError>>, DSError>
     {
-        self.rate_limit().await;
         let endpoint = self
             .nhl_web_api
             .endpoint(&format!("/playoff-bracket/{year_id}"));
@@ -264,7 +238,6 @@ impl NhlApi {
         season_id: i32,
         series_letter: &str,
     ) -> Result<ItemParsedWithContext<NhlPlayoffSeriesJson>, DSError> {
-        self.rate_limit().await;
         let endpoint = self.nhl_web_api.endpoint(&format!(
             "/schedule/playoff-series/{season_id}/{series_letter}"
         ));
