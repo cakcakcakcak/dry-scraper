@@ -169,9 +169,6 @@ where
     let results = futures::future::join_all(fetch_futures).await;
     let total_fetched: usize = results.into_iter().sum();
 
-    if total_fetched > 0 {
-        tracing::info!("Fetched {} missing foreign key entities", total_fetched);
-    }
     Ok(total_fetched)
 }
 
@@ -254,18 +251,20 @@ pub async fn get_nhl_everything_in_season(
     nhl_api: &NhlApi,
     season_id: i32,
 ) -> Result<(), DSError> {
+    // Fetch regular season games
     let mut games =
         get_nhl_all_games_in_season(app_context, db_context, nhl_api, season_id).await?;
 
-    let playoff_spinner = app_context
-        .progress_reporter_mode
-        .create_reporter(None, "Fetching playoff games...");
-
+    // Fetch playoff bracket series metadata
     let playoff_bracket_series =
         get_nhl_playoff_bracket_series(app_context, db_context, nhl_api, season_id).await?;
 
     let _ = db_context.sqlx_tx.send(SqlxJobOrFlush::Flush).await;
 
+    // Fetch all playoff series metadata (without games yet)
+    app_context.init_progress(None, "Fetching playoff series metadata...");
+
+    let mut all_playoff_series = Vec::new();
     for bracket_series in playoff_bracket_series {
         let series = get_nhl_playoff_series(
             app_context,
@@ -278,14 +277,43 @@ pub async fn get_nhl_everything_in_season(
 
         let _ = db_context.sqlx_tx.send(SqlxJobOrFlush::Flush).await;
 
-        let mut playoff_games =
-            get_nhl_games_in_playoff_series(app_context, db_context, nhl_api, &series.game_ids)
-                .await?;
+        all_playoff_series.push(series);
+    }
+    app_context.finish_progress();
+
+    // Collect all playoff game IDs
+    let all_playoff_game_ids: Vec<i32> = all_playoff_series
+        .iter()
+        .flat_map(|series| series.game_ids.clone())
+        .collect();
+
+    // Fetch all playoff games with single progress bar
+    if !all_playoff_game_ids.is_empty() {
+        tracing::info!(
+            game_count = all_playoff_game_ids.len(),
+            "Fetching playoff games"
+        );
+
+        let mut playoff_games = fetch_and_upsert_games(
+            app_context,
+            db_context,
+            nhl_api,
+            all_playoff_game_ids,
+            &format!("fetching playoff games for season {season_id}"),
+        )
+        .await?;
+
+        tracing::info!(upserted = playoff_games.len(), "Playoff games upserted");
+
         games.append(&mut playoff_games);
     }
-    playoff_spinner.finish();
 
     // Fetch ancillary data for all games, bounded by concurrency limit
+    app_context.init_progress(
+        None,
+        "Fetching shift data and constructing play and roster spot entries...",
+    );
+
     let ancillary_results: Vec<_> = stream::iter(games.iter())
         .map(|game| async move {
             tokio::try_join!(
@@ -301,6 +329,7 @@ pub async fn get_nhl_everything_in_season(
     for result in ancillary_results {
         result?;
     }
+    app_context.finish_progress();
 
     Ok(())
 }
@@ -390,7 +419,6 @@ pub async fn get_nhl_all_games_in_season(
 }
 
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
-#[tracing::instrument(skip(app_context, db_context, nhl_api))]
 pub async fn get_nhl_game(
     app_context: &AppContext,
     db_context: &DbContext,
@@ -459,7 +487,6 @@ pub async fn get_nhl_roster_spots_in_game(
     nhl_api: &NhlApi,
     game: &NhlGame,
 ) -> Result<Vec<NhlRosterSpot>, DSError> {
-    let _game_id: i32 = game.id;
     let game_json: NhlGameJson = serde_json::from_value(game.raw_json.clone())?;
 
     let roster_spot_jsons: Vec<NhlRosterSpotJson> = game_json.roster_spots;
@@ -508,7 +535,6 @@ pub async fn get_nhl_plays_in_game(
     nhl_api: &NhlApi,
     game: &NhlGame,
 ) -> Result<Vec<NhlPlay>, DSError> {
-    let _game_id: i32 = game.id;
     let game_json: NhlGameJson = serde_json::from_value(game.raw_json.clone())?;
 
     let play_jsons: Vec<NhlPlayJson> = game_json.plays;

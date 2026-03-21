@@ -74,6 +74,6 @@ impl ProgressReporter for IndicatifReporter {
         self.pb.set_message(msg.to_string())
     }
     fn finish(&self) {
-        self.pb.finish()
+        self.pb.finish_and_clear()
     }
 }

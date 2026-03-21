@@ -136,14 +136,11 @@ impl NhlApi {
         let count = player_ids.len();
         tracing::debug!(count, "Fetching players");
 
-        app_context.init_progress(Some(count), "Fetching players");
         let result = stream::iter(player_ids)
             .map(|player_id| self.get_player(db_context, player_id))
             .buffer_unordered(app_context.config.api_concurrency_limit)
-            .inspect(|_| app_context.inc_progress(1))
             .collect()
             .await;
-        app_context.finish_progress();
         result
     }
 
