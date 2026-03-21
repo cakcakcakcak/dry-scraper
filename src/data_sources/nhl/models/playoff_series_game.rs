@@ -234,12 +234,12 @@ impl DbEntity for NhlPlayoffSeriesGame {
             CacheKey {
                 source: "nhl",
                 table: "playoff_series",
-                id: format!("{}:{}", self.season_id, self.series_letter),
+                id: format!("{}|{}", self.season_id, self.series_letter),
             },
             CacheKey {
                 source: "nhl",
                 table: "playoff_bracket_series",
-                id: format!("{}:{}", self.season_id, self.series_letter),
+                id: format!("{}|{}", self.season_id, self.series_letter),
             },
         ]
     }

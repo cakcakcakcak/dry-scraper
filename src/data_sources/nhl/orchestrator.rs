@@ -97,11 +97,29 @@ where
                     games.len()
                 }
                 "team" => {
-                    tracing::warn!(
-                        "{} missing team FKs - teams should be fetched at startup",
-                        cache_keys.len()
-                    );
-                    0
+                    tracing::info!("Fetching {} missing teams", cache_keys.len());
+                    let team_ids: Vec<i32> = cache_keys
+                        .iter()
+                        .filter_map(|ck| ck.id.parse::<i32>().ok())
+                        .collect();
+
+                    let results: Vec<_> = stream::iter(team_ids)
+                        .map(|team_id| async move {
+                            get_nhl_team(db_context, api, team_id).await
+                        })
+                        .buffer_unordered(app_context.config.db_concurrency_limit)
+                        .collect()
+                        .await;
+
+                    let teams: Vec<_> = results.into_iter().filter_map(|r| r.ok()).collect();
+                    if teams.len() < cache_keys.len() {
+                        tracing::warn!(
+                            "Failed to fetch {} of {} missing teams",
+                            cache_keys.len() - teams.len(),
+                            cache_keys.len()
+                        );
+                    }
+                    teams.len()
                 }
                 "season" => {
                     tracing::warn!(
@@ -244,7 +262,7 @@ pub async fn get_nhl_everything_in_season(
         .create_reporter(None, "Fetching playoff games...");
 
     let playoff_bracket_series =
-        get_nhl_playoff_bracket_series(db_context, nhl_api, season_id).await?;
+        get_nhl_playoff_bracket_series(app_context, db_context, nhl_api, season_id).await?;
 
     let _ = db_context.sqlx_tx.send(SqlxJobOrFlush::Flush).await;
 
@@ -257,6 +275,9 @@ pub async fn get_nhl_everything_in_season(
             &bracket_series.series_letter,
         )
         .await?;
+
+        let _ = db_context.sqlx_tx.send(SqlxJobOrFlush::Flush).await;
+
         let mut playoff_games =
             get_nhl_games_in_playoff_series(app_context, db_context, nhl_api, &series.game_ids)
                 .await?;
@@ -419,6 +440,18 @@ pub async fn get_nhl_game(
     Ok(game)
 }
 
+#[tracing::instrument(skip(db_context, nhl_api))]
+pub async fn get_nhl_team(
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
+    team_id: i32,
+) -> Result<NhlTeam, DSError> {
+    let team_json = nhl_api.get_team(db_context, team_id).await?;
+    let team: NhlTeam = team_json.into_db_struct();
+    team.upsert(db_context).await?;
+    Ok(team)
+}
+
 #[tracing::instrument(skip(app_context, db_context, nhl_api))]
 pub async fn get_nhl_roster_spots_in_game(
     app_context: &AppContext,
@@ -512,8 +545,9 @@ pub async fn get_nhl_plays_in_game(
     Ok(plays)
 }
 
-#[tracing::instrument(skip(db_context, nhl_api))]
+#[tracing::instrument(skip(app_context, db_context, nhl_api))]
 pub async fn get_nhl_playoff_bracket_series(
+    app_context: &AppContext,
     db_context: &DbContext,
     nhl_api: &NhlApi,
     season_id: i32,
@@ -533,6 +567,9 @@ pub async fn get_nhl_playoff_bracket_series(
     );
 
     let db_brackets = brackets.into_db_structs();
+
+    _ = ensure_and_fetch_foreign_keys(&db_brackets, app_context, db_context, nhl_api).await?;
+
     let _ = db_brackets.upsert_all(db_context).await;
     Ok(db_brackets)
 }
