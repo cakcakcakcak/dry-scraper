@@ -1,11 +1,6 @@
-use std::{fmt::Debug, sync::Arc};
+use std::fmt::Debug;
 
 use async_trait::async_trait;
-use governor::{
-    clock::DefaultClock,
-    state::{InMemoryState, NotKeyed},
-    RateLimiter,
-};
 use serde::de::DeserializeOwned;
 
 use crate::common::{
@@ -13,6 +8,7 @@ use crate::common::{
     db::DbContext,
     errors::DSError,
     models::{traits::IntoDbStruct, ItemParsedWithContext},
+    rate_limiter::RateLimiter,
 };
 
 use super::super::models::{NhlApiDataArrayResponse, NhlDefaultContext};
@@ -21,7 +17,7 @@ use super::super::models::{NhlApiDataArrayResponse, NhlDefaultContext};
 pub struct NhlStatsApi {
     pub client: reqwest::Client,
     pub base_url: String,
-    rate_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
+    rate_limiter: RateLimiter,
 }
 impl Debug for NhlStatsApi {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -35,16 +31,16 @@ impl CacheableApi for NhlStatsApi {
     fn client(&self) -> &reqwest::Client {
         &self.client
     }
-    async fn rate_limit(&self) {
-        self.rate_limiter.until_ready().await;
+    fn rate_limiter(&self) -> &RateLimiter {
+        &self.rate_limiter
     }
 }
 impl NhlStatsApi {
-    pub fn new(rate_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>) -> Self {
+    pub fn new() -> Self {
         Self {
             client: reqwest::Client::new(),
             base_url: "https://api.nhle.com/stats/rest/en".to_string(),
-            rate_limiter,
+            rate_limiter: RateLimiter::new(1),
         }
     }
 

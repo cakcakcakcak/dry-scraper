@@ -1,9 +1,6 @@
 use std::fmt::Debug;
-use std::num::NonZeroU32;
-use std::sync::Arc;
 
 use futures::stream::{self, StreamExt};
-use governor::{Quota, RateLimiter};
 
 use super::{nhl_stats_api::NhlStatsApi, nhl_web_api::NhlWebApi};
 use crate::{
@@ -37,16 +34,10 @@ impl NhlApi {
         Self::with_config(&Config::from_env_and_args())
     }
 
-    pub fn with_config(config: &Config) -> Self {
-        let quota = Quota::per_second(
-            NonZeroU32::new(config.nhl_api_rate_limit)
-                .expect("nhl_api_rate_limit must be non-zero"),
-        )
-        .allow_burst(NonZeroU32::new(1).unwrap());
-        let rate_limiter = Arc::new(RateLimiter::direct(quota));
+    pub fn with_config(_config: &Config) -> Self {
         Self {
-            nhl_stats_api: NhlStatsApi::new(Arc::clone(&rate_limiter)),
-            nhl_web_api: NhlWebApi::new(Arc::clone(&rate_limiter)),
+            nhl_stats_api: NhlStatsApi::new(),
+            nhl_web_api: NhlWebApi::new(),
         }
     }
 
