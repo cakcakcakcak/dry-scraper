@@ -1,4 +1,5 @@
 .env
+.direnv/
 *flamegraph*
 *.DS_Store*
 *scratch*
