@@ -36,11 +36,11 @@ impl CacheableApi for NhlStatsApi {
     }
 }
 impl NhlStatsApi {
-    pub fn new() -> Self {
+    pub fn new(min_spacing_ms: u64) -> Self {
         Self {
             client: reqwest::Client::new(),
             base_url: "https://api.nhle.com/stats/rest/en".to_string(),
-            rate_limiter: RateLimiter::new(1),
+            rate_limiter: RateLimiter::new(1, min_spacing_ms),
         }
     }
 

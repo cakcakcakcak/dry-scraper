@@ -64,12 +64,15 @@ pub trait CacheableApi: Debug {
             }
         }
         // Not in cache or unusable, fetch from API.
-        // Acquire rate limit permit only for HTTP request duration
-        let permit = self.rate_limiter().acquire().await;
-
-        let response = reqwest_with_retries!(&db_context.config, {
+        // Permit is acquired inside the retry closure so each retry
+        // re-enters the rate limiter queue rather than firing immediately.
+        let raw_data = reqwest_with_retries!(&db_context.config, {
+            let permit = self.rate_limiter().acquire().await;
             let resp = self.client().get(endpoint).send().await?;
-            resp.error_for_status()
+            let resp = resp.error_for_status()?;
+            let text = resp.text().await?;
+            drop(permit); // Release semaphore before DB write
+            Ok(text)
         })
         .await
         .map_err(|e| {
@@ -82,13 +85,6 @@ pub trait CacheableApi: Debug {
         })?;
 
         tracing::debug!(endpoint, "Parsing response and caching");
-
-        let raw_data = response.text().await.map_err(|e| {
-            tracing::error!(endpoint, error = %e, "Failed to parse response body");
-            DSError::Api(e)
-        })?;
-
-        drop(permit); // Release semaphore before DB write
 
         let cache_record = ApiCache {
             endpoint: endpoint.to_string(),

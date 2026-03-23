@@ -34,10 +34,10 @@ impl NhlApi {
         Self::with_config(&Config::from_env_and_args())
     }
 
-    pub fn with_config(_config: &Config) -> Self {
+    pub fn with_config(config: &Config) -> Self {
         Self {
-            nhl_stats_api: NhlStatsApi::new(),
-            nhl_web_api: NhlWebApi::new(),
+            nhl_stats_api: NhlStatsApi::new(config.nhl_min_spacing_ms),
+            nhl_web_api: NhlWebApi::new(config.nhl_min_spacing_ms),
         }
     }
 

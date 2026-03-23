@@ -13,9 +13,7 @@ pub struct CliArgs {
     #[arg(long)]
     pub api_concurrency_limit: Option<usize>,
     #[arg(long)]
-    pub api_delay_ms: Option<u64>,
-    #[arg(long)]
-    pub nhl_api_rate_limit: Option<u32>,
+    pub nhl_min_spacing_ms: Option<u64>,
     #[arg(long)]
     pub max_db_connections: Option<u32>,
     #[arg(long)]
