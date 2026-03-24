@@ -69,16 +69,27 @@ pub trait CacheableApi: Debug {
         let raw_data = reqwest_with_retries!(&db_context.config, {
             let permit = self.rate_limiter().acquire().await;
             let resp = self.client().get(endpoint).send().await?;
+
+            // Check for 429 before error_for_status so we can notify rate limiter immediately
+            if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                tracing::warn!(endpoint, "Rate limited (429), backing off");
+                self.rate_limiter().on_rate_limited().await;
+                drop(permit);
+                return Err(resp.error_for_status().unwrap_err());
+            }
+
             let resp = resp.error_for_status()?;
             let text = resp.text().await?;
             drop(permit); // Release semaphore before DB write
+
+            // Request succeeded, notify rate limiter
+            self.rate_limiter().on_success();
+
             Ok(text)
         })
         .await
         .map_err(|e| {
-            if e.status() == Some(reqwest::StatusCode::TOO_MANY_REQUESTS) {
-                tracing::warn!(endpoint, "Rate limited (429), retries exhausted");
-            } else {
+            if e.status() != Some(reqwest::StatusCode::TOO_MANY_REQUESTS) {
                 tracing::error!(endpoint, error = %e, "Failed to fetch from API");
             }
             DSError::Api(e)

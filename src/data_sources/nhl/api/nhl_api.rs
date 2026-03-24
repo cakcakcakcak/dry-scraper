@@ -6,8 +6,8 @@ use super::{nhl_stats_api::NhlStatsApi, nhl_web_api::NhlWebApi};
 use crate::{
     common::{
         api::CacheableApi, app_context::AppContext, db::DbContext, models::ItemParsedWithContext,
+        rate_limiter::RateLimiterConfig,
     },
-    config::Config,
     data_sources::models::{
         NhlFranchiseJson, NhlGameJson, NhlPlayerJson, NhlPlayoffBracketJson,
         NhlPlayoffBracketSeriesJson, NhlPlayoffSeriesJson, NhlSeasonContext, NhlSeasonJson,
@@ -30,14 +30,10 @@ impl Debug for NhlApi {
     }
 }
 impl NhlApi {
-    pub fn new() -> Self {
-        Self::with_config(&Config::from_env_and_args())
-    }
-
-    pub fn with_config(config: &Config) -> Self {
+    pub fn new(rate_limiter_config: RateLimiterConfig) -> Self {
         Self {
-            nhl_stats_api: NhlStatsApi::new(config.nhl_min_spacing_ms),
-            nhl_web_api: NhlWebApi::new(config.nhl_min_spacing_ms),
+            nhl_stats_api: NhlStatsApi::new(rate_limiter_config.clone()),
+            nhl_web_api: NhlWebApi::new(rate_limiter_config),
         }
     }
 

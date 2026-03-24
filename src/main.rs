@@ -73,7 +73,7 @@ async fn main() -> Result<(), DSError> {
 
     // register data sources
     let sources: Vec<Arc<dyn dry_scraper::common::data_source::DataSource>> =
-        vec![Arc::new(NhlDataSource::with_config(&config))];
+        vec![Arc::new(NhlDataSource::new())];
     app_context = app_context.with_sources(sources);
 
     match cli_args.command {

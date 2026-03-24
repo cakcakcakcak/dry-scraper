@@ -4,8 +4,8 @@ use crate::common::{
     db::{DbContext, DbEntity},
     errors::DSError,
     models::ApiCache,
+    rate_limiter::RateLimiterConfig,
 };
-use crate::config::Config;
 
 use super::api::NhlApi;
 use super::models::*;
@@ -18,19 +18,15 @@ pub struct NhlDataSource {
 
 impl NhlDataSource {
     pub fn new() -> Self {
-        Self::with_config(&Config::from_env_and_args())
-    }
-
-    pub fn with_config(config: &Config) -> Self {
-        Self {
-            api: NhlApi::with_config(config),
+        let rate_limiter_config = RateLimiterConfig {
+            min_permits: 1,
+            max_permits: 10,
+            min_spacing_us: 100_000,
+            max_spacing_us: 6_000_000, // 6 seconds
+        };
+        NhlDataSource {
+            api: NhlApi::new(rate_limiter_config),
         }
-    }
-}
-
-impl Default for NhlDataSource {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
