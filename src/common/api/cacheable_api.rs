@@ -9,6 +9,7 @@ use crate::{
         db::{CacheKey, DbContext, DbEntity},
         errors::DSError,
         models::ApiCache,
+        rate_limiter::RateLimiter,
     },
     reqwest_with_retries, sqlx_operation_with_retries,
 };
@@ -16,8 +17,7 @@ use crate::{
 #[async_trait]
 pub trait CacheableApi: Debug {
     fn client(&self) -> &reqwest::Client;
-
-    async fn rate_limit(&self);
+    fn rate_limiter(&self) -> &RateLimiter;
 
     #[instrument(skip(db_context))]
     async fn fetch_endpoint_cached(
@@ -64,18 +64,32 @@ pub trait CacheableApi: Debug {
             }
         }
         // Not in cache or unusable, fetch from API.
-        // error_for_status() is called inside the retry closure so that 429 responses
-        // are treated as transient errors and retried with backoff.
-        self.rate_limit().await;
-        let response = reqwest_with_retries!(&db_context.config, {
+        // Permit is acquired inside the retry closure so each retry
+        // re-enters the rate limiter queue rather than firing immediately.
+        let raw_data = reqwest_with_retries!(&db_context.config, {
+            let permit = self.rate_limiter().acquire().await;
             let resp = self.client().get(endpoint).send().await?;
-            resp.error_for_status()
+
+            // Check for 429 before error_for_status so we can notify rate limiter immediately
+            if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                tracing::warn!(endpoint, "Rate limited (429), backing off");
+                self.rate_limiter().on_rate_limited().await;
+                drop(permit);
+                return Err(resp.error_for_status().unwrap_err());
+            }
+
+            let resp = resp.error_for_status()?;
+            let text = resp.text().await?;
+            drop(permit); // Release semaphore before DB write
+
+            // Request succeeded, notify rate limiter
+            self.rate_limiter().on_success();
+
+            Ok(text)
         })
         .await
         .map_err(|e| {
-            if e.status() == Some(reqwest::StatusCode::TOO_MANY_REQUESTS) {
-                tracing::warn!(endpoint, "Rate limited (429), retries exhausted");
-            } else {
+            if e.status() != Some(reqwest::StatusCode::TOO_MANY_REQUESTS) {
                 tracing::error!(endpoint, error = %e, "Failed to fetch from API");
             }
             DSError::Api(e)
@@ -83,10 +97,6 @@ pub trait CacheableApi: Debug {
 
         tracing::debug!(endpoint, "Parsing response and caching");
 
-        let raw_data = response.text().await.map_err(|e| {
-            tracing::error!(endpoint, error = %e, "Failed to parse response body");
-            DSError::Api(e)
-        })?;
         let cache_record = ApiCache {
             endpoint: endpoint.to_string(),
             raw_data,
@@ -101,6 +111,7 @@ pub trait CacheableApi: Debug {
 #[derive(Clone, Debug)]
 pub struct SimpleApi {
     pub client: reqwest::Client,
+    rate_limiter: RateLimiter,
 }
 #[async_trait]
 impl CacheableApi for SimpleApi {
@@ -108,5 +119,7 @@ impl CacheableApi for SimpleApi {
         &self.client
     }
 
-    async fn rate_limit(&self) {}
+    fn rate_limiter(&self) -> &RateLimiter {
+        &self.rate_limiter
+    }
 }

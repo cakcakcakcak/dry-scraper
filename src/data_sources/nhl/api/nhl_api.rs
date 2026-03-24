@@ -1,16 +1,13 @@
 use std::fmt::Debug;
-use std::num::NonZeroU32;
-use std::sync::Arc;
 
 use futures::stream::{self, StreamExt};
-use governor::{Quota, RateLimiter};
 
 use super::{nhl_stats_api::NhlStatsApi, nhl_web_api::NhlWebApi};
 use crate::{
     common::{
         api::CacheableApi, app_context::AppContext, db::DbContext, models::ItemParsedWithContext,
+        rate_limiter::RateLimiterConfig,
     },
-    config::Config,
     data_sources::models::{
         NhlFranchiseJson, NhlGameJson, NhlPlayerJson, NhlPlayoffBracketJson,
         NhlPlayoffBracketSeriesJson, NhlPlayoffSeriesJson, NhlSeasonContext, NhlSeasonJson,
@@ -33,20 +30,10 @@ impl Debug for NhlApi {
     }
 }
 impl NhlApi {
-    pub fn new() -> Self {
-        Self::with_config(&Config::from_env_and_args())
-    }
-
-    pub fn with_config(config: &Config) -> Self {
-        let quota = Quota::per_second(
-            NonZeroU32::new(config.nhl_api_rate_limit)
-                .expect("nhl_api_rate_limit must be non-zero"),
-        )
-        .allow_burst(NonZeroU32::new(1).unwrap());
-        let rate_limiter = Arc::new(RateLimiter::direct(quota));
+    pub fn new(rate_limiter_config: RateLimiterConfig) -> Self {
         Self {
-            nhl_stats_api: NhlStatsApi::new(Arc::clone(&rate_limiter)),
-            nhl_web_api: NhlWebApi::new(Arc::clone(&rate_limiter)),
+            nhl_stats_api: NhlStatsApi::new(rate_limiter_config.clone()),
+            nhl_web_api: NhlWebApi::new(rate_limiter_config),
         }
     }
 

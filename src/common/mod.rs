@@ -5,5 +5,6 @@ pub mod db;
 pub mod errors;
 pub mod models;
 pub mod progress;
+pub mod rate_limiter;
 pub mod serde_helpers;
 pub mod util;

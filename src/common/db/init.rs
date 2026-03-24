@@ -64,6 +64,7 @@ pub async fn init_db(cfg: &Config) -> Result<DbPool, DSError> {
         || async {
             PgPoolOptions::new()
                 .max_connections(cfg.max_db_connections)
+                .acquire_timeout(std::time::Duration::from_secs(5))
                 .connect(&db_url)
                 .await
         },
