@@ -5,8 +5,11 @@ use futures::stream::{self, StreamExt};
 use super::{nhl_stats_api::NhlStatsApi, nhl_web_api::NhlWebApi};
 use crate::{
     common::{
-        api::CacheableApi, app_context::AppContext, db::DbContext, models::ItemParsedWithContext,
-        rate_limiter::RateLimiterConfig,
+        api::CacheableApi,
+        app_context::AppContext,
+        db::DbContext,
+        models::ItemParsedWithContext,
+        rate_limiter::{RateLimiter, RateLimiterConfig},
     },
     data_sources::models::{
         NhlFranchiseJson, NhlGameJson, NhlPlayerJson, NhlPlayoffBracketJson,
@@ -31,9 +34,10 @@ impl Debug for NhlApi {
 }
 impl NhlApi {
     pub fn new(rate_limiter_config: RateLimiterConfig) -> Self {
+        let rate_limiter = RateLimiter::new(rate_limiter_config);
         Self {
-            nhl_stats_api: NhlStatsApi::new(rate_limiter_config.clone()),
-            nhl_web_api: NhlWebApi::new(rate_limiter_config),
+            nhl_stats_api: NhlStatsApi::new(rate_limiter.clone()),
+            nhl_web_api: NhlWebApi::new(rate_limiter),
         }
     }
 

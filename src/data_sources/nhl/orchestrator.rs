@@ -44,7 +44,7 @@ where
         .map(|(table, cache_keys)| async move {
             match table.as_str() {
                 "player" => {
-                    tracing::info!("Fetching {} missing players", cache_keys.len());
+                    tracing::debug!("Fetching {} missing players", cache_keys.len());
                     let player_ids: Vec<i32> = cache_keys
                         .iter()
                         .filter_map(|ck| ck.id.parse::<i32>().ok())
@@ -68,11 +68,11 @@ where
                     }
 
                     let count = players.len();
-                    let _ = players.upsert_all(db_context).await;
+                    players.upsert_all(db_context).await;
                     count
                 }
                 "game" => {
-                    tracing::info!("Fetching {} missing games", cache_keys.len());
+                    tracing::debug!("Fetching {} missing games", cache_keys.len());
                     let game_ids: Vec<i32> = cache_keys
                         .iter()
                         .filter_map(|ck| ck.id.parse::<i32>().ok())
@@ -97,7 +97,7 @@ where
                     games.len()
                 }
                 "team" => {
-                    tracing::info!("Fetching {} missing teams", cache_keys.len());
+                    tracing::debug!("Fetching {} missing teams", cache_keys.len());
                     let team_ids: Vec<i32> = cache_keys
                         .iter()
                         .filter_map(|ck| ck.id.parse::<i32>().ok())
@@ -172,7 +172,37 @@ where
     Ok(total_fetched)
 }
 
-#[tracing::instrument(skip(db_context, nhl_api))]
+#[tracing::instrument(skip(app_context, db_context, nhl_api, seasons))]
+pub async fn get_nhl_all_seasons(
+    app_context: &AppContext,
+    db_context: &DbContext,
+    nhl_api: &NhlApi,
+    seasons: &[NhlSeason],
+) -> Result<(), DSError> {
+    let mut sorted_seasons: Vec<&NhlSeason> = seasons.iter().collect();
+    sorted_seasons.sort_by_key(|s| s.start_date);
+
+    // If the last season (most recent) is still ongoing, exclude it
+    let now = chrono::Local::now().naive_local();
+    let completed_seasons = match sorted_seasons.last() {
+        Some(last) if last.end_date > now => &sorted_seasons[..sorted_seasons.len() - 1],
+        _ => &sorted_seasons[..],
+    };
+
+    tracing::info!(
+        total = seasons.len(),
+        completed = completed_seasons.len(),
+        "Scraping all completed NHL seasons"
+    );
+
+    for season in completed_seasons {
+        tracing::info!(season_id = season.id, "Scraping season");
+        get_nhl_everything_in_season(app_context, db_context, nhl_api, season.id).await?;
+    }
+
+    Ok(())
+}
+
 pub async fn get_nhl_seasons(
     db_context: &DbContext,
     nhl_api: &NhlApi,
@@ -308,27 +338,49 @@ pub async fn get_nhl_everything_in_season(
         games.append(&mut playoff_games);
     }
 
-    // Fetch ancillary data for all games, bounded by concurrency limit
+    // Pass 1: Fetch roster spots for all games first to ensure all players are in DB
+    // before plays and shifts (which have FK constraints on players) are inserted.
+    app_context.init_progress(Some(games.len()), "Fetching roster spots for all games...");
+
+    stream::iter(games.iter())
+        .map(|game| async move {
+            let result = get_nhl_roster_spots_in_game(app_context, db_context, nhl_api, game).await;
+            app_context.inc_progress(1);
+            result
+        })
+        .buffer_unordered(app_context.config.db_concurrency_limit)
+        .for_each(|result: Result<_, DSError>| async move {
+            if let Err(e) = result {
+                tracing::error!("Failed to fetch roster spots for game: {e}");
+            }
+        })
+        .await;
+
+    app_context.finish_progress();
+
+    // Pass 2: Now that all players exist in DB, fetch plays and shifts in parallel
     app_context.init_progress(
-        None,
-        "Fetching shift data and constructing play and roster spot entries...",
+        Some(games.len()),
+        "Fetching plays and shifts for all games...",
     );
 
-    let ancillary_results: Vec<_> = stream::iter(games.iter())
+    stream::iter(games.iter())
         .map(|game| async move {
             tokio::try_join!(
                 get_nhl_plays_in_game(app_context, db_context, nhl_api, game),
-                get_nhl_roster_spots_in_game(app_context, db_context, nhl_api, game),
                 get_nhl_shifts_in_game(db_context, nhl_api, game.id),
-            )
+            )?;
+            app_context.inc_progress(1);
+            Ok(())
         })
         .buffer_unordered(app_context.config.db_concurrency_limit)
-        .collect()
+        .for_each(|result: Result<(), DSError>| async move {
+            if let Err(e) = result {
+                tracing::error!("Failed to fetch plays/shifts for game: {e}");
+            }
+        })
         .await;
 
-    for result in ancillary_results {
-        result?;
-    }
     app_context.finish_progress();
 
     Ok(())

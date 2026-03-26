@@ -33,6 +33,7 @@ pub struct RateLimiter {
 
 pub struct RateLimitPermit<'a> {
     _permit: SemaphorePermit<'a>,
+    pub was_throttled: bool,
 }
 impl RateLimiter {
     pub fn new(config: RateLimiterConfig) -> Self {
@@ -55,16 +56,27 @@ impl RateLimiter {
         let current_spacing = Duration::from_micros(current_spacing_us);
 
         let elapsed = last.elapsed();
-        if elapsed < current_spacing {
+        let was_throttled = elapsed < current_spacing;
+        if was_throttled {
             tokio::time::sleep(current_spacing - elapsed).await;
         }
         *last = Instant::now();
 
-        RateLimitPermit { _permit: permit }
+        RateLimitPermit {
+            _permit: permit,
+            was_throttled,
+        }
     }
 
-    pub fn on_success(&self) {
+    pub fn on_success(&self, was_throttled: bool) {
         self.consecutive_429s.store(0, Ordering::Relaxed);
+
+        // Only count toward speedup if the rate limiter was actually the bottleneck.
+        // If the request wasn't throttled, natural spacing (DB work, parsing, etc.)
+        // provided the gap - not the rate limiter - so speeding up isn't justified.
+        if !was_throttled {
+            return;
+        }
 
         let count = self.success_count.fetch_add(1, Ordering::Relaxed) + 1;
 

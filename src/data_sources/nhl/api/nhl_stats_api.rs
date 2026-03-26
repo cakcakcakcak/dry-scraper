@@ -8,7 +8,7 @@ use crate::common::{
     db::DbContext,
     errors::DSError,
     models::{traits::IntoDbStruct, ItemParsedWithContext},
-    rate_limiter::{RateLimiter, RateLimiterConfig},
+    rate_limiter::RateLimiter,
 };
 
 use super::super::models::{NhlApiDataArrayResponse, NhlDefaultContext};
@@ -36,11 +36,11 @@ impl CacheableApi for NhlStatsApi {
     }
 }
 impl NhlStatsApi {
-    pub fn new(rate_limiter_config: RateLimiterConfig) -> Self {
+    pub fn new(rate_limiter: RateLimiter) -> Self {
         Self {
             client: reqwest::Client::new(),
             base_url: "https://api.nhle.com/stats/rest/en".to_string(),
-            rate_limiter: RateLimiter::new(rate_limiter_config),
+            rate_limiter,
         }
     }
 

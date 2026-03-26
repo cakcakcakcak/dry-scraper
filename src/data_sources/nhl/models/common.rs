@@ -43,7 +43,10 @@ pub enum GameType {
     Preseason = 1,
     RegularSeason = 2,
     Playoffs = 3,
+    /// World Cup of Hockey / other international tournaments
+    WorldCup = 7,
 }
+
 impl TryFrom<i32> for GameType {
     type Error = &'static str;
     fn try_from(v: i32) -> Result<Self, Self::Error> {
@@ -51,6 +54,7 @@ impl TryFrom<i32> for GameType {
             1 => Ok(GameType::Preseason),
             2 => Ok(GameType::RegularSeason),
             3 => Ok(GameType::Playoffs),
+            7 => Ok(GameType::WorldCup),
             _ => Err("invalid game type"),
         }
     }

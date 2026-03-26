@@ -14,8 +14,8 @@ use dry_scraper::common::db::init::reset_schema;
 use dry_scraper::data_sources::nhl::{
     data_source::NhlDataSource,
     orchestrator::{
-        get_nhl_everything_in_season, get_nhl_franchises, get_nhl_game, get_nhl_seasons,
-        get_nhl_teams,
+        get_nhl_all_seasons, get_nhl_everything_in_season, get_nhl_franchises, get_nhl_game,
+        get_nhl_seasons, get_nhl_teams,
     },
 };
 use indicatif::MultiProgress;
@@ -101,7 +101,15 @@ async fn main() -> Result<(), DSError> {
                         _ = get_nhl_teams(&db_context, &nhl_source.api).await?;
 
                         match command {
-                            NhlCommand::All => for _season in seasons {},
+                            NhlCommand::All => {
+                                get_nhl_all_seasons(
+                                    &app_context,
+                                    &db_context,
+                                    &nhl_source.api,
+                                    &seasons,
+                                )
+                                .await?;
+                            }
                             NhlCommand::Game { game_id } => {
                                 let _game = get_nhl_game(
                                     &app_context,

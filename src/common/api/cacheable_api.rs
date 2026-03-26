@@ -80,10 +80,11 @@ pub trait CacheableApi: Debug {
 
             let resp = resp.error_for_status()?;
             let text = resp.text().await?;
+            let was_throttled = permit.was_throttled;
             drop(permit); // Release semaphore before DB write
 
             // Request succeeded, notify rate limiter
-            self.rate_limiter().on_success();
+            self.rate_limiter().on_success(was_throttled);
 
             Ok(text)
         })

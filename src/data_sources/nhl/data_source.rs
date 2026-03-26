@@ -20,9 +20,9 @@ impl NhlDataSource {
     pub fn new() -> Self {
         let rate_limiter_config = RateLimiterConfig {
             min_permits: 1,
-            max_permits: 10,
-            min_spacing_us: 100_000,
-            max_spacing_us: 6_000_000, // 6 seconds
+            max_permits: 5,
+            min_spacing_us: 400_000,
+            max_spacing_us: 3_000_000,
         };
         NhlDataSource {
             api: NhlApi::new(rate_limiter_config),
